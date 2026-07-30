@@ -1,0 +1,1467 @@
+﻿[
+    {
+        "Filename":  "about.php",
+        "LineNumber":  1,
+        "Line":  "\u003c?php include \u0027includes/header.php\u0027; ?\u003e"
+    },
+    {
+        "Filename":  "about.php",
+        "LineNumber":  85,
+        "Line":  "\u003c?php include \u0027includes/footer.php\u0027; ?\u003e"
+    },
+    {
+        "Filename":  "add_columns.php",
+        "LineNumber":  2,
+        "Line":  "include_once \u0027config/db.php\u0027;"
+    },
+    {
+        "Filename":  "add_equipment.php",
+        "LineNumber":  2,
+        "Line":  "require_once \u0027config/db.php\u0027;"
+    },
+    {
+        "Filename":  "add_has_weight.php",
+        "LineNumber":  2,
+        "Line":  "include \u0027config/db.php\u0027;"
+    },
+    {
+        "Filename":  "add_room_columns.php",
+        "LineNumber":  2,
+        "Line":  "require_once \u0027config/db.php\u0027;"
+    },
+    {
+        "Filename":  "admin.php",
+        "LineNumber":  5,
+        "Line":  "include_once \u0027config/db.php\u0027;"
+    },
+    {
+        "Filename":  "admin.php",
+        "LineNumber":  12,
+        "Line":  "include \u0027includes/header.php\u0027;"
+    },
+    {
+        "Filename":  "admin.php",
+        "LineNumber":  241,
+        "Line":  "                require_once \u0027libs/PHPMailer/src/Exception.php\u0027;"
+    },
+    {
+        "Filename":  "admin.php",
+        "LineNumber":  242,
+        "Line":  "                require_once \u0027libs/PHPMailer/src/PHPMailer.php\u0027;"
+    },
+    {
+        "Filename":  "admin.php",
+        "LineNumber":  243,
+        "Line":  "                require_once \u0027libs/PHPMailer/src/SMTP.php\u0027;"
+    },
+    {
+        "Filename":  "admin.php",
+        "LineNumber":  310,
+        "Line":  "                require_once \u0027libs/PHPMailer/src/Exception.php\u0027;"
+    },
+    {
+        "Filename":  "admin.php",
+        "LineNumber":  311,
+        "Line":  "                require_once \u0027libs/PHPMailer/src/PHPMailer.php\u0027;"
+    },
+    {
+        "Filename":  "admin.php",
+        "LineNumber":  312,
+        "Line":  "                require_once \u0027libs/PHPMailer/src/SMTP.php\u0027;"
+    },
+    {
+        "Filename":  "admin.php",
+        "LineNumber":  392,
+        "Line":  "                    require_once \u0027libs/PHPMailer/src/Exception.php\u0027;"
+    },
+    {
+        "Filename":  "admin.php",
+        "LineNumber":  393,
+        "Line":  "                    require_once \u0027libs/PHPMailer/src/PHPMailer.php\u0027;"
+    },
+    {
+        "Filename":  "admin.php",
+        "LineNumber":  394,
+        "Line":  "                    require_once \u0027libs/PHPMailer/src/SMTP.php\u0027;"
+    },
+    {
+        "Filename":  "admin.php",
+        "LineNumber":  498,
+        "Line":  "                            \u003cinput type=\"text\" name=\"name\" value=\"\u003c?php echo htmlspecialchars($edit_prod[\u0027name\u0027]); ?\u003e\" required\u003e"
+    },
+    {
+        "Filename":  "admin.php",
+        "LineNumber":  502,
+        "Line":  "                            \u003cinput type=\"number\" step=\"0.01\" name=\"price\" value=\"\u003c?php echo $edit_prod[\u0027price\u0027]; ?\u003e\" required\u003e"
+    },
+    {
+        "Filename":  "admin.php",
+        "LineNumber":  506,
+        "Line":  "                            \u003cinput type=\"number\" name=\"stock\" value=\"\u003c?php echo $edit_prod[\u0027stock\u0027]; ?\u003e\" required\u003e"
+    },
+    {
+        "Filename":  "admin.php",
+        "LineNumber":  510,
+        "Line":  "                            \u003cselect name=\"category\" required style=\"padding: 1.1rem; border-radius: 15px; background: #f1f5f9; border: none; width: 100%; outline: none; font-weight: 600;\"\u003e"
+    },
+    {
+        "Filename":  "admin.php",
+        "LineNumber":  531,
+        "Line":  "                        \u003ctextarea name=\"description\" required style=\"width: 100%; padding: 1.1rem; border-radius: 15px; background: #f1f5f9; border: none; outline: none; min-height: 100px;\"\u003e\u003c?php echo htmlspecialchars($edit_prod[\u0027description\u0027]); ?\u003e\u003c/textarea\u003e"
+    },
+    {
+        "Filename":  "admin.php",
+        "LineNumber":  552,
+        "Line":  "                            \u003cinput type=\"text\" name=\"name\" required placeholder=\"e.g. Whey Protein\"\u003e"
+    },
+    {
+        "Filename":  "admin.php",
+        "LineNumber":  556,
+        "Line":  "                            \u003cinput type=\"number\" step=\"0.01\" name=\"price\" required placeholder=\"0.00\"\u003e"
+    },
+    {
+        "Filename":  "admin.php",
+        "LineNumber":  560,
+        "Line":  "                            \u003cinput type=\"number\" name=\"stock\" required placeholder=\"10\"\u003e"
+    },
+    {
+        "Filename":  "admin.php",
+        "LineNumber":  564,
+        "Line":  "                            \u003cselect name=\"category\" required style=\"padding: 1.1rem; border-radius: 15px; background: #f1f5f9; border: none; width: 100%; outline: none; font-weight: 600;\"\u003e"
+    },
+    {
+        "Filename":  "admin.php",
+        "LineNumber":  576,
+        "Line":  "                        \u003cinput type=\"file\" name=\"image\" accept=\"image/*\" required style=\"padding: 0.8rem; background: #f1f5f9; border-radius: 10px; width: 100%;\"\u003e"
+    },
+    {
+        "Filename":  "admin.php",
+        "LineNumber":  647,
+        "Line":  "                            \u003cinput type=\"text\" name=\"name\" value=\"\u003c?php echo $edit_coach[\u0027name\u0027]; ?\u003e\" required style=\"background: #f1f5f9;\"\u003e"
+    },
+    {
+        "Filename":  "admin.php",
+        "LineNumber":  651,
+        "Line":  "                            \u003cinput type=\"text\" name=\"specialty\" value=\"\u003c?php echo $edit_coach[\u0027specialty\u0027]; ?\u003e\" required style=\"background: #f1f5f9;\"\u003e"
+    },
+    {
+        "Filename":  "admin.php",
+        "LineNumber":  655,
+        "Line":  "                            \u003cinput type=\"number\" step=\"0.01\" name=\"rate\" value=\"\u003c?php echo $edit_coach[\u0027hourly_rate\u0027]; ?\u003e\" required style=\"background: #f1f5f9;\"\u003e"
+    },
+    {
+        "Filename":  "admin.php",
+        "LineNumber":  678,
+        "Line":  "                            \u003cinput type=\"text\" name=\"name\" required placeholder=\"e.g. John Doe\" style=\"background: #f1f5f9;\"\u003e"
+    },
+    {
+        "Filename":  "admin.php",
+        "LineNumber":  682,
+        "Line":  "                            \u003cinput type=\"email\" name=\"email\" required placeholder=\"john@gymx.com\" style=\"background: #f1f5f9;\"\u003e"
+    },
+    {
+        "Filename":  "admin.php",
+        "LineNumber":  688,
+        "Line":  "                            \u003cinput type=\"text\" name=\"specialty\" required placeholder=\"Bodybuilding\" style=\"background: #f1f5f9;\"\u003e"
+    },
+    {
+        "Filename":  "admin.php",
+        "LineNumber":  692,
+        "Line":  "                            \u003cinput type=\"number\" step=\"0.01\" name=\"rate\" required placeholder=\"25.00\" style=\"background: #f1f5f9;\"\u003e"
+    },
+    {
+        "Filename":  "admin.php",
+        "LineNumber":  760,
+        "Line":  "                            \u003cinput type=\"text\" name=\"name\" required placeholder=\"User Name\" style=\"background: #f1f5f9;\"\u003e"
+    },
+    {
+        "Filename":  "admin.php",
+        "LineNumber":  764,
+        "Line":  "                            \u003cinput type=\"email\" name=\"email\" required placeholder=\"email@example.com\" style=\"background: #f1f5f9;\"\u003e"
+    },
+    {
+        "Filename":  "admin.php",
+        "LineNumber":  768,
+        "Line":  "                            \u003cinput type=\"password\" name=\"password\" required placeholder=\"******\" style=\"background: #f1f5f9;\"\u003e"
+    },
+    {
+        "Filename":  "admin.php",
+        "LineNumber":  789,
+        "Line":  "                                \u003cinput type=\"text\" name=\"name\" value=\"\u003c?php echo htmlspecialchars($edit_u[\u0027name\u0027]); ?\u003e\" required\u003e"
+    },
+    {
+        "Filename":  "admin.php",
+        "LineNumber":  793,
+        "Line":  "                                \u003cinput type=\"email\" name=\"email\" value=\"\u003c?php echo htmlspecialchars($edit_u[\u0027email\u0027]); ?\u003e\" required\u003e"
+    },
+    {
+        "Filename":  "admin.php",
+        "LineNumber":  959,
+        "Line":  "                            \u003cselect name=\"user_id\" required style=\"padding: 1.1rem; border-radius: 15px; background: #f1f5f9; border: none; width: 100%; outline: none; font-weight: 600;\"\u003e"
+    },
+    {
+        "Filename":  "admin.php",
+        "LineNumber":  967,
+        "Line":  "                            \u003cselect name=\"coach_id\" required style=\"padding: 1.1rem; border-radius: 15px; background: #f1f5f9; border: none; width: 100%; outline: none; font-weight: 600;\"\u003e"
+    },
+    {
+        "Filename":  "admin.php",
+        "LineNumber":  975,
+        "Line":  "                            \u003cinput type=\"datetime-local\" name=\"booking_date\" value=\"\u003c?php echo date(\u0027Y-m-d\\TH:i\u0027, strtotime($edit_booking[\u0027booking_date\u0027])); ?\u003e\" required style=\"background: #f1f5f9; padding: 1.1rem; border-radius: 15px; border: none; width: 100%; outline: none; font-weight: 600;\"\u003e"
+    },
+    {
+        "Filename":  "admin.php",
+        "LineNumber":  981,
+        "Line":  "                            \u003cselect name=\"status\" required style=\"padding: 1.1rem; border-radius: 15px; background: #f1f5f9; border: none; width: 100%; outline: none; font-weight: 600;\"\u003e"
+    },
+    {
+        "Filename":  "admin.php",
+        "LineNumber":  1006,
+        "Line":  "                            \u003cselect name=\"user_id\" required style=\"padding: 1.1rem; border-radius: 15px; background: #f1f5f9; border: none; width: 100%; outline: none; font-weight: 600;\"\u003e"
+    },
+    {
+        "Filename":  "admin.php",
+        "LineNumber":  1015,
+        "Line":  "                            \u003cselect name=\"coach_id\" required style=\"padding: 1.1rem; border-radius: 15px; background: #f1f5f9; border: none; width: 100%; outline: none; font-weight: 600;\"\u003e"
+    },
+    {
+        "Filename":  "admin.php",
+        "LineNumber":  1024,
+        "Line":  "                            \u003cinput type=\"datetime-local\" name=\"booking_date\" required style=\"background: #f1f5f9; padding: 1.1rem; border-radius: 15px; border: none; width: 100%; outline: none; font-weight: 600;\"\u003e"
+    },
+    {
+        "Filename":  "admin.php",
+        "LineNumber":  1408,
+        "Line":  "\u003c?php include \u0027includes/footer.php\u0027; ?\u003e"
+    },
+    {
+        "Filename":  "ai_chat.php",
+        "LineNumber":  3,
+        "Line":  "include_once __DIR__ . \u0027/includes/lang.php\u0027;"
+    },
+    {
+        "Filename":  "alter_bookings.php",
+        "LineNumber":  2,
+        "Line":  "require \u0027config/db.php\u0027;"
+    },
+    {
+        "Filename":  "api_calendar.php",
+        "LineNumber":  5,
+        "Line":  "include_once \u0027config/db.php\u0027;"
+    },
+    {
+        "Filename":  "api_student_metrics.php",
+        "LineNumber":  3,
+        "Line":  "require_once \u0027config/db.php\u0027;"
+    },
+    {
+        "Filename":  "calendar.php",
+        "LineNumber":  5,
+        "Line":  "include \u0027includes/header.php\u0027; "
+    },
+    {
+        "Filename":  "calendar.php",
+        "LineNumber":  1083,
+        "Line":  "                let show = coachName.includes(searchText);"
+    },
+    {
+        "Filename":  "calendar.php",
+        "LineNumber":  1087,
+        "Line":  "                    if (!cell.innerText.includes(\"AVAILABLE\") \u0026\u0026 !cell.innerText.includes(\"LỊCH TRỐNG\")) {"
+    },
+    {
+        "Filename":  "calendar.php",
+        "LineNumber":  1101,
+        "Line":  "\u003c?php include \u0027includes/footer.php\u0027; ?\u003e"
+    },
+    {
+        "Filename":  "careers.php",
+        "LineNumber":  5,
+        "Line":  "include \u0027includes/header.php\u0027;"
+    },
+    {
+        "Filename":  "careers.php",
+        "LineNumber":  73,
+        "Line":  "                    \u003cinput type=\"text\" placeholder=\"John Doe\" required style=\"width: 100%; padding: 1.1rem; border-radius: 15px; background: #f1f5f9; border: none; outline: none;\"\u003e"
+    },
+    {
+        "Filename":  "careers.php",
+        "LineNumber":  77,
+        "Line":  "                    \u003cinput type=\"email\" placeholder=\"example@email.com\" required style=\"width: 100%; padding: 1.1rem; border-radius: 15px; background: #f1f5f9; border: none; outline: none;\"\u003e"
+    },
+    {
+        "Filename":  "careers.php",
+        "LineNumber":  83,
+        "Line":  "                    \u003cinput type=\"text\" placeholder=\"0987654321\" required style=\"width: 100%; padding: 1.1rem; border-radius: 15px; background: #f1f5f9; border: none; outline: none;\"\u003e"
+    },
+    {
+        "Filename":  "careers.php",
+        "LineNumber":  87,
+        "Line":  "                    \u003cselect required style=\"width: 100%; padding: 1.1rem; border-radius: 15px; background: #f1f5f9; border: none; outline: none;\"\u003e"
+    },
+    {
+        "Filename":  "careers.php",
+        "LineNumber":  103,
+        "Line":  "\u003c?php include \u0027includes/footer.php\u0027; ?\u003e"
+    },
+    {
+        "Filename":  "cart.php",
+        "LineNumber":  13,
+        "Line":  "include \u0027includes/header.php\u0027;"
+    },
+    {
+        "Filename":  "cart.php",
+        "LineNumber":  14,
+        "Line":  "include_once \u0027config/db.php\u0027;"
+    },
+    {
+        "Filename":  "cart.php",
+        "LineNumber":  125,
+        "Line":  "\u003c?php include \u0027includes/footer.php\u0027; ?\u003e"
+    },
+    {
+        "Filename":  "check.php",
+        "LineNumber":  2,
+        "Line":  "require \u0027config/db.php\u0027;"
+    },
+    {
+        "Filename":  "check2.php",
+        "LineNumber":  2,
+        "Line":  "require \u0027config/db.php\u0027;"
+    },
+    {
+        "Filename":  "checkout.php",
+        "LineNumber":  5,
+        "Line":  "include_once \u0027config/db.php\u0027;"
+    },
+    {
+        "Filename":  "checkout.php",
+        "LineNumber":  17,
+        "Line":  "include \u0027includes/header.php\u0027;"
+    },
+    {
+        "Filename":  "checkout.php",
+        "LineNumber":  96,
+        "Line":  "        require_once \u0027libs/PHPMailer/src/Exception.php\u0027;"
+    },
+    {
+        "Filename":  "checkout.php",
+        "LineNumber":  97,
+        "Line":  "        require_once \u0027libs/PHPMailer/src/PHPMailer.php\u0027;"
+    },
+    {
+        "Filename":  "checkout.php",
+        "LineNumber":  98,
+        "Line":  "        require_once \u0027libs/PHPMailer/src/SMTP.php\u0027;"
+    },
+    {
+        "Filename":  "checkout.php",
+        "LineNumber":  248,
+        "Line":  "                                \u003cselect name=\"rating\" required style=\"background: white; border: 1px solid #e2e8f0; padding: 8px; border-radius: 10px; font-size: 0.85rem; outline: none; font-weight: 600; color: var(--text-main);\"\u003e"
+    },
+    {
+        "Filename":  "checkout.php",
+        "LineNumber":  255,
+        "Line":  "                                \u003cinput type=\"text\" name=\"comment\" placeholder=\"\u003c?php echo __(\u0027short_review_placeholder\u0027); ?\u003e\" required style=\"flex-grow: 1; background: white; border: 1px solid #e2e8f0; padding: 8px 15px; border-radius: 10px; font-size: 0.85rem; outline: none;\"\u003e"
+    },
+    {
+        "Filename":  "checkout.php",
+        "LineNumber":  348,
+        "Line":  "                        \u003cinput type=\"text\" name=\"address\" placeholder=\"\u003c?php echo __(\u0027address_placeholder\u0027); ?\u003e\" required "
+    },
+    {
+        "Filename":  "checkout.php",
+        "LineNumber":  354,
+        "Line":  "                        \u003cinput type=\"text\" name=\"phone\" placeholder=\"090x xxx xxx\" required pattern=\"[0-9]{10}\" title=\"\u003c?php echo __(\u0027phone_invalid\u0027); ?\u003e\" "
+    },
+    {
+        "Filename":  "checkout.php",
+        "LineNumber":  472,
+        "Line":  "\u003c?php include \u0027includes/footer.php\u0027; ?\u003e"
+    },
+    {
+        "Filename":  "check_coaches.php",
+        "LineNumber":  2,
+        "Line":  "require \u0027config/db.php\u0027;"
+    },
+    {
+        "Filename":  "check_schema.php",
+        "LineNumber":  2,
+        "Line":  "include_once \u0027config/db.php\u0027;"
+    },
+    {
+        "Filename":  "coaches.php",
+        "LineNumber":  5,
+        "Line":  "include_once \u0027config/db.php\u0027;"
+    },
+    {
+        "Filename":  "coaches.php",
+        "LineNumber":  25,
+        "Line":  "            require_once \u0027libs/PHPMailer/src/Exception.php\u0027;"
+    },
+    {
+        "Filename":  "coaches.php",
+        "LineNumber":  26,
+        "Line":  "            require_once \u0027libs/PHPMailer/src/PHPMailer.php\u0027;"
+    },
+    {
+        "Filename":  "coaches.php",
+        "LineNumber":  27,
+        "Line":  "            require_once \u0027libs/PHPMailer/src/SMTP.php\u0027;"
+    },
+    {
+        "Filename":  "coaches.php",
+        "LineNumber":  56,
+        "Line":  "include \u0027includes/header.php\u0027;"
+    },
+    {
+        "Filename":  "coaches.php",
+        "LineNumber":  173,
+        "Line":  "\u003c?php include \u0027includes/footer.php\u0027; ?\u003e"
+    },
+    {
+        "Filename":  "coach_dashboard.php",
+        "LineNumber":  5,
+        "Line":  "include_once \u0027config/db.php\u0027;"
+    },
+    {
+        "Filename":  "coach_dashboard.php",
+        "LineNumber":  18,
+        "Line":  "    include \u0027includes/header.php\u0027;"
+    },
+    {
+        "Filename":  "coach_dashboard.php",
+        "LineNumber":  20,
+        "Line":  "    include \u0027includes/footer.php\u0027;"
+    },
+    {
+        "Filename":  "coach_dashboard.php",
+        "LineNumber":  42,
+        "Line":  "        require_once \u0027libs/PHPMailer/src/Exception.php\u0027;"
+    },
+    {
+        "Filename":  "coach_dashboard.php",
+        "LineNumber":  43,
+        "Line":  "        require_once \u0027libs/PHPMailer/src/PHPMailer.php\u0027;"
+    },
+    {
+        "Filename":  "coach_dashboard.php",
+        "LineNumber":  44,
+        "Line":  "        require_once \u0027libs/PHPMailer/src/SMTP.php\u0027;"
+    },
+    {
+        "Filename":  "coach_dashboard.php",
+        "LineNumber":  76,
+        "Line":  "            $mail-\u003eSubject = \"⚠️ Action Required: New Booking Confirmed by Coach\";"
+    },
+    {
+        "Filename":  "coach_dashboard.php",
+        "LineNumber":  173,
+        "Line":  "include \u0027includes/header.php\u0027;"
+    },
+    {
+        "Filename":  "coach_dashboard.php",
+        "LineNumber":  297,
+        "Line":  "                                                \u003cinput type=\"text\" name=\"coach_phone\" required placeholder=\"Your Phone (10 digits)\" pattern=\"[0-9]{10}\" title=\"\u003c?php echo __(\u0027phone_validation_msg\u0027); ?\u003e\" style=\"padding: 5px; border-radius: 5px; border: 1px solid #ccc; font-size: 0.8rem;\"\u003e"
+    },
+    {
+        "Filename":  "coach_dashboard.php",
+        "LineNumber":  298,
+        "Line":  "                                                \u003cinput type=\"text\" name=\"coach_address\" required placeholder=\"Training Location/Address\" style=\"padding: 5px; border-radius: 5px; border: 1px solid #ccc; font-size: 0.8rem;\"\u003e"
+    },
+    {
+        "Filename":  "coach_dashboard.php",
+        "LineNumber":  387,
+        "Line":  "                            \u003cinput type=\"text\" name=\"class_name\" placeholder=\"\u003c?php echo __(\u0027class_name_placeholder\u0027); ?\u003e\" required style=\"width: 100%; padding: 10px 15px; border-radius: 10px; border: 1px solid #cbd5e1; outline: none; background: #f8fafc;\"\u003e"
+    },
+    {
+        "Filename":  "coach_dashboard.php",
+        "LineNumber":  392,
+        "Line":  "                            \u003cinput type=\"datetime-local\" name=\"booking_date\" required style=\"width: 100%; padding: 10px 15px; border-radius: 10px; border: 1px solid #cbd5e1; outline: none; background: #f8fafc;\"\u003e"
+    },
+    {
+        "Filename":  "coach_dashboard.php",
+        "LineNumber":  429,
+        "Line":  "                if (specLower.includes(\u0027gym\u0027)) {"
+    },
+    {
+        "Filename":  "coach_dashboard.php",
+        "LineNumber":  431,
+        "Line":  "                } else if (specLower.includes(\u0027muay\u0027)) {"
+    },
+    {
+        "Filename":  "coach_dashboard.php",
+        "LineNumber":  433,
+        "Line":  "                } else if (specLower.includes(\u0027yoga\u0027)) {"
+    },
+    {
+        "Filename":  "coach_dashboard.php",
+        "LineNumber":  501,
+        "Line":  "                                \u003cinput type=\"date\" name=\"recorded_date\" value=\"\u003c?php echo date(\u0027Y-m-d\u0027); ?\u003e\" required style=\"padding: 6px; border-radius: 6px; border: 1px solid #cbd5e1; width: 100%; font-size: 0.8rem;\"\u003e"
+    },
+    {
+        "Filename":  "coach_dashboard.php",
+        "LineNumber":  505,
+        "Line":  "                                \u003cinput type=\"number\" step=\"0.1\" name=\"weight\" required placeholder=\"70\" style=\"padding: 6px; border-radius: 6px; border: 1px solid #cbd5e1; width: 100%; font-size: 0.8rem;\"\u003e"
+    },
+    {
+        "Filename":  "coach_dashboard.php",
+        "LineNumber":  689,
+        "Line":  "                    \u003cinput type=\"text\" name=\"specialty\" value=\"\u003c?php echo $c_info[\u0027specialty\u0027]; ?\u003e\" required style=\"background: #f1f5f9;\"\u003e"
+    },
+    {
+        "Filename":  "coach_dashboard.php",
+        "LineNumber":  693,
+        "Line":  "                    \u003cinput type=\"number\" step=\"0.01\" name=\"hourly_rate\" value=\"\u003c?php echo $c_info[\u0027hourly_rate\u0027]; ?\u003e\" required style=\"background: #f1f5f9;\"\u003e"
+    },
+    {
+        "Filename":  "coach_dashboard.php",
+        "LineNumber":  808,
+        "Line":  "\u003c?php include \u0027includes/footer.php\u0027; ?\u003e"
+    },
+    {
+        "Filename":  "coach_details.php",
+        "LineNumber":  5,
+        "Line":  "include_once \u0027config/db.php\u0027;"
+    },
+    {
+        "Filename":  "coach_details.php",
+        "LineNumber":  18,
+        "Line":  "    include \u0027includes/header.php\u0027;"
+    },
+    {
+        "Filename":  "coach_details.php",
+        "LineNumber":  20,
+        "Line":  "    include \u0027includes/footer.php\u0027;"
+    },
+    {
+        "Filename":  "coach_details.php",
+        "LineNumber":  58,
+        "Line":  "            require \u0027libs/PHPMailer/src/Exception.php\u0027;"
+    },
+    {
+        "Filename":  "coach_details.php",
+        "LineNumber":  59,
+        "Line":  "            require \u0027libs/PHPMailer/src/PHPMailer.php\u0027;"
+    },
+    {
+        "Filename":  "coach_details.php",
+        "LineNumber":  60,
+        "Line":  "            require \u0027libs/PHPMailer/src/SMTP.php\u0027;"
+    },
+    {
+        "Filename":  "coach_details.php",
+        "LineNumber":  195,
+        "Line":  "include \u0027includes/header.php\u0027;"
+    },
+    {
+        "Filename":  "coach_details.php",
+        "LineNumber":  330,
+        "Line":  "                        \u003cinput type=\"text\" name=\"user_phone\" required placeholder=\"090x xxx xxx\" pattern=\"[0-9]{10}\" title=\"\u003c?php echo __(\u0027phone_invalid\u0027); ?\u003e\""
+    },
+    {
+        "Filename":  "coach_details.php",
+        "LineNumber":  336,
+        "Line":  "                        \u003cinput type=\"text\" name=\"user_address\" required placeholder=\"\u003c?php echo __(\u0027address_placeholder\u0027); ?\u003e\" "
+    },
+    {
+        "Filename":  "coach_details.php",
+        "LineNumber":  342,
+        "Line":  "                        \u003cinput type=\"datetime-local\" name=\"booking_date\" required "
+    },
+    {
+        "Filename":  "coach_details.php",
+        "LineNumber":  389,
+        "Line":  "                            \u003cselect name=\"rating\" required style=\"width: 100%; padding: 1rem; background: #f1f5f9; border: 2px solid transparent; border-radius: 15px; color: var(--text-main); margin-bottom: 1.5rem; outline: none; font-size: 1rem;\"\u003e"
+    },
+    {
+        "Filename":  "coach_details.php",
+        "LineNumber":  399,
+        "Line":  "                            \u003ctextarea name=\"comment\" required placeholder=\"\u003c?php echo __(\u0027comment_placeholder\u0027); ?\u003e\" "
+    },
+    {
+        "Filename":  "coach_details.php",
+        "LineNumber":  411,
+        "Line":  "\u003c?php include \u0027includes/footer.php\u0027; ?\u003e"
+    },
+    {
+        "Filename":  "coach_notifications.php",
+        "LineNumber":  2,
+        "Line":  "include \u0027includes/header.php\u0027;"
+    },
+    {
+        "Filename":  "coach_notifications.php",
+        "LineNumber":  18,
+        "Line":  "    include \u0027includes/footer.php\u0027;"
+    },
+    {
+        "Filename":  "coach_notifications.php",
+        "LineNumber":  128,
+        "Line":  "\u003c?php include \u0027includes/footer.php\u0027; ?\u003e"
+    },
+    {
+        "Filename":  "contact_links.php",
+        "LineNumber":  5,
+        "Line":  "include \u0027includes/header.php\u0027;"
+    },
+    {
+        "Filename":  "contact_links.php",
+        "LineNumber":  116,
+        "Line":  "\u003c?php include \u0027includes/footer.php\u0027; ?\u003e"
+    },
+    {
+        "Filename":  "create_body_metrics.php",
+        "LineNumber":  2,
+        "Line":  "require_once \u0027config/db.php\u0027;"
+    },
+    {
+        "Filename":  "cron_reminders.php",
+        "LineNumber":  5,
+        "Line":  "require_once __DIR__ . \u0027/config/db.php\u0027;"
+    },
+    {
+        "Filename":  "cron_reminders.php",
+        "LineNumber":  6,
+        "Line":  "require_once __DIR__ . \u0027/libs/PHPMailer/src/Exception.php\u0027;"
+    },
+    {
+        "Filename":  "cron_reminders.php",
+        "LineNumber":  7,
+        "Line":  "require_once __DIR__ . \u0027/libs/PHPMailer/src/PHPMailer.php\u0027;"
+    },
+    {
+        "Filename":  "cron_reminders.php",
+        "LineNumber":  8,
+        "Line":  "require_once __DIR__ . \u0027/libs/PHPMailer/src/SMTP.php\u0027;"
+    },
+    {
+        "Filename":  "downgrade.php",
+        "LineNumber":  2,
+        "Line":  "require \u0027config/db.php\u0027;"
+    },
+    {
+        "Filename":  "equipment.php",
+        "LineNumber":  3,
+        "Line":  "require \u0027config/db.php\u0027;"
+    },
+    {
+        "Filename":  "equipment.php",
+        "LineNumber":  4,
+        "Line":  "require \u0027includes/header.php\u0027;"
+    },
+    {
+        "Filename":  "equipment.php",
+        "LineNumber":  81,
+        "Line":  "\u003c?php require \u0027includes/footer.php\u0027; ?\u003e"
+    },
+    {
+        "Filename":  "fix_categories.php",
+        "LineNumber":  2,
+        "Line":  "require \u0027config/db.php\u0027;"
+    },
+    {
+        "Filename":  "fix_images.php",
+        "LineNumber":  2,
+        "Line":  "require_once \u0027config/db.php\u0027;"
+    },
+    {
+        "Filename":  "fix_manager_notif.php",
+        "LineNumber":  2,
+        "Line":  "include_once __DIR__ . \u0027/config/db.php\u0027;"
+    },
+    {
+        "Filename":  "fix_order_items.php",
+        "LineNumber":  2,
+        "Line":  "require_once \u0027config/db.php\u0027;"
+    },
+    {
+        "Filename":  "fix_phone_column.php",
+        "LineNumber":  2,
+        "Line":  "include_once \u0027config/db.php\u0027;"
+    },
+    {
+        "Filename":  "fix_tables.php",
+        "LineNumber":  2,
+        "Line":  "require_once \u0027config/db.php\u0027;"
+    },
+    {
+        "Filename":  "fix_zalo_column.php",
+        "LineNumber":  2,
+        "Line":  "include_once \u0027config/db.php\u0027;"
+    },
+    {
+        "Filename":  "forgot_password.php",
+        "LineNumber":  2,
+        "Line":  "include \u0027includes/header.php\u0027;"
+    },
+    {
+        "Filename":  "forgot_password.php",
+        "LineNumber":  4,
+        "Line":  "require \u0027libs/PHPMailer/src/Exception.php\u0027;"
+    },
+    {
+        "Filename":  "forgot_password.php",
+        "LineNumber":  5,
+        "Line":  "require \u0027libs/PHPMailer/src/PHPMailer.php\u0027;"
+    },
+    {
+        "Filename":  "forgot_password.php",
+        "LineNumber":  6,
+        "Line":  "require \u0027libs/PHPMailer/src/SMTP.php\u0027;"
+    },
+    {
+        "Filename":  "forgot_password.php",
+        "LineNumber":  96,
+        "Line":  "                \u003cinput type=\"email\" name=\"email\" required placeholder=\"your-email@example.com\"\u003e"
+    },
+    {
+        "Filename":  "forgot_password.php",
+        "LineNumber":  107,
+        "Line":  "\u003c?php include \u0027includes/footer.php\u0027; ?\u003e"
+    },
+    {
+        "Filename":  "get_reviews.php",
+        "LineNumber":  2,
+        "Line":  "require \u0027config/db.php\u0027;"
+    },
+    {
+        "Filename":  "index.php",
+        "LineNumber":  1,
+        "Line":  "\u003c?php include \u0027includes/header.php\u0027; ?\u003e"
+    },
+    {
+        "Filename":  "index.php",
+        "LineNumber":  419,
+        "Line":  "\u003c?php include \u0027includes/footer.php\u0027; ?\u003e"
+    },
+    {
+        "Filename":  "index.php",
+        "LineNumber":  793,
+        "Line":  "                            \u003cinput type=\"text\" name=\"name\" required placeholder=\"\u003c?php echo __(\u0027promo_name\u0027); ?\u003e\" "
+    },
+    {
+        "Filename":  "index.php",
+        "LineNumber":  803,
+        "Line":  "                            \u003cinput type=\"text\" name=\"phone\" required placeholder=\"090x xxx xxx\" pattern=\"[0-9]{10}\""
+    },
+    {
+        "Filename":  "index.php",
+        "LineNumber":  814,
+        "Line":  "                        \u003cinput type=\"email\" name=\"email\" required placeholder=\"example@email.com\""
+    },
+    {
+        "Filename":  "index.php",
+        "LineNumber":  1363,
+        "Line":  "        if (pkg.specialty === \u0027Gym\u0027 \u0026\u0026 (spec.toLowerCase().includes(\u0027gym\u0027) || spec.toLowerCase().includes(\u0027fitness\u0027) || spec.toLowerCase().includes(\u0027trainer\u0027) || spec.toLowerCase().includes(\u0027pump\u0027))) {"
+    },
+    {
+        "Filename":  "index.php",
+        "LineNumber":  1365,
+        "Line":  "        } else if (pkg.specialty === \u0027Yoga\u0027 \u0026\u0026 spec.toLowerCase().includes(\u0027yoga\u0027)) {"
+    },
+    {
+        "Filename":  "index.php",
+        "LineNumber":  1367,
+        "Line":  "        } else if (pkg.specialty === \u0027Muay\u0027 \u0026\u0026 (spec.toLowerCase().includes(\u0027muay\u0027) || spec.toLowerCase().includes(\u0027kick\u0027) || spec.toLowerCase().includes(\u0027box\u0027) || spec.toLowerCase().includes(\u0027combat\u0027))) {"
+    },
+    {
+        "Filename":  "init_db.php",
+        "LineNumber":  2,
+        "Line":  "require_once \u0027config/db.php\u0027;"
+    },
+    {
+        "Filename":  "login.php",
+        "LineNumber":  5,
+        "Line":  "include_once \u0027includes/lang.php\u0027;"
+    },
+    {
+        "Filename":  "login.php",
+        "LineNumber":  6,
+        "Line":  "include_once \u0027config/db.php\u0027;"
+    },
+    {
+        "Filename":  "login.php",
+        "LineNumber":  30,
+        "Line":  "include \u0027includes/header.php\u0027;"
+    },
+    {
+        "Filename":  "login.php",
+        "LineNumber":  52,
+        "Line":  "            \u003cinput type=\"email\" name=\"email\" required placeholder=\"example@gmail.com\"\u003e"
+    },
+    {
+        "Filename":  "login.php",
+        "LineNumber":  56,
+        "Line":  "            \u003cinput type=\"password\" name=\"password\" required placeholder=\"••••••••\"\u003e"
+    },
+    {
+        "Filename":  "login.php",
+        "LineNumber":  67,
+        "Line":  "\u003c?php include \u0027includes/footer.php\u0027; ?\u003e"
+    },
+    {
+        "Filename":  "manager.php",
+        "LineNumber":  5,
+        "Line":  "include_once \u0027config/db.php\u0027;"
+    },
+    {
+        "Filename":  "manager.php",
+        "LineNumber":  12,
+        "Line":  "include \u0027includes/header.php\u0027;"
+    },
+    {
+        "Filename":  "manager.php",
+        "LineNumber":  265,
+        "Line":  "                require_once \u0027libs/PHPMailer/src/Exception.php\u0027;"
+    },
+    {
+        "Filename":  "manager.php",
+        "LineNumber":  266,
+        "Line":  "                require_once \u0027libs/PHPMailer/src/PHPMailer.php\u0027;"
+    },
+    {
+        "Filename":  "manager.php",
+        "LineNumber":  267,
+        "Line":  "                require_once \u0027libs/PHPMailer/src/SMTP.php\u0027;"
+    },
+    {
+        "Filename":  "manager.php",
+        "LineNumber":  334,
+        "Line":  "                require_once \u0027libs/PHPMailer/src/Exception.php\u0027;"
+    },
+    {
+        "Filename":  "manager.php",
+        "LineNumber":  335,
+        "Line":  "                require_once \u0027libs/PHPMailer/src/PHPMailer.php\u0027;"
+    },
+    {
+        "Filename":  "manager.php",
+        "LineNumber":  336,
+        "Line":  "                require_once \u0027libs/PHPMailer/src/SMTP.php\u0027;"
+    },
+    {
+        "Filename":  "manager.php",
+        "LineNumber":  416,
+        "Line":  "                    require_once \u0027libs/PHPMailer/src/Exception.php\u0027;"
+    },
+    {
+        "Filename":  "manager.php",
+        "LineNumber":  417,
+        "Line":  "                    require_once \u0027libs/PHPMailer/src/PHPMailer.php\u0027;"
+    },
+    {
+        "Filename":  "manager.php",
+        "LineNumber":  418,
+        "Line":  "                    require_once \u0027libs/PHPMailer/src/SMTP.php\u0027;"
+    },
+    {
+        "Filename":  "manager.php",
+        "LineNumber":  524,
+        "Line":  "                            \u003cinput type=\"text\" name=\"name\" value=\"\u003c?php echo htmlspecialchars($edit_prod[\u0027name\u0027]); ?\u003e\" required\u003e"
+    },
+    {
+        "Filename":  "manager.php",
+        "LineNumber":  528,
+        "Line":  "                            \u003cinput type=\"number\" step=\"0.01\" name=\"price\" value=\"\u003c?php echo $edit_prod[\u0027price\u0027]; ?\u003e\" required\u003e"
+    },
+    {
+        "Filename":  "manager.php",
+        "LineNumber":  532,
+        "Line":  "                            \u003cinput type=\"number\" name=\"stock\" value=\"\u003c?php echo $edit_prod[\u0027stock\u0027]; ?\u003e\" required\u003e"
+    },
+    {
+        "Filename":  "manager.php",
+        "LineNumber":  536,
+        "Line":  "                            \u003cselect name=\"category\" required style=\"padding: 1.1rem; border-radius: 15px; background: #f1f5f9; border: none; width: 100%; outline: none; font-weight: 600;\"\u003e"
+    },
+    {
+        "Filename":  "manager.php",
+        "LineNumber":  557,
+        "Line":  "                        \u003ctextarea name=\"description\" required style=\"width: 100%; padding: 1.1rem; border-radius: 15px; background: #f1f5f9; border: none; outline: none; min-height: 100px;\"\u003e\u003c?php echo htmlspecialchars($edit_prod[\u0027description\u0027]); ?\u003e\u003c/textarea\u003e"
+    },
+    {
+        "Filename":  "manager.php",
+        "LineNumber":  570,
+        "Line":  "                            \u003cinput type=\"text\" name=\"name\" required placeholder=\"e.g. Whey Protein\"\u003e"
+    },
+    {
+        "Filename":  "manager.php",
+        "LineNumber":  574,
+        "Line":  "                            \u003cinput type=\"number\" step=\"0.01\" name=\"price\" required placeholder=\"0.00\"\u003e"
+    },
+    {
+        "Filename":  "manager.php",
+        "LineNumber":  578,
+        "Line":  "                            \u003cinput type=\"number\" name=\"stock\" required placeholder=\"10\"\u003e"
+    },
+    {
+        "Filename":  "manager.php",
+        "LineNumber":  582,
+        "Line":  "                            \u003cselect name=\"category\" required style=\"padding: 1.1rem; border-radius: 15px; background: #f1f5f9; border: none; width: 100%; outline: none; font-weight: 600;\"\u003e"
+    },
+    {
+        "Filename":  "manager.php",
+        "LineNumber":  594,
+        "Line":  "                        \u003cinput type=\"file\" name=\"image\" accept=\"image/*\" required style=\"padding: 0.8rem; background: #f1f5f9; border-radius: 10px; width: 100%;\"\u003e"
+    },
+    {
+        "Filename":  "manager.php",
+        "LineNumber":  655,
+        "Line":  "                            \u003cinput type=\"text\" name=\"name\" value=\"\u003c?php echo $edit_coach[\u0027name\u0027]; ?\u003e\" required style=\"background: #f1f5f9;\"\u003e"
+    },
+    {
+        "Filename":  "manager.php",
+        "LineNumber":  659,
+        "Line":  "                            \u003cselect name=\"specialty\" required style=\"padding: 1.1rem; border-radius: 15px; background: #f1f5f9; border: none; width: 100%; outline: none; font-weight: 600;\"\u003e"
+    },
+    {
+        "Filename":  "manager.php",
+        "LineNumber":  667,
+        "Line":  "                            \u003cinput type=\"number\" step=\"0.01\" name=\"rate\" value=\"\u003c?php echo $edit_coach[\u0027hourly_rate\u0027]; ?\u003e\" required style=\"background: #f1f5f9;\"\u003e"
+    },
+    {
+        "Filename":  "manager.php",
+        "LineNumber":  704,
+        "Line":  "                            \u003cinput type=\"text\" name=\"name\" required placeholder=\"e.g. John Doe\" style=\"background: #f1f5f9;\"\u003e"
+    },
+    {
+        "Filename":  "manager.php",
+        "LineNumber":  708,
+        "Line":  "                            \u003cinput type=\"email\" name=\"email\" required placeholder=\"john@gymx.com\" style=\"background: #f1f5f9;\"\u003e"
+    },
+    {
+        "Filename":  "manager.php",
+        "LineNumber":  714,
+        "Line":  "                            \u003cselect name=\"specialty\" required style=\"padding: 1.1rem; border-radius: 15px; background: #f1f5f9; border: none; width: 100%; outline: none; font-weight: 600;\"\u003e"
+    },
+    {
+        "Filename":  "manager.php",
+        "LineNumber":  722,
+        "Line":  "                            \u003cinput type=\"number\" step=\"0.01\" name=\"rate\" required placeholder=\"25.00\" style=\"background: #f1f5f9;\"\u003e"
+    },
+    {
+        "Filename":  "manager.php",
+        "LineNumber":  799,
+        "Line":  "                    if (nameLower.includes(\u0027gym\u0027)) {"
+    },
+    {
+        "Filename":  "manager.php",
+        "LineNumber":  801,
+        "Line":  "                    } else if (nameLower.includes(\u0027muay\u0027)) {"
+    },
+    {
+        "Filename":  "manager.php",
+        "LineNumber":  803,
+        "Line":  "                    } else if (nameLower.includes(\u0027yoga\u0027)) {"
+    },
+    {
+        "Filename":  "manager.php",
+        "LineNumber":  827,
+        "Line":  "                    if (savedRoomName.toLowerCase().includes(\u0027gym\u0027)) cleanName = \u0027Gym\u0027;"
+    },
+    {
+        "Filename":  "manager.php",
+        "LineNumber":  828,
+        "Line":  "                    else if (savedRoomName.toLowerCase().includes(\u0027muay\u0027)) cleanName = \u0027Muay\u0027;"
+    },
+    {
+        "Filename":  "manager.php",
+        "LineNumber":  829,
+        "Line":  "                    else if (savedRoomName.toLowerCase().includes(\u0027yoga\u0027)) cleanName = \u0027Yoga\u0027;"
+    },
+    {
+        "Filename":  "manager.php",
+        "LineNumber":  860,
+        "Line":  "                            \u003cinput type=\"text\" name=\"name\" required placeholder=\"User Name\" style=\"background: #f1f5f9;\"\u003e"
+    },
+    {
+        "Filename":  "manager.php",
+        "LineNumber":  864,
+        "Line":  "                            \u003cinput type=\"email\" name=\"email\" required placeholder=\"email@example.com\" style=\"background: #f1f5f9;\"\u003e"
+    },
+    {
+        "Filename":  "manager.php",
+        "LineNumber":  868,
+        "Line":  "                            \u003cinput type=\"password\" name=\"password\" required placeholder=\"******\" style=\"background: #f1f5f9;\"\u003e"
+    },
+    {
+        "Filename":  "manager.php",
+        "LineNumber":  889,
+        "Line":  "                                \u003cinput type=\"text\" name=\"name\" value=\"\u003c?php echo htmlspecialchars($edit_u[\u0027name\u0027]); ?\u003e\" required\u003e"
+    },
+    {
+        "Filename":  "manager.php",
+        "LineNumber":  893,
+        "Line":  "                                \u003cinput type=\"email\" name=\"email\" value=\"\u003c?php echo htmlspecialchars($edit_u[\u0027email\u0027]); ?\u003e\" required\u003e"
+    },
+    {
+        "Filename":  "manager.php",
+        "LineNumber":  1060,
+        "Line":  "                            \u003cselect name=\"user_id\" required style=\"padding: 1.1rem; border-radius: 15px; background: #f1f5f9; border: none; width: 100%; outline: none; font-weight: 600;\"\u003e"
+    },
+    {
+        "Filename":  "manager.php",
+        "LineNumber":  1068,
+        "Line":  "                            \u003cselect name=\"coach_id\" required style=\"padding: 1.1rem; border-radius: 15px; background: #f1f5f9; border: none; width: 100%; outline: none; font-weight: 600;\"\u003e"
+    },
+    {
+        "Filename":  "manager.php",
+        "LineNumber":  1076,
+        "Line":  "                            \u003cinput type=\"datetime-local\" name=\"booking_date\" value=\"\u003c?php echo date(\u0027Y-m-d\\TH:i\u0027, strtotime($edit_booking[\u0027booking_date\u0027])); ?\u003e\" required style=\"background: #f1f5f9; padding: 1.1rem; border-radius: 15px; border: none; width: 100%; outline: none; font-weight: 600;\"\u003e"
+    },
+    {
+        "Filename":  "manager.php",
+        "LineNumber":  1082,
+        "Line":  "                            \u003cselect name=\"status\" required style=\"padding: 1.1rem; border-radius: 15px; background: #f1f5f9; border: none; width: 100%; outline: none; font-weight: 600;\"\u003e"
+    },
+    {
+        "Filename":  "manager.php",
+        "LineNumber":  1107,
+        "Line":  "                            \u003cselect name=\"user_id\" required style=\"padding: 1.1rem; border-radius: 15px; background: #f1f5f9; border: none; width: 100%; outline: none; font-weight: 600;\"\u003e"
+    },
+    {
+        "Filename":  "manager.php",
+        "LineNumber":  1116,
+        "Line":  "                            \u003cselect name=\"coach_id\" required style=\"padding: 1.1rem; border-radius: 15px; background: #f1f5f9; border: none; width: 100%; outline: none; font-weight: 600;\"\u003e"
+    },
+    {
+        "Filename":  "manager.php",
+        "LineNumber":  1125,
+        "Line":  "                            \u003cinput type=\"datetime-local\" name=\"booking_date\" required style=\"background: #f1f5f9; padding: 1.1rem; border-radius: 15px; border: none; width: 100%; outline: none; font-weight: 600;\"\u003e"
+    },
+    {
+        "Filename":  "manager.php",
+        "LineNumber":  1532,
+        "Line":  "\u003c?php include \u0027includes/footer.php\u0027; ?\u003e"
+    },
+    {
+        "Filename":  "mock_fanpage.php",
+        "LineNumber":  5,
+        "Line":  "include_once __DIR__ . \u0027/includes/lang.php\u0027;"
+    },
+    {
+        "Filename":  "news.php",
+        "LineNumber":  5,
+        "Line":  "include \u0027includes/header.php\u0027;"
+    },
+    {
+        "Filename":  "news.php",
+        "LineNumber":  54,
+        "Line":  "\u003c?php include \u0027includes/footer.php\u0027; ?\u003e"
+    },
+    {
+        "Filename":  "privacy.php",
+        "LineNumber":  5,
+        "Line":  "include \u0027includes/header.php\u0027;"
+    },
+    {
+        "Filename":  "privacy.php",
+        "LineNumber":  42,
+        "Line":  "\u003c?php include \u0027includes/footer.php\u0027; ?\u003e"
+    },
+    {
+        "Filename":  "process_booking.php",
+        "LineNumber":  5,
+        "Line":  "include_once __DIR__ . \u0027/config/db.php\u0027;"
+    },
+    {
+        "Filename":  "process_booking.php",
+        "LineNumber":  42,
+        "Line":  "            require_once \u0027libs/PHPMailer/src/Exception.php\u0027;"
+    },
+    {
+        "Filename":  "process_booking.php",
+        "LineNumber":  43,
+        "Line":  "            require_once \u0027libs/PHPMailer/src/PHPMailer.php\u0027;"
+    },
+    {
+        "Filename":  "process_booking.php",
+        "LineNumber":  44,
+        "Line":  "            require_once \u0027libs/PHPMailer/src/SMTP.php\u0027;"
+    },
+    {
+        "Filename":  "profile.php",
+        "LineNumber":  5,
+        "Line":  "include_once \u0027config/db.php\u0027;"
+    },
+    {
+        "Filename":  "profile.php",
+        "LineNumber":  12,
+        "Line":  "include \u0027includes/header.php\u0027;"
+    },
+    {
+        "Filename":  "profile.php",
+        "LineNumber":  144,
+        "Line":  "                require_once \u0027libs/PHPMailer/src/Exception.php\u0027;"
+    },
+    {
+        "Filename":  "profile.php",
+        "LineNumber":  145,
+        "Line":  "                require_once \u0027libs/PHPMailer/src/PHPMailer.php\u0027;"
+    },
+    {
+        "Filename":  "profile.php",
+        "LineNumber":  146,
+        "Line":  "                require_once \u0027libs/PHPMailer/src/SMTP.php\u0027;"
+    },
+    {
+        "Filename":  "profile.php",
+        "LineNumber":  179,
+        "Line":  "                $body .= \"\u003cstrong\u003eCurrent Status:\u003c/strong\u003e PENDING (Requires Approval)\";"
+    },
+    {
+        "Filename":  "profile.php",
+        "LineNumber":  324,
+        "Line":  "                    \u003cinput type=\"text\" name=\"name\" value=\"\u003c?php echo $user[\u0027name\u0027]; ?\u003e\" required\u003e"
+    },
+    {
+        "Filename":  "profile.php",
+        "LineNumber":  359,
+        "Line":  "                \u003cinput type=\"password\" name=\"current_password\" required placeholder=\"••••••••\" style=\"background: #f1f5f9;\"\u003e"
+    },
+    {
+        "Filename":  "profile.php",
+        "LineNumber":  363,
+        "Line":  "                \u003cinput type=\"password\" name=\"new_password\" required placeholder=\"••••••••\" style=\"background: #f1f5f9;\"\u003e"
+    },
+    {
+        "Filename":  "profile.php",
+        "LineNumber":  367,
+        "Line":  "                \u003cinput type=\"password\" name=\"confirm_password\" required placeholder=\"••••••••\" style=\"background: #f1f5f9;\"\u003e"
+    },
+    {
+        "Filename":  "profile.php",
+        "LineNumber":  425,
+        "Line":  "                        \u003cinput type=\"date\" name=\"recorded_date\" value=\"\u003c?php echo date(\u0027Y-m-d\u0027); ?\u003e\" required style=\"background: #f8fafc; border: 1px solid #e2e8f0; width: 100%; border-radius: 12px; padding: 12px;\"\u003e"
+    },
+    {
+        "Filename":  "profile.php",
+        "LineNumber":  435,
+        "Line":  "                        \u003cinput type=\"number\" step=\"0.1\" name=\"weight\" placeholder=\"70\" required style=\"background: #f8fafc; border: 1px solid #e2e8f0; width: 100%; border-radius: 12px; padding: 12px;\"\u003e"
+    },
+    {
+        "Filename":  "profile.php",
+        "LineNumber":  493,
+        "Line":  "                                            \u003cinput type=\"datetime-local\" name=\"new_date\" value=\"\u003c?php echo date(\u0027Y-m-d\\TH:i\u0027, strtotime($booking[\u0027booking_date\u0027])); ?\u003e\" required "
+    },
+    {
+        "Filename":  "profile.php",
+        "LineNumber":  528,
+        "Line":  "                                \u003cselect name=\"rating\" required style=\"background: white; border: 1px solid #e2e8f0; padding: 8px; border-radius: 10px; font-size: 0.85rem; outline: none; font-weight: 600; color: var(--text-main);\"\u003e"
+    },
+    {
+        "Filename":  "profile.php",
+        "LineNumber":  535,
+        "Line":  "                                \u003cinput type=\"text\" name=\"comment\" placeholder=\"\u003c?php echo __(\u0027rate_session_placeholder\u0027); ?\u003e\" required style=\"flex-grow: 1; background: white; border: 1px solid #e2e8f0; padding: 8px 15px; border-radius: 10px; font-size: 0.85rem; outline: none;\"\u003e"
+    },
+    {
+        "Filename":  "profile.php",
+        "LineNumber":  602,
+        "Line":  "                                            \u003cselect name=\"rating\" required style=\"background: #f1f5f9; color: var(--text-main); border: 2px solid transparent; padding: 8px; border-radius: 10px; font-size: 0.85rem; outline: none;\"\u003e"
+    },
+    {
+        "Filename":  "profile.php",
+        "LineNumber":  609,
+        "Line":  "                                            \u003cinput type=\"text\" name=\"comment\" placeholder=\"\u003c?php echo __(\u0027short_review_placeholder\u0027); ?\u003e\" required style=\"flex-grow: 1; background: #f1f5f9; color: var(--text-main); border: 2px solid transparent; padding: 8px 15px; border-radius: 10px; font-size: 0.85rem; outline: none;\"\u003e"
+    },
+    {
+        "Filename":  "profile.php",
+        "LineNumber":  716,
+        "Line":  "\u003c?php include \u0027includes/footer.php\u0027; ?\u003e"
+    },
+    {
+        "Filename":  "register.php",
+        "LineNumber":  5,
+        "Line":  "include_once \u0027includes/lang.php\u0027;"
+    },
+    {
+        "Filename":  "register.php",
+        "LineNumber":  6,
+        "Line":  "include_once \u0027config/db.php\u0027;"
+    },
+    {
+        "Filename":  "register.php",
+        "LineNumber":  29,
+        "Line":  "            require_once \u0027libs/PHPMailer/src/Exception.php\u0027;"
+    },
+    {
+        "Filename":  "register.php",
+        "LineNumber":  30,
+        "Line":  "            require_once \u0027libs/PHPMailer/src/PHPMailer.php\u0027;"
+    },
+    {
+        "Filename":  "register.php",
+        "LineNumber":  31,
+        "Line":  "            require_once \u0027libs/PHPMailer/src/SMTP.php\u0027;"
+    },
+    {
+        "Filename":  "register.php",
+        "LineNumber":  79,
+        "Line":  "include \u0027includes/header.php\u0027;"
+    },
+    {
+        "Filename":  "register.php",
+        "LineNumber":  99,
+        "Line":  "            \u003cinput type=\"text\" name=\"name\" required placeholder=\"\u003c?php echo __(\u0027promo_name\u0027); ?\u003e\"\u003e"
+    },
+    {
+        "Filename":  "register.php",
+        "LineNumber":  103,
+        "Line":  "            \u003cinput type=\"text\" name=\"phone\" required placeholder=\"\u003c?php echo __(\u0027phone_number\u0027); ?\u003e (e.g. 0912345678)\" pattern=\"[0-9]+\" title=\"\u003c?php echo __(\u0027phone_invalid\u0027); ?\u003e\"\u003e"
+    },
+    {
+        "Filename":  "register.php",
+        "LineNumber":  107,
+        "Line":  "            \u003cinput type=\"email\" name=\"email\" required placeholder=\"example@gmail.com\"\u003e"
+    },
+    {
+        "Filename":  "register.php",
+        "LineNumber":  111,
+        "Line":  "            \u003cinput type=\"password\" name=\"password\" required placeholder=\"••••••••\"\u003e"
+    },
+    {
+        "Filename":  "register.php",
+        "LineNumber":  114,
+        "Line":  "            \u003cinput type=\"checkbox\" name=\"agreement\" required id=\"user_agreement\" style=\"width: 18px; height: 18px; cursor: pointer;\"\u003e"
+    },
+    {
+        "Filename":  "register.php",
+        "LineNumber":  127,
+        "Line":  "\u003c?php include \u0027includes/footer.php\u0027; ?\u003e"
+    },
+    {
+        "Filename":  "register_service.php",
+        "LineNumber":  6,
+        "Line":  "require_once \u0027config/db.php\u0027;"
+    },
+    {
+        "Filename":  "register_service.php",
+        "LineNumber":  12,
+        "Line":  "        $translations = include $lang_file;"
+    },
+    {
+        "Filename":  "reset_password.php",
+        "LineNumber":  2,
+        "Line":  "include \u0027includes/header.php\u0027;"
+    },
+    {
+        "Filename":  "reset_password.php",
+        "LineNumber":  79,
+        "Line":  "            \u003cinput type=\"password\" name=\"password\" required placeholder=\"••••••••\" minlength=\"6\"\u003e"
+    },
+    {
+        "Filename":  "reset_password.php",
+        "LineNumber":  83,
+        "Line":  "            \u003cinput type=\"password\" name=\"confirm_password\" required placeholder=\"••••••••\" minlength=\"6\"\u003e"
+    },
+    {
+        "Filename":  "reset_password.php",
+        "LineNumber":  94,
+        "Line":  "\u003c?php include \u0027includes/footer.php\u0027; ?\u003e"
+    },
+    {
+        "Filename":  "setup_variant.php",
+        "LineNumber":  2,
+        "Line":  "include \u0027config/db.php\u0027;"
+    },
+    {
+        "Filename":  "shop.php",
+        "LineNumber":  5,
+        "Line":  "include_once \u0027config/db.php\u0027;"
+    },
+    {
+        "Filename":  "shop.php",
+        "LineNumber":  34,
+        "Line":  "include \u0027includes/header.php\u0027;"
+    },
+    {
+        "Filename":  "shop.php",
+        "LineNumber":  278,
+        "Line":  "\u003c?php include \u0027includes/footer.php\u0027; ?\u003e"
+    },
+    {
+        "Filename":  "support.php",
+        "LineNumber":  1,
+        "Line":  "\u003c?php include \u0027includes/header.php\u0027; ?\u003e"
+    },
+    {
+        "Filename":  "support.php",
+        "LineNumber":  56,
+        "Line":  "                    \u003cinput type=\"text\" placeholder=\"What is this regarding?\" required\u003e"
+    },
+    {
+        "Filename":  "support.php",
+        "LineNumber":  77,
+        "Line":  "\u003c?php include \u0027includes/footer.php\u0027; ?\u003e"
+    },
+    {
+        "Filename":  "terms.php",
+        "LineNumber":  5,
+        "Line":  "include \u0027includes/header.php\u0027;"
+    },
+    {
+        "Filename":  "terms.php",
+        "LineNumber":  22,
+        "Line":  "            \u003cli style=\"margin-bottom: 0.5rem;\"\u003eProper athletic attire and footwear are required at all times within the facility.\u003c/li\u003e"
+    },
+    {
+        "Filename":  "terms.php",
+        "LineNumber":  41,
+        "Line":  "\u003c?php include \u0027includes/footer.php\u0027; ?\u003e"
+    },
+    {
+        "Filename":  "test_checkout.php",
+        "LineNumber":  2,
+        "Line":  "require \u0027config/db.php\u0027;"
+    },
+    {
+        "Filename":  "test_checkout.php",
+        "LineNumber":  3,
+        "Line":  "require \u0027libs/PHPMailer/src/Exception.php\u0027;"
+    },
+    {
+        "Filename":  "test_checkout.php",
+        "LineNumber":  4,
+        "Line":  "require \u0027libs/PHPMailer/src/PHPMailer.php\u0027;"
+    },
+    {
+        "Filename":  "test_checkout.php",
+        "LineNumber":  5,
+        "Line":  "require \u0027libs/PHPMailer/src/SMTP.php\u0027;"
+    },
+    {
+        "Filename":  "test_error.php",
+        "LineNumber":  10,
+        "Line":  "include \u0027includes/header.php\u0027;"
+    },
+    {
+        "Filename":  "test_mail.php",
+        "LineNumber":  2,
+        "Line":  "require \u0027config/db.php\u0027;"
+    },
+    {
+        "Filename":  "test_mail.php",
+        "LineNumber":  3,
+        "Line":  "require \u0027libs/PHPMailer/src/Exception.php\u0027;"
+    },
+    {
+        "Filename":  "test_mail.php",
+        "LineNumber":  4,
+        "Line":  "require \u0027libs/PHPMailer/src/PHPMailer.php\u0027;"
+    },
+    {
+        "Filename":  "test_mail.php",
+        "LineNumber":  5,
+        "Line":  "require \u0027libs/PHPMailer/src/SMTP.php\u0027;"
+    },
+    {
+        "Filename":  "test_mail2.php",
+        "LineNumber":  2,
+        "Line":  "require \u0027config/db.php\u0027;"
+    },
+    {
+        "Filename":  "test_mail2.php",
+        "LineNumber":  3,
+        "Line":  "require \u0027libs/PHPMailer/src/Exception.php\u0027;"
+    },
+    {
+        "Filename":  "test_mail2.php",
+        "LineNumber":  4,
+        "Line":  "require \u0027libs/PHPMailer/src/PHPMailer.php\u0027;"
+    },
+    {
+        "Filename":  "test_mail2.php",
+        "LineNumber":  5,
+        "Line":  "require \u0027libs/PHPMailer/src/SMTP.php\u0027;"
+    },
+    {
+        "Filename":  "test_mail3.php",
+        "LineNumber":  2,
+        "Line":  "require \u0027config/db.php\u0027;"
+    },
+    {
+        "Filename":  "test_mail3.php",
+        "LineNumber":  3,
+        "Line":  "require \u0027libs/PHPMailer/src/Exception.php\u0027;"
+    },
+    {
+        "Filename":  "test_mail3.php",
+        "LineNumber":  4,
+        "Line":  "require \u0027libs/PHPMailer/src/PHPMailer.php\u0027;"
+    },
+    {
+        "Filename":  "test_mail3.php",
+        "LineNumber":  5,
+        "Line":  "require \u0027libs/PHPMailer/src/SMTP.php\u0027;"
+    },
+    {
+        "Filename":  "test_schema.php",
+        "LineNumber":  2,
+        "Line":  "require_once \u0027config/db.php\u0027;"
+    },
+    {
+        "Filename":  "test_shop.php",
+        "LineNumber":  7,
+        "Line":  "include \u0027shop.php\u0027;"
+    },
+    {
+        "Filename":  "translate_mockup.php",
+        "LineNumber":  28,
+        "Line":  "// Add the include lang.php at the top"
+    },
+    {
+        "Filename":  "translate_mockup.php",
+        "LineNumber":  29,
+        "Line":  "if (strpos($content, \u0027includes/lang.php\u0027) === false) {"
+    },
+    {
+        "Filename":  "translate_mockup.php",
+        "LineNumber":  32,
+        "Line":  "        \"    session_start();\\n}\\ninclude_once __DIR__ . \u0027/includes/lang.php\u0027;\","
+    },
+    {
+        "Filename":  "update_db_v2.php",
+        "LineNumber":  2,
+        "Line":  "require_once \u0027config/db.php\u0027;"
+    },
+    {
+        "Filename":  "update_db_v3.php",
+        "LineNumber":  2,
+        "Line":  "require_once \u0027config/db.php\u0027;"
+    },
+    {
+        "Filename":  "update_db_v4.php",
+        "LineNumber":  2,
+        "Line":  "require_once \u0027config/db.php\u0027;"
+    },
+    {
+        "Filename":  "update_db_v5.php",
+        "LineNumber":  2,
+        "Line":  "require_once \u0027config/db.php\u0027;"
+    },
+    {
+        "Filename":  "update_db_v6.php",
+        "LineNumber":  2,
+        "Line":  "require_once \u0027config/db.php\u0027;"
+    },
+    {
+        "Filename":  "update_manager_email.php",
+        "LineNumber":  2,
+        "Line":  "require \u0027config/db.php\u0027;"
+    },
+    {
+        "Filename":  "update_roles.php",
+        "LineNumber":  2,
+        "Line":  "require_once \u0027config/db.php\u0027;"
+    },
+    {
+        "Filename":  "update_roles.php",
+        "LineNumber":  10,
+        "Line":  "    // Update the ENUM to include \u0027manager\u0027"
+    },
+    {
+        "Filename":  "update_variants.php",
+        "LineNumber":  2,
+        "Line":  "include \u0027config/db.php\u0027;"
+    }
+]
