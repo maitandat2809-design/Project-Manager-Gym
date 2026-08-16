@@ -94,6 +94,7 @@ $lang = [
     // Coaches page
     'our_coaches' => 'Our Professional Coaches',
     'all_coaches' => 'All Coaches',
+    'back_to_coaches' => 'Back to Coaches',
     'coaches_subtitle' => 'Pick the perfect partner to achieve your fitness goals.',
     'search_coach' => 'Search coach by name...',
     'no_coaches_found' => 'No coaches found matching your criteria.',

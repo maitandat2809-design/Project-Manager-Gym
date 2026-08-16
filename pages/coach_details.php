@@ -222,6 +222,9 @@ if (isset($_SESSION['user_id'])) {
                                style="width: 100%; padding: 1.1rem; background: #f1f5f9; border: 2px solid transparent; border-radius: 15px; color: var(--text-main); margin-bottom: 1.5rem; outline: none; font-size: 1rem;">
                     </div>
                     <button type="submit" name="book_now" class="cta-btn" style="width: 100%; border: none; cursor: pointer;"><?php echo __('send_booking_request'); ?></button>
+                    <a href="/Gym Manager/pages/coaches.php" style="display: flex; align-items: center; justify-content: center; gap: 8px; width: 100%; margin-top: 1rem; padding: 0.95rem 1.5rem; background: #f8fafc; color: #334155; border: 1.5px solid #cbd5e1; border-radius: 12px; font-weight: 700; font-size: 0.95rem; text-decoration: none; transition: all 0.3s ease; box-shadow: 0 2px 6px rgba(0,0,0,0.03);" onmouseover="this.style.background='#e2e8f0'; this.style.borderColor='var(--primary)';" onmouseout="this.style.background='#f8fafc'; this.style.borderColor='#cbd5e1';">
+                        <i class="fas fa-arrow-left"></i> <?php echo __('back_to_coaches'); ?>
+                    </a>
                 </form>
             </div>
             <?php endif; ?>

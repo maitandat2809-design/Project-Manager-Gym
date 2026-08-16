@@ -94,6 +94,7 @@ $lang = [
     // Trang Huấn luyện viên
     'our_coaches' => 'Huấn Luyện Viên Của Chúng Tôi',
     'all_coaches' => 'Tất Cả Huấn Luyện Viên',
+    'back_to_coaches' => 'Quay Lại Danh Sách HLV',
     'coaches_subtitle' => 'Chọn người đồng hành hoàn hảo để đạt được mục tiêu thể hình của bạn.',
     'search_coach' => 'Tìm kiếm HLV theo tên...',
     'no_coaches_found' => 'Không tìm thấy HLV phù hợp với tiêu chí của bạn.',
