@@ -20,42 +20,53 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['update_profile'])) {
     $name = $_POST['name'];
     $nickname = $_POST['nickname'];
     $age = $_POST['age'];
-    $phone = $_POST['phone'] ?? null;
+    $phone = trim($_POST['phone'] ?? '');
     $address = $_POST['address'] ?? null;
     $avatar_path = null;
 
-    // Handle Upload
-    if (isset($_FILES['avatar']) && $_FILES['avatar']['error'] == 0) {
-        $upload_dir = 'assets/img/avatars/';
-        if (!is_dir($upload_dir)) mkdir($upload_dir, 0777, true);
-        
-        $file_ext = pathinfo($_FILES['avatar']['name'], PATHINFO_EXTENSION);
-        $file_name = "user_" . $user_id . "_" . time() . "." . $file_ext;
-        $target_file = $upload_dir . $file_name;
-
-        if (move_uploaded_file($_FILES['avatar']['tmp_name'], $target_file)) {
-            $avatar_path = $target_file;
+    if (!empty($phone)) {
+        $clean_phone = preg_replace('/[^0-9]/', '', $phone);
+        $check_phone = $pdo->prepare("SELECT id FROM users WHERE (phone = ? OR phone = ?) AND id != ? AND phone IS NOT NULL AND phone != ''");
+        $check_phone->execute([$phone, $clean_phone, $user_id]);
+        if ($check_phone->fetch()) {
+            $error = __('phone_exists_error');
         }
     }
 
-    try {
-        if ($avatar_path) {
-            $stmt = $pdo->prepare("UPDATE users SET name = ?, nickname = ?, age = ?, phone = ?, address = ?, avatar = ? WHERE id = ?");
-            $stmt->execute([$name, $nickname, $age, $phone, $address, $avatar_path, $user_id]);
+    if (empty($error)) {
+        // Handle Upload
+        if (isset($_FILES['avatar']) && $_FILES['avatar']['error'] == 0) {
+            $upload_dir = 'assets/img/avatars/';
+            if (!is_dir($upload_dir)) mkdir($upload_dir, 0777, true);
             
-            // If user is a coach, also update the coach profile image
-            if ($_SESSION['role'] === 'coach') {
-                $stmt_c = $pdo->prepare("UPDATE coaches SET image = ? WHERE user_id = ?");
-                $stmt_c->execute([$avatar_path, $user_id]);
+            $file_ext = pathinfo($_FILES['avatar']['name'], PATHINFO_EXTENSION);
+            $file_name = "user_" . $user_id . "_" . time() . "." . $file_ext;
+            $target_file = $upload_dir . $file_name;
+
+            if (move_uploaded_file($_FILES['avatar']['tmp_name'], $target_file)) {
+                $avatar_path = $target_file;
             }
-        } else {
-            $stmt = $pdo->prepare("UPDATE users SET name = ?, nickname = ?, age = ?, phone = ?, address = ? WHERE id = ?");
-            $stmt->execute([$name, $nickname, $age, $phone, $address, $user_id]);
         }
-        $_SESSION['user_name'] = $name;
-        $message = __('profile_updated_success');
-    } catch (Exception $e) {
-        $error = "Error: " . $e->getMessage();
+
+        try {
+            if ($avatar_path) {
+                $stmt = $pdo->prepare("UPDATE users SET name = ?, nickname = ?, age = ?, phone = ?, address = ?, avatar = ? WHERE id = ?");
+                $stmt->execute([$name, $nickname, $age, $phone, $address, $avatar_path, $user_id]);
+                
+                // If user is a coach, also update the coach profile image
+                if ($_SESSION['role'] === 'coach') {
+                    $stmt_c = $pdo->prepare("UPDATE coaches SET image = ? WHERE user_id = ?");
+                    $stmt_c->execute([$avatar_path, $user_id]);
+                }
+            } else {
+                $stmt = $pdo->prepare("UPDATE users SET name = ?, nickname = ?, age = ?, phone = ?, address = ? WHERE id = ?");
+                $stmt->execute([$name, $nickname, $age, $phone, $address, $user_id]);
+            }
+            $_SESSION['user_name'] = $name;
+            $message = __('profile_updated_success');
+        } catch (Exception $e) {
+            $error = "Error: " . $e->getMessage();
+        }
     }
 }
 
@@ -192,6 +203,38 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['update_booking'])) {
     }
 }
 
+// Handle Booking Cancellation by User
+if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['user_cancel_booking'])) {
+    $booking_id = (int)$_POST['booking_id'];
+    $reason = trim($_POST['cancel_reason'] ?? '');
+    
+    try {
+        $stmt_check = $pdo->prepare("SELECT id, status, booking_date, class_name, user_id FROM bookings WHERE id = ?");
+        $stmt_check->execute([$booking_id]);
+        $b_check = $stmt_check->fetch();
+        
+        if ($b_check && $b_check['status'] !== 'cancelled') {
+            if ($b_check['user_id'] != $user_id && !in_array($_SESSION['role'] ?? '', ['coach', 'manager', 'admin'])) {
+                $error = "Unauthorized action.";
+            } elseif (!empty($b_check['class_name'])) {
+                $error = __('cannot_cancel_coach_class');
+            } elseif (strtotime($b_check['booking_date']) <= time()) {
+                $error = __('cannot_cancel_past_session');
+            } else {
+                $stmt_up = $pdo->prepare("UPDATE bookings SET status = 'cancelled', coach_seen = 0, user_seen = 1 WHERE id = ?");
+                $stmt_up->execute([$booking_id]);
+
+                require_once __DIR__ . '/../includes/booking_mailer.php';
+                sendBookingCancellationEmail($pdo, $booking_id, $reason);
+
+                $message = __('session_cancelled_success');
+            }
+        }
+    } catch (Exception $e) {
+        $error = "Cancellation error: " . $e->getMessage();
+    }
+}
+
 // Handle Product Review
 if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['submit_product_review'])) {
     $product_id = $_POST['product_id'];
@@ -218,6 +261,94 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['submit_coach_review'])
     }
 }
 
+// Handle Order Confirmation by Customer
+if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['action_confirm_order'])) {
+    $order_id = intval($_POST['order_id'] ?? 0);
+    $stmt_o = $pdo->prepare("SELECT * FROM orders WHERE id = ? AND user_id = ? AND status = 'pending'");
+    $stmt_o->execute([$order_id, $user_id]);
+    $order = $stmt_o->fetch();
+    
+    if ($order) {
+        $stmt_upd = $pdo->prepare("UPDATE orders SET status = 'completed' WHERE id = ?");
+        $stmt_upd->execute([$order_id]);
+        $message = __('order_confirmed_msg');
+        
+        // Notify managers via email
+        try {
+            require_once __DIR__ . '/../libs/PHPMailer/src/Exception.php';
+            require_once __DIR__ . '/../libs/PHPMailer/src/PHPMailer.php';
+            require_once __DIR__ . '/../libs/PHPMailer/src/SMTP.php';
+            
+            $stmt_mgrs = $pdo->query("SELECT email, name FROM users WHERE role = 'manager'");
+            $managers = $stmt_mgrs->fetchAll();
+            
+            if (!empty($managers)) {
+                $mail = new PHPMailer\PHPMailer\PHPMailer(true);
+                $mail->CharSet = 'UTF-8';
+                $mail->isSMTP();
+                $mail->Host       = 'smtp.gmail.com';
+                $mail->SMTPAuth   = true;
+                $mail->Username   = 'lamtuoi155@gmail.com';     
+                $mail->Password   = 'hpst uazz wdsq sbnf';   
+                $mail->SMTPSecure = PHPMailer\PHPMailer\PHPMailer::ENCRYPTION_STARTTLS;
+                $mail->Port       = 587;
+                $mail->setFrom('lamtuoi155@gmail.com', 'GymX Order System');
+                
+                $has_mgr = false;
+                foreach ($managers as $mgr) {
+                    if (!empty($mgr['email'])) {
+                        $mail->addAddress($mgr['email'], $mgr['name']);
+                        $has_mgr = true;
+                    }
+                }
+                
+                if ($has_mgr) {
+                    $mail->isHTML(true);
+                    $mail->Subject = "✅ Customer Confirmed Order #" . $order_id . " Delivery Successful";
+                    $m_body = "<div style='font-family: Arial, sans-serif; max-width: 650px; margin: auto; padding: 25px; border: 1px solid #e2e8f0; border-radius: 20px;'>";
+                    $m_body .= "<h2 style='color: #10b981;'>Order #" . $order_id . " Confirmed Delivered</h2>";
+                    $m_body .= "<p>Customer <strong>" . htmlspecialchars($_SESSION['user_name'] ?? '') . "</strong> has confirmed receiving order #" . $order_id . " ($" . number_format($order['total_price'], 2) . ").</p>";
+                    $m_body .= "<p><a href='http://" . $_SERVER['HTTP_HOST'] . "/Gym%20Manager/dashboards/manager.php?page=yearly_report' style='background: #0062ff; color: white; padding: 10px 20px; text-decoration: none; border-radius: 8px; font-weight: bold;'>View Business Yearly Report</a></p>";
+                    $m_body .= "</div>";
+                    $mail->Body = $m_body;
+                    $mail->send();
+                }
+            }
+        } catch (Exception $mailEx) {
+            error_log("Order Confirm Mail Error: " . $mailEx->getMessage());
+        }
+    }
+}
+
+// Handle Order Cancellation by Customer
+if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['action_cancel_order'])) {
+    $order_id = intval($_POST['order_id'] ?? 0);
+    $stmt_o = $pdo->prepare("SELECT * FROM orders WHERE id = ? AND user_id = ? AND status = 'pending'");
+    $stmt_o->execute([$order_id, $user_id]);
+    $order = $stmt_o->fetch();
+    
+    if ($order) {
+        try {
+            $pdo->beginTransaction();
+            $pdo->prepare("UPDATE orders SET status = 'cancelled' WHERE id = ?")->execute([$order_id]);
+            
+            // Restore stock
+            $stmt_items = $pdo->prepare("SELECT product_id, quantity FROM order_items WHERE order_id = ?");
+            $stmt_items->execute([$order_id]);
+            $o_items = $stmt_items->fetchAll();
+            $stmt_stock = $pdo->prepare("UPDATE products SET stock = stock + ?, sales_count = GREATEST(0, sales_count - ?) WHERE id = ?");
+            foreach ($o_items as $item) {
+                $stmt_stock->execute([$item['quantity'], $item['quantity'], $item['product_id']]);
+            }
+            $pdo->commit();
+            $message = __('order_cancelled_msg');
+        } catch (Exception $e) {
+            $pdo->rollBack();
+            $error = "Cancellation error: " . $e->getMessage();
+        }
+    }
+}
+
 // Handle Order Deletion
 if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['delete_order'])) {
     $order_id = $_POST['order_id'];
@@ -235,41 +366,10 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['delete_order'])) {
     }
 }
 
-// Handle Body Metrics Log
-if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['log_metrics'])) {
-    $recorded_date = $_POST['recorded_date'];
-    $weight = (float)$_POST['weight'];
-    $muscle_mass = $_POST['muscle_mass'] ? (float)$_POST['muscle_mass'] : null;
-    $fat_mass = $_POST['fat_mass'] ? (float)$_POST['fat_mass'] : null;
-    $height = $_POST['height'] ? (float)$_POST['height'] : null;
-    $notes = $_POST['notes'] ?? '';
-    
-    $bmi = null;
-    if ($height && $weight) {
-        $bmi = round($weight / (($height / 100) * ($height / 100)), 2);
-    }
-    
-    try {
-        $stmt_m = $pdo->prepare("
-            INSERT INTO body_metrics (user_id, recorded_date, weight, muscle_mass, fat_mass, bmi, notes) 
-            VALUES (?, ?, ?, ?, ?, ?, ?)
-        ");
-        $stmt_m->execute([$user_id, $recorded_date, $weight, $muscle_mass, $fat_mass, $bmi, $notes]);
-        $message = "Body metrics recorded successfully!";
-    } catch (Exception $e) {
-        $error = "Failed to record metrics: " . $e->getMessage();
-    }
-}
-
 // Get User Detail
 $stmt = $pdo->prepare("SELECT * FROM users WHERE id = ?");
 $stmt->execute([$user_id]);
 $user = $stmt->fetch();
-
-// Get Body Metrics History
-$stmt_metrics = $pdo->prepare("SELECT * FROM body_metrics WHERE user_id = ? ORDER BY recorded_date ASC");
-$stmt_metrics->execute([$user_id]);
-$metrics_history = $stmt_metrics->fetchAll();
 
 
 // Get bookings
@@ -302,10 +402,32 @@ $orders = $stmt->fetchAll();
 
     <?php if($message): ?>
         <p style="color: #16a34a; text-align: center; margin-bottom: 2rem; background: #f0fdf4; padding: 1rem; border-radius: 15px; border: 1px solid #bbf7d0; font-weight: 600;"><?php echo $message; ?></p>
+        <script>
+            document.addEventListener('DOMContentLoaded', function() {
+                const msgText = <?php echo json_encode($message); ?>;
+                let title = <?php echo json_encode(__('notification')); ?>;
+                let icon = 'ℹ️';
+                if (msgText.includes('nhận hàng thành công') || msgText.includes('receiving your order') || msgText.includes('xác nhận') || msgText.includes('confirmed')) {
+                    title = <?php echo json_encode(__('order_received_success')); ?>;
+                    icon = '🎉';
+                } else if (msgText.includes('trải nghiệm các sản phẩm khác') || msgText.includes('explore and try other products') || msgText.includes('hủy') || msgText.includes('cancelled')) {
+                    title = <?php echo json_encode(__('order_notification')); ?>;
+                    icon = '🛍️';
+                }
+                showGymXAlert(msgText, title, icon);
+            });
+        </script>
     <?php endif; ?>
 
     <?php if($error): ?>
-        <p style="color: #ef4444; text-align: center; margin-bottom: 2rem; background: #fee2e2; padding: 1rem; border-radius: 15px; border: 1px solid #fecaca; font-weight: 600;"><?php echo $error; ?></p>
+        <div style="color: #991b1b; background: #fef2f2; padding: 1.25rem 1.5rem; border-radius: 16px; border: 1px solid #fca5a5; font-weight: 500; margin-bottom: 2rem; box-shadow: 0 4px 14px rgba(239, 68, 68, 0.12); line-height: 1.6;">
+            <?php echo $error; ?>
+        </div>
+        <script>
+            document.addEventListener('DOMContentLoaded', function() {
+                showGymXAlert(<?php echo json_encode($error); ?>, <?php echo json_encode(__('error_notification')); ?>, '❌');
+            });
+        </script>
     <?php endif; ?>
 
     <!-- Profile Edit Section -->
@@ -313,9 +435,42 @@ $orders = $stmt->fetchAll();
         <form method="POST" enctype="multipart/form-data" class="profile-form-grid">
             <div style="text-align: center;">
                 <img src="<?php echo $user['avatar'] ?: 'https://ui-avatars.com/api/?name='.urlencode($user['name']).'&background=0062ff&color=fff&size=200'; ?>" 
-                     style="width: 150px; height: 150px; border-radius: 50%; object-fit: cover; border: 3px solid var(--primary); margin-bottom: 1rem;">
+                     style="width: 150px; height: 150px; border-radius: 50%; object-fit: cover; border: 3px solid var(--primary); margin-bottom: 0.5rem;">
+                
+                <?php
+                // Fetch active/pending membership subscription plan badge for user
+                $stmt_profile_mem = $pdo->prepare("
+                    SELECT mp.name, mp.name_vi, mp.badge, mp.badge_color, ms.status
+                    FROM member_subscriptions ms
+                    JOIN membership_plans mp ON ms.plan_id = mp.id
+                    WHERE ms.user_id = ? AND ms.status IN ('active', 'pending') AND (ms.status = 'pending' OR ms.end_date >= CURDATE())
+                    ORDER BY ms.id DESC LIMIT 1
+                ");
+                $stmt_profile_mem->execute([$user_id]);
+                $profile_mem = $stmt_profile_mem->fetch();
+                ?>
+
+                <div style="margin-bottom: 1rem;">
+                    <?php if ($profile_mem): ?>
+                        <span style="background: <?php echo !empty($profile_mem['badge_color']) ? $profile_mem['badge_color'] : '#2563eb'; ?>; color: #fff; padding: 5px 14px; border-radius: 20px; font-weight: 800; font-size: 0.78rem; text-transform: uppercase; letter-spacing: 0.6px; display: inline-block; box-shadow: 0 4px 12px rgba(0,0,0,0.15);">
+                            <i class="fas fa-certificate" style="margin-right: 5px;"></i>
+                            <?php echo htmlspecialchars(!empty($profile_mem['badge']) ? $profile_mem['badge'] : mb_strtoupper($profile_mem['name'])); ?>
+                        </span>
+                    <?php else: ?>
+                        <span style="background: #64748b; color: #fff; padding: 5px 14px; border-radius: 20px; font-weight: 800; font-size: 0.78rem; text-transform: uppercase; letter-spacing: 0.6px; display: inline-block;">
+                            <i class="fas fa-user-circle" style="margin-right: 5px;"></i>
+                            <?php echo strtoupper($_SESSION['role'] ?? 'USER'); ?>
+                        </span>
+                    <?php endif; ?>
+                </div>
+
                 <input type="file" name="avatar" id="avatar" style="display: none;">
-                <label for="avatar" class="action-btn btn-add" style="cursor: pointer; font-size: 0.8rem;"><?php echo __('change_photo'); ?></label>
+                <div style="display: flex; justify-content: center; gap: 8px; flex-wrap: wrap;">
+                    <label for="avatar" class="action-btn btn-add" style="cursor: pointer; font-size: 0.8rem; margin: 0;"><?php echo __('change_photo'); ?></label>
+                    <?php if(!isset($_SESSION['role']) || $_SESSION['role'] === 'user'): ?>
+                        <a href="/Gym Manager/pages/membership.php" class="action-btn btn-add" style="text-decoration: none; display: inline-flex; align-items: center; gap: 5px; background: linear-gradient(135deg, #2563eb, #1d4ed8); color: #fff; font-weight: 700; font-size: 0.8rem; margin: 0; border: none; box-shadow: 0 4px 12px rgba(37,99,235,0.3);"><i class="fas fa-id-card"></i> <?php echo __('membership_nav'); ?></a>
+                    <?php endif; ?>
+                </div>
             </div>
             
             <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1.5rem;">
@@ -366,351 +521,389 @@ $orders = $stmt->fetchAll();
                 <label style="font-weight: 600;"><?php echo __('confirm_new_password'); ?></label>
                 <input type="password" name="confirm_password" required placeholder="••••••••" style="background: #f1f5f9;">
             </div>
-            <button type="submit" name="update_password" class="btn-auth" style="margin-top: 0; padding: 1.1rem 2rem; width: auto; font-size: 0.95rem;"><?php echo __('update_password'); ?></button>
         </form>
-    </div>
-
-    <!-- Fitness & Body Metrics Tracker Section -->
-    <div style="background: var(--bg-card); padding: 2.5rem; border-radius: 25px; border: 1px solid var(--border); margin-bottom: 4rem; box-shadow: var(--shadow-premium);">
-        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 2rem; flex-wrap: wrap; gap: 1rem;">
-            <div>
-                <h3 style="color: var(--primary); font-weight: 800; margin: 0; font-family: 'Playfair Display', serif; font-size: 1.6rem;"><?php echo __('fitness_progress_tracker'); ?></h3>
-                <p style="color: var(--text-muted); font-size: 0.9rem; margin-top: 5px; font-family: 'Outfit', sans-serif;">Track weight, muscle mass, fat mass, and BMI indicators</p>
-            </div>
-            <button onclick="document.getElementById('add-metrics-modal').style.display='flex'" class="action-btn btn-add" style="margin: 0; padding: 10px 20px; font-size: 0.85rem; font-family: 'Outfit', sans-serif;">
-                <i class="fas fa-plus"></i> <?php echo __('add_metric_record'); ?>
-            </button>
-        </div>
-
-        <!-- Metric Cards Grid -->
-        <?php if (!empty($metrics_history)): 
-            $latest = end($metrics_history); 
-        ?>
-            <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 1.5rem; margin-bottom: 2.5rem; font-family: 'Outfit', sans-serif;">
-                <div style="background: #f8fafc; padding: 1.5rem; border-radius: 20px; border: 1px solid var(--border); text-align: center;">
-                    <span style="font-size: 0.8rem; font-weight: 600; text-transform: uppercase; color: var(--text-muted); letter-spacing: 0.5px;"><?php echo __('metric_weight'); ?></span>
-                    <h2 style="color: var(--primary); font-weight: 800; font-size: 2.2rem; margin-top: 5px;"><?php echo $latest['weight']; ?> <span style="font-size: 1rem; font-weight: 500;">kg</span></h2>
-                </div>
-                <div style="background: #f8fafc; padding: 1.5rem; border-radius: 20px; border: 1px solid var(--border); text-align: center;">
-                    <span style="font-size: 0.8rem; font-weight: 600; text-transform: uppercase; color: var(--text-muted); letter-spacing: 0.5px;"><?php echo __('metric_muscle'); ?></span>
-                    <h2 style="color: #10b981; font-weight: 800; font-size: 2.2rem; margin-top: 5px;"><?php echo $latest['muscle_mass'] ?: '--'; ?> <span style="font-size: 1rem; font-weight: 500;">kg</span></h2>
-                </div>
-                <div style="background: #f8fafc; padding: 1.5rem; border-radius: 20px; border: 1px solid var(--border); text-align: center;">
-                    <span style="font-size: 0.8rem; font-weight: 600; text-transform: uppercase; color: var(--text-muted); letter-spacing: 0.5px;"><?php echo __('metric_fat'); ?></span>
-                    <h2 style="color: #ef4444; font-weight: 800; font-size: 2.2rem; margin-top: 5px;"><?php echo $latest['fat_mass'] ?: '--'; ?> <span style="font-size: 1rem; font-weight: 500;">kg</span></h2>
-                </div>
-                <div style="background: #f8fafc; padding: 1.5rem; border-radius: 20px; border: 1px solid var(--border); text-align: center;">
-                    <span style="font-size: 0.8rem; font-weight: 600; text-transform: uppercase; color: var(--text-muted); letter-spacing: 0.5px;"><?php echo __('metric_bmi'); ?></span>
-                    <h2 style="color: #f59e0b; font-weight: 800; font-size: 2.2rem; margin-top: 5px;"><?php echo $latest['bmi'] ?: '--'; ?></h2>
-                </div>
-            </div>
-
-            <!-- Chart Canvas -->
-            <div style="position: relative; height: 320px; width: 100%; background: #ffffff; padding: 1rem; border-radius: 20px; border: 1px solid var(--border); margin-bottom: 2rem;">
-                <canvas id="metricsChart"></canvas>
-            </div>
-        <?php else: ?>
-            <p style="color: var(--text-muted); text-align: center; padding: 3rem 0; font-family: 'Outfit', sans-serif;"><?php echo __('no_metrics_data'); ?></p>
-        <?php endif; ?>
-    </div>
- 
-    <!-- Add Metrics Modal -->
-    <div id="add-metrics-modal" style="display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.5); z-index: 10000; align-items: center; justify-content: center; backdrop-filter: blur(5px); font-family: 'Outfit', sans-serif;">
-        <div style="background: white; padding: 2.5rem; border-radius: 25px; width: 90%; max-width: 500px; box-shadow: 0 20px 50px rgba(0,0,0,0.3);">
-            <h3 style="margin-bottom: 1.5rem; font-weight: 800; color: var(--text-main); font-family: 'Playfair Display', serif;"><?php echo __('add_metric_record'); ?></h3>
-            <form method="POST">
-                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; margin-bottom: 1rem;">
-                    <div class="form-group" style="margin-bottom: 0;">
-                        <label><?php echo __('recorded_date'); ?></label>
-                        <input type="date" name="recorded_date" value="<?php echo date('Y-m-d'); ?>" required style="background: #f8fafc; border: 1px solid #e2e8f0; width: 100%; border-radius: 12px; padding: 12px;">
-                    </div>
-                    <div class="form-group" style="margin-bottom: 0;">
-                        <label><?php echo __('height_label'); ?> (cm)</label>
-                        <input type="number" step="0.1" name="height" placeholder="175" style="background: #f8fafc; border: 1px solid #e2e8f0; width: 100%; border-radius: 12px; padding: 12px;">
-                    </div>
-                </div>
-                <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 1rem; margin-bottom: 1.5rem;">
-                    <div class="form-group" style="margin-bottom: 0;">
-                        <label><?php echo __('metric_weight'); ?> (kg)</label>
-                        <input type="number" step="0.1" name="weight" placeholder="70" required style="background: #f8fafc; border: 1px solid #e2e8f0; width: 100%; border-radius: 12px; padding: 12px;">
-                    </div>
-                    <div class="form-group" style="margin-bottom: 0;">
-                        <label><?php echo __('metric_muscle'); ?> (kg)</label>
-                        <input type="number" step="0.1" name="muscle_mass" placeholder="32" style="background: #f8fafc; border: 1px solid #e2e8f0; width: 100%; border-radius: 12px; padding: 12px;">
-                    </div>
-                    <div class="form-group" style="margin-bottom: 0;">
-                        <label><?php echo __('metric_fat'); ?> (kg)</label>
-                        <input type="number" step="0.1" name="fat_mass" placeholder="12" style="background: #f8fafc; border: 1px solid #e2e8f0; width: 100%; border-radius: 12px; padding: 12px;">
-                    </div>
-                </div>
-                <div class="form-group">
-                    <label><?php echo __('notes'); ?></label>
-                    <input type="text" name="notes" placeholder="<?php echo __('notes_metric'); ?>" style="background: #f8fafc; border: 1px solid #e2e8f0; width: 100%; border-radius: 12px; padding: 12px;">
-                </div>
-                <div style="display: flex; gap: 1rem; margin-top: 1.5rem;">
-                    <button type="submit" name="log_metrics" class="btn-auth" style="flex: 2; margin: 0;"><?php echo __('confirm'); ?></button>
-                    <button type="button" onclick="document.getElementById('add-metrics-modal').style.display='none'" 
-                             style="flex: 1; background: #f1f5f9; color: var(--text-muted); border: none; border-radius: 12px; font-weight: 700; cursor: pointer;"><?php echo __('cancel'); ?></button>
-                </div>
-            </form>
-        </div>
     </div>
 
     <div class="profile-layout-grid">
         <!-- Bookings Section -->
         <div>
-
-
-            <h3 style="margin-bottom: 1.5rem; color: var(--primary);"><?php echo __('upcoming_bookings'); ?></h3>
+            <!-- Upcoming Bookings Header -->
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.5rem;">
+                <h3 style="margin: 0; color: var(--primary);"><?php echo __('upcoming_bookings'); ?></h3>
+                <?php if(!empty($upcoming_bookings)): ?>
+                    <button onclick="document.getElementById('modal-all-upcoming').style.display='flex'"
+                            style="background: linear-gradient(135deg, #2563eb, #1d4ed8); color: #fff; border: none; padding: 7px 14px; border-radius: 10px; font-weight: 700; font-size: 0.8rem; cursor: pointer; display: inline-flex; align-items: center; gap: 5px; box-shadow: 0 3px 10px rgba(37,99,235,0.25);">
+                        <i class="fas fa-info-circle"></i> <?php echo __('full_details'); ?>
+                    </button>
+                <?php endif; ?>
+            </div>
             <?php if(empty($upcoming_bookings)): ?>
                 <p style="color: var(--text-muted); margin-bottom: 2.5rem;"><?php echo __('no_upcoming_bookings'); ?></p>
             <?php else: ?>
-                <div style="display: flex; flex-direction: column; gap: 1rem; margin-bottom: 2.5rem;">
-                    <?php foreach($upcoming_bookings as $booking): ?>
-                        <div style="background: var(--bg-card); padding: 1.5rem; border-radius: 20px; border: 1px solid var(--border); box-shadow: var(--shadow-premium);">
-                            <div style="display: flex; justify-content: space-between; align-items: flex-start;">
-                                <div>
-                                    <h4 style="color: var(--text-main); font-weight: 700;"><?php echo __('coach_label'); ?>: <?php echo htmlspecialchars($booking['coach_name']); ?></h4>
-                                    <p style="color: var(--text-muted); font-size: 0.9rem; margin: 5px 0;"><?php echo __('date'); ?>: <?php echo date('d/m/Y H:i', strtotime($booking['booking_date'])); ?></p>
-                                    <span style="display: inline-block; padding: 6px 14px; border-radius: 30px; font-size: 0.8rem; background: <?php echo $booking['status'] == 'confirmed' ? '#dcfce7' : '#fef3c7'; ?>; color: <?php echo $booking['status'] == 'confirmed' ? '#166534' : '#92400e'; ?>; font-weight: 800; text-transform: uppercase;">
-                                        <?php echo strtoupper($booking['status']); ?>
-                                    </span>
-                                </div>
-                                <button onclick="document.getElementById('edit-booking-<?php echo $booking['id']; ?>').style.display='flex'"
-                                        style="background: #f1f5f9; border: none; padding: 8px 12px; border-radius: 10px; cursor: pointer; color: var(--text-main); font-weight: 600; font-size: 0.8rem;">
-                                    <i class="fas fa-edit"></i> <?php echo __('edit'); ?>
-                                </button>
-                            </div>
-
-                            <!-- Edit Booking Modal -->
-                            <div id="edit-booking-<?php echo $booking['id']; ?>" style="display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.5); z-index: 10000; align-items: center; justify-content: center; backdrop-filter: blur(5px);">
-                                <div style="background: white; padding: 2.5rem; border-radius: 25px; width: 90%; max-width: 450px; box-shadow: 0 20px 50px rgba(0,0,0,0.3);">
-                                    <h3 style="margin-bottom: 1.5rem; font-weight: 800; color: var(--text-main);"><?php echo __('reschedule_session'); ?></h3>
-                                    <form method="POST">
-                                        <input type="hidden" name="booking_id" value="<?php echo $booking['id']; ?>">
-                                        <div class="form-group">
-                                            <label><?php echo __('select_new_datetime'); ?></label>
-                                            <input type="datetime-local" name="new_date" value="<?php echo date('Y-m-d\TH:i', strtotime($booking['booking_date'])); ?>" required 
-                                                   style="background: #f8fafc; border: 1px solid #e2e8f0; width: 100%; border-radius: 12px; padding: 12px;">
-                                        </div>
-                                        <div style="display: flex; gap: 1rem; margin-top: 1.5rem;">
-                                            <button type="submit" name="update_booking" class="btn-auth" style="flex: 2; margin: 0;"><?php echo __('confirm_change'); ?></button>
-                                            <button type="button" onclick="document.getElementById('edit-booking-<?php echo $booking['id']; ?>').style.display='none'" 
-                                                     style="flex: 1; background: #f1f5f9; color: var(--text-muted); border: none; border-radius: 12px; font-weight: 700; cursor: pointer;"><?php echo __('cancel'); ?></button>
-                                        </div>
-                                    </form>
-                                </div>
-                            </div>
+                <!-- Single main page preview card for Upcoming Bookings -->
+                <?php 
+                $top_b = $upcoming_bookings[0];
+                $is_top_cancelled = ($top_b['status'] === 'cancelled');
+                ?>
+                <div style="margin-bottom: 2.5rem;">
+                    <div onclick="document.getElementById('modal-all-upcoming').style.display='flex'"
+                         style="background: var(--bg-card); padding: 1.25rem 1.5rem; border-radius: 18px; border: 1px solid var(--border); box-shadow: var(--shadow-premium); display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 12px; cursor: pointer; <?php echo $is_top_cancelled ? 'opacity: 0.85; border-color: #fca5a5;' : ''; ?>">
+                        <div>
+                            <h4 style="color: var(--text-main); font-weight: 700; margin: 0 0 4px 0; font-size: 1rem;"><?php echo __('coach_label'); ?>: <?php echo htmlspecialchars($top_b['coach_name']); ?></h4>
+                            <p style="color: var(--text-muted); font-size: 0.85rem; margin: 0;"><i class="far fa-calendar-alt" style="margin-right: 4px;"></i><?php echo date('d/m/Y H:i', strtotime($top_b['booking_date'])); ?></p>
                         </div>
-                    <?php endforeach; ?>
+                        <div style="display: flex; align-items: center; gap: 10px;">
+                            <?php if ($is_top_cancelled): ?>
+                                <span style="padding: 4px 10px; border-radius: 20px; font-size: 0.75rem; background: #fee2e2; color: #dc2626; font-weight: 800; text-transform: uppercase;">
+                                    <i class="fas fa-ban"></i> <?php echo strtoupper(__('cancelled_status')); ?>
+                                </span>
+                            <?php else: ?>
+                                <span style="padding: 4px 10px; border-radius: 20px; font-size: 0.75rem; background: <?php echo $top_b['status'] == 'confirmed' ? '#dcfce7' : '#fef3c7'; ?>; color: <?php echo $top_b['status'] == 'confirmed' ? '#166534' : '#92400e'; ?>; font-weight: 800; text-transform: uppercase;">
+                                    <?php echo strtoupper($top_b['status']); ?>
+                                </span>
+                            <?php endif; ?>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- ALL Upcoming Bookings Modal -->
+                <div id="modal-all-upcoming" class="profile-modal-backdrop" onclick="if(event.target===this) this.style.display='none'" style="display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.6); z-index: 10000; align-items: center; justify-content: center; backdrop-filter: blur(6px); padding: 1rem;">
+                    <div style="background: #fff; border-radius: 24px; width: 100%; max-width: 520px; max-height: 85vh; box-shadow: 0 25px 60px rgba(0,0,0,0.3); overflow: hidden; display: flex; flex-direction: column;">
+                        <div style="background: linear-gradient(135deg,#0f172a,#1e3a5f); padding: 1.2rem 1.5rem; display: flex; justify-content: space-between; align-items: center; color: white; flex-shrink: 0;">
+                            <h4 style="margin: 0; font-size: 1.05rem; font-weight: 800;"><i class="fas fa-calendar-check" style="color: #60a5fa; margin-right: 8px;"></i><?php echo __('upcoming_bookings'); ?> (<?php echo count($upcoming_bookings); ?>)</h4>
+                            <button onclick="document.getElementById('modal-all-upcoming').style.display='none'" style="background: rgba(255,255,255,0.15); border: none; color: white; width: 30px; height: 30px; border-radius: 50%; cursor: pointer; font-size: 1.1rem; display: flex; align-items: center; justify-content: center;">×</button>
+                        </div>
+                        <div style="padding: 1.5rem; overflow-y: auto; display: flex; flex-direction: column; gap: 14px;">
+                            <?php foreach($upcoming_bookings as $booking): 
+                                $is_b_cancelled = ($booking['status'] === 'cancelled');
+                                $is_future_b = (strtotime($booking['booking_date']) > time());
+                                $is_coach_class = !empty($booking['class_name']);
+                            ?>
+                                <div style="background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 16px; padding: 1rem 1.2rem; display: flex; flex-direction: column; gap: 10px;">
+                                    <div style="display: flex; justify-content: space-between; align-items: center;">
+                                        <div>
+                                            <strong style="color: #0f172a; font-size: 0.98rem; display: block;"><?php echo __('coach_label'); ?>: <?php echo htmlspecialchars($booking['coach_name']); ?></strong>
+                                            <span style="color: var(--text-muted); font-size: 0.82rem;"><i class="far fa-calendar-alt" style="margin-right: 4px;"></i><?php echo date('d/m/Y H:i', strtotime($booking['booking_date'])); ?></span>
+                                        </div>
+                                        <?php if ($is_b_cancelled): ?>
+                                            <span style="padding: 3px 10px; border-radius: 12px; font-size: 0.72rem; background: #fee2e2; color: #dc2626; font-weight: 800; text-transform: uppercase;">
+                                                <i class="fas fa-ban"></i> <?php echo strtoupper(__('cancelled_status')); ?>
+                                            </span>
+                                        <?php else: ?>
+                                            <span style="padding: 3px 10px; border-radius: 12px; font-size: 0.72rem; background: <?php echo $booking['status'] == 'confirmed' ? '#dcfce7' : '#fef3c7'; ?>; color: <?php echo $booking['status'] == 'confirmed' ? '#166534' : '#92400e'; ?>; font-weight: 800; text-transform: uppercase;">
+                                                <?php echo strtoupper($booking['status']); ?>
+                                            </span>
+                                        <?php endif; ?>
+                                    </div>
+
+                                    <?php if (!empty($booking['coach_message'])): ?>
+                                        <div style="background: #fff8e6; border: 1px solid #fde68a; padding: 8px 12px; border-radius: 10px; font-size: 0.82rem; color: #92400e;">
+                                            <i class="fas fa-sticky-note" style="color: #d97706; margin-right: 4px;"></i> <strong><?php echo __('coach_notes_title'); ?>:</strong> <?php echo htmlspecialchars($booking['coach_message']); ?>
+                                        </div>
+                                    <?php endif; ?>
+
+                                    <?php if (!$is_b_cancelled): ?>
+                                        <div style="display: flex; gap: 8px; margin-top: 4px;">
+                                            <button onclick="document.getElementById('edit-booking-<?php echo $booking['id']; ?>').style.display='flex';"
+                                                    style="flex: 1; background: #fff; border: 1px solid #cbd5e1; padding: 7px; border-radius: 8px; cursor: pointer; color: var(--text-main); font-weight: 700; font-size: 0.8rem; display: flex; align-items: center; justify-content: center; gap: 4px;">
+                                                <i class="fas fa-edit"></i> <?php echo __('edit'); ?>
+                                            </button>
+                                            <?php if ($is_future_b && !$is_coach_class): ?>
+                                                <button onclick="document.getElementById('cancel-booking-<?php echo $booking['id']; ?>').style.display='flex';"
+                                                        style="flex: 1; background: #fee2e2; border: 1px solid #fca5a5; padding: 7px; border-radius: 8px; cursor: pointer; color: #dc2626; font-weight: 700; font-size: 0.8rem; display: flex; align-items: center; justify-content: center; gap: 4px;">
+                                                    <i class="fas fa-times-circle"></i> <?php echo __('cancel_session'); ?>
+                                                </button>
+                                            <?php endif; ?>
+                                        </div>
+                                    <?php endif; ?>
+                                </div>
+
+                                <!-- Edit Booking Modal -->
+                                <div id="edit-booking-<?php echo $booking['id']; ?>" class="profile-modal-backdrop" onclick="if(event.target===this) this.style.display='none'" style="display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.5); z-index: 10001; align-items: center; justify-content: center; backdrop-filter: blur(5px);">
+                                    <div style="background: white; padding: 2rem; border-radius: 25px; width: 90%; max-width: 440px; box-shadow: 0 20px 50px rgba(0,0,0,0.3);">
+                                        <h3 style="margin-bottom: 1.5rem; font-weight: 800; color: var(--text-main);"><?php echo __('reschedule_session'); ?></h3>
+                                        <form method="POST">
+                                            <input type="hidden" name="booking_id" value="<?php echo $booking['id']; ?>">
+                                            <div class="form-group">
+                                                <label><?php echo __('select_new_datetime'); ?></label>
+                                                <input type="datetime-local" name="new_date" value="<?php echo date('Y-m-d\TH:i', strtotime($booking['booking_date'])); ?>" required 
+                                                       style="background: #f8fafc; border: 1px solid #e2e8f0; width: 100%; border-radius: 12px; padding: 12px;">
+                                            </div>
+                                            <div style="display: flex; gap: 1rem; margin-top: 1.5rem;">
+                                                <button type="submit" name="update_booking" class="btn-auth" style="flex: 2; margin: 0;"><?php echo __('confirm_change'); ?></button>
+                                                <button type="button" onclick="document.getElementById('edit-booking-<?php echo $booking['id']; ?>').style.display='none'" 
+                                                         style="flex: 1; background: #f1f5f9; color: var(--text-muted); border: none; border-radius: 12px; font-weight: 700; cursor: pointer;"><?php echo __('cancel'); ?></button>
+                                            </div>
+                                        </form>
+                                    </div>
+                                </div>
+
+                                <!-- Cancel Booking Modal -->
+                                <div id="cancel-booking-<?php echo $booking['id']; ?>" class="profile-modal-backdrop" onclick="if(event.target===this) this.style.display='none'" style="display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.5); z-index: 10001; align-items: center; justify-content: center; backdrop-filter: blur(5px);">
+                                    <div style="background: white; padding: 2rem; border-radius: 25px; width: 90%; max-width: 440px; box-shadow: 0 20px 50px rgba(0,0,0,0.3);">
+                                        <h3 style="margin-bottom: 1rem; font-weight: 800; color: #dc2626;"><i class="fas fa-exclamation-triangle"></i> <?php echo __('cancel_session'); ?></h3>
+                                        <p style="color: #64748b; font-size: 0.95rem; margin-bottom: 1.5rem;"><?php echo __('confirm_cancel_session'); ?></p>
+                                        <form method="POST">
+                                            <input type="hidden" name="user_cancel_booking" value="1">
+                                            <input type="hidden" name="booking_id" value="<?php echo $booking['id']; ?>">
+                                            <div class="form-group" style="margin-bottom: 1.5rem;">
+                                                <label style="font-weight: 600; color: var(--text-main);"><?php echo __('cancel_reason'); ?></label>
+                                                <textarea name="cancel_reason" placeholder="<?php echo __('cancel_reason'); ?>" style="width: 100%; background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 12px; padding: 12px; min-height: 80px; font-family: inherit; outline: none;"></textarea>
+                                            </div>
+                                            <div style="display: flex; gap: 1rem;">
+                                                <button type="submit" class="btn-auth" style="flex: 2; margin: 0; background: #dc2626; border: none;"><?php echo __('cancel_session'); ?></button>
+                                                <button type="button" onclick="document.getElementById('cancel-booking-<?php echo $booking['id']; ?>').style.display='none'" 
+                                                        style="flex: 1; background: #f1f5f9; color: var(--text-muted); border: none; border-radius: 12px; font-weight: 700; cursor: pointer;"><?php echo __('cancel'); ?></button>
+                                            </div>
+                                        </form>
+                                    </div>
+                                </div>
+                            <?php endforeach; ?>
+                        </div>
+                    </div>
                 </div>
             <?php endif; ?>
 
-            <h3 style="margin-bottom: 1.5rem; color: var(--primary);"><?php echo __('workout_history'); ?></h3>
+            <!-- Workout History Header -->
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.5rem;">
+                <h3 style="margin: 0; color: var(--primary);"><?php echo __('workout_history'); ?></h3>
+                <?php if(!empty($past_bookings)): ?>
+                    <button onclick="document.getElementById('modal-all-workout').style.display='flex'"
+                            style="background: linear-gradient(135deg, #2563eb, #1d4ed8); color: #fff; border: none; padding: 7px 14px; border-radius: 10px; font-weight: 700; font-size: 0.8rem; cursor: pointer; display: inline-flex; align-items: center; gap: 5px; box-shadow: 0 3px 10px rgba(37,99,235,0.25);">
+                        <i class="fas fa-info-circle"></i> <?php echo __('full_details'); ?>
+                    </button>
+                <?php endif; ?>
+            </div>
             <?php if(empty($past_bookings)): ?>
                 <p style="color: var(--text-muted);"><?php echo __('no_completed_workouts'); ?></p>
             <?php else: ?>
-                <div style="display: flex; flex-direction: column; gap: 1rem;">
-                    <?php foreach($past_bookings as $booking): ?>
-                        <div style="background: #f8fafc; padding: 1.5rem; border-radius: 20px; border: 1px solid var(--border);">
-                            <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 1rem;">
-                                <div>
-                                    <h4 style="color: var(--text-main); font-weight: 700;"><?php echo __('coach_label'); ?>: <?php echo htmlspecialchars($booking['coach_name']); ?></h4>
-                                    <p style="color: var(--text-muted); font-size: 0.9rem; margin: 5px 0;"><?php echo __('date'); ?>: <?php echo date('d/m/Y H:i', strtotime($booking['booking_date'])); ?></p>
-                                    <span style="display: inline-block; padding: 6px 14px; border-radius: 30px; font-size: 0.8rem; background: #e2e8f0; color: #475569; font-weight: 800; text-transform: uppercase;">
-                                        <?php echo __('completed_label'); ?>
-                                    </span>
-                                </div>
-                            </div>
-                            <!-- Review Form -->
-                            <form action="profile.php" method="POST" style="display: flex; gap: 10px; align-items: center; margin: 0;">
-                                <input type="hidden" name="coach_id" value="<?php echo $booking['coach_id']; ?>">
-                                <select name="rating" required style="background: white; border: 1px solid #e2e8f0; padding: 8px; border-radius: 10px; font-size: 0.85rem; outline: none; font-weight: 600; color: var(--text-main);">
-                                    <option value="5">5 ★</option>
-                                    <option value="4">4 ★</option>
-                                    <option value="3">3 ★</option>
-                                    <option value="2">2 ★</option>
-                                    <option value="1">1 ★</option>
-                                </select>
-                                <input type="text" name="comment" placeholder="<?php echo __('rate_session_placeholder'); ?>" required style="flex-grow: 1; background: white; border: 1px solid #e2e8f0; padding: 8px 15px; border-radius: 10px; font-size: 0.85rem; outline: none;">
-                                <button type="submit" name="submit_coach_review" class="btn-auth" style="margin: 0; padding: 8px 15px; font-size: 0.85rem; width: auto; border-radius: 10px;"><?php echo __('post_review'); ?></button>
-                            </form>
+                <!-- Single main page preview card for Workout History -->
+                <?php $top_w = $past_bookings[0]; ?>
+                <div onclick="document.getElementById('modal-all-workout').style.display='flex'"
+                     style="background: var(--bg-card); padding: 1.25rem 1.5rem; border-radius: 18px; border: 1px solid var(--border); box-shadow: var(--shadow-premium); display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 12px; cursor: pointer;">
+                    <div>
+                        <h4 style="color: var(--text-main); font-weight: 700; margin: 0 0 4px 0; font-size: 1rem;"><?php echo __('coach_label'); ?>: <?php echo htmlspecialchars($top_w['coach_name']); ?></h4>
+                        <p style="color: var(--text-muted); font-size: 0.85rem; margin: 0;"><i class="far fa-calendar-check" style="margin-right: 4px;"></i><?php echo date('d/m/Y H:i', strtotime($top_w['booking_date'])); ?></p>
+                    </div>
+                    <div style="display: flex; align-items: center; gap: 10px;">
+                        <span style="padding: 4px 10px; border-radius: 20px; font-size: 0.75rem; background: #e2e8f0; color: #475569; font-weight: 800; text-transform: uppercase;">
+                            <?php echo __('completed_label'); ?>
+                        </span>
+                    </div>
+                </div>
+
+                <!-- ALL Workout History Modal -->
+                <div id="modal-all-workout" class="profile-modal-backdrop" onclick="if(event.target===this) this.style.display='none'" style="display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.6); z-index: 10000; align-items: center; justify-content: center; backdrop-filter: blur(6px); padding: 1rem;">
+                    <div style="background: #fff; border-radius: 24px; width: 100%; max-width: 520px; max-height: 85vh; box-shadow: 0 25px 60px rgba(0,0,0,0.3); overflow: hidden; display: flex; flex-direction: column;">
+                        <div style="background: linear-gradient(135deg,#0f172a,#1e3a5f); padding: 1.2rem 1.5rem; display: flex; justify-content: space-between; align-items: center; color: white; flex-shrink: 0;">
+                            <h4 style="margin: 0; font-size: 1.05rem; font-weight: 800;"><i class="fas fa-dumbbell" style="color: #60a5fa; margin-right: 8px;"></i><?php echo __('workout_history'); ?> (<?php echo count($past_bookings); ?>)</h4>
+                            <button onclick="document.getElementById('modal-all-workout').style.display='none'" style="background: rgba(255,255,255,0.15); border: none; color: white; width: 30px; height: 30px; border-radius: 50%; cursor: pointer; font-size: 1.1rem; display: flex; align-items: center; justify-content: center;">×</button>
                         </div>
-                    <?php endforeach; ?>
+                        <div style="padding: 1.5rem; overflow-y: auto; display: flex; flex-direction: column; gap: 14px;">
+                            <?php foreach($past_bookings as $booking): ?>
+                                <div style="background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 16px; padding: 1rem 1.2rem; display: flex; flex-direction: column; gap: 10px;">
+                                    <div style="display: flex; justify-content: space-between; align-items: center;">
+                                        <div>
+                                            <strong style="color: #0f172a; font-size: 0.98rem; display: block;"><?php echo __('coach_label'); ?>: <?php echo htmlspecialchars($booking['coach_name']); ?></strong>
+                                            <span style="color: var(--text-muted); font-size: 0.82rem;"><i class="far fa-calendar-check" style="margin-right: 4px;"></i><?php echo date('d/m/Y H:i', strtotime($booking['booking_date'])); ?></span>
+                                        </div>
+                                        <span style="padding: 3px 10px; border-radius: 12px; font-size: 0.72rem; background: #e2e8f0; color: #475569; font-weight: 800; text-transform: uppercase;">
+                                            <?php echo __('completed_label'); ?>
+                                        </span>
+                                    </div>
+
+                                    <?php if (!empty($booking['coach_message'])): ?>
+                                        <div style="background: #fff8e6; border: 1px solid #fde68a; padding: 8px 12px; border-radius: 10px; font-size: 0.82rem; color: #92400e;">
+                                            <i class="fas fa-sticky-note" style="color: #d97706; margin-right: 4px;"></i> <strong><?php echo __('coach_notes_title'); ?>:</strong> <?php echo htmlspecialchars($booking['coach_message']); ?>
+                                        </div>
+                                    <?php endif; ?>
+
+                                    <!-- Coach Review Form -->
+                                    <div style="background: #ffffff; padding: 10px; border-radius: 12px; border: 1px solid #cbd5e1;">
+                                        <strong style="color: #334155; font-size: 0.8rem; display: block; margin-bottom: 6px; text-transform: uppercase;"><?php echo __('post_review'); ?></strong>
+                                        <form action="/Gym Manager/dashboards/profile.php" method="POST" style="display: flex; flex-direction: column; gap: 6px; margin: 0;">
+                                            <input type="hidden" name="coach_id" value="<?php echo $booking['coach_id']; ?>">
+                                            <div style="display: flex; gap: 6px;">
+                                                <select name="rating" required style="background: white; border: 1px solid #cbd5e1; padding: 6px; border-radius: 8px; font-size: 0.8rem; font-weight: 600; color: var(--text-main); outline: none;">
+                                                    <option value="5">5 ★</option>
+                                                    <option value="4">4 ★</option>
+                                                    <option value="3">3 ★</option>
+                                                    <option value="2">2 ★</option>
+                                                    <option value="1">1 ★</option>
+                                                </select>
+                                                <input type="text" name="comment" placeholder="<?php echo __('rate_session_placeholder'); ?>" required style="flex: 1; background: white; border: 1px solid #cbd5e1; padding: 6px 10px; border-radius: 8px; font-size: 0.8rem; outline: none;">
+                                            </div>
+                                            <button type="submit" name="submit_coach_review" class="btn-auth" style="margin: 0; padding: 6px 12px; font-size: 0.8rem; width: 100%; border-radius: 8px; font-weight: 700;"><?php echo __('post_review'); ?></button>
+                                        </form>
+                                    </div>
+                                </div>
+                            <?php endforeach; ?>
+                        </div>
+                    </div>
                 </div>
             <?php endif; ?>
         </div>
 
         <!-- Orders Section -->
         <div>
-            <h3 style="margin-bottom: 2rem; color: var(--primary);"><?php echo __('order_history'); ?></h3>
+            <!-- Order History Header -->
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.5rem;">
+                <h3 style="margin: 0; color: var(--primary);"><?php echo __('order_history'); ?></h3>
+                <?php if(!empty($orders)): ?>
+                    <button onclick="document.getElementById('modal-all-orders').style.display='flex'"
+                            style="background: linear-gradient(135deg, #2563eb, #1d4ed8); color: #fff; border: none; padding: 7px 14px; border-radius: 10px; font-weight: 700; font-size: 0.8rem; cursor: pointer; display: inline-flex; align-items: center; gap: 5px; box-shadow: 0 3px 10px rgba(37,99,235,0.25);">
+                        <i class="fas fa-info-circle"></i> <?php echo __('full_details'); ?>
+                    </button>
+                <?php endif; ?>
+            </div>
             <?php if(empty($orders)): ?>
                 <p style="color: var(--text-muted);"><?php echo __('no_orders_yet'); ?></p>
             <?php else: ?>
-                <div style="display: flex; flex-direction: column; gap: 1rem;">
-                    <?php foreach($orders as $order): ?>
-                        <div style="background: var(--bg-card); padding: 1.5rem; border-radius: 10px; border: 1px solid var(--border);">
-                            <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 1rem; border-bottom: 1px solid var(--border); padding-bottom: 0.5rem;">
-                                <div>
-                                    <h4 style="color: var(--text-main); margin-bottom: 5px; font-weight: 700;">Order #<?php echo $order['id']; ?></h4>
-                                    <p style="color: var(--text-muted); font-size: 0.8rem;"><?php echo date('d/m/Y H:i', strtotime($order['created_at'])); ?></p>
-                                </div>
-                                <div style="text-align: right;">
-                                    <span class="price" style="font-size: 1rem; display: block; margin-bottom: 10px;">$<?php echo number_format($order['total_price'], 2); ?></span>
-                                    <form method="POST" onsubmit="return confirm('Are you sure you want to remove this order from your history?');">
-                                        <input type="hidden" name="order_id" value="<?php echo $order['id']; ?>">
-                                        <button type="submit" name="delete_order" style="background: none; border: none; color: #ef4444; cursor: pointer; font-size: 0.8rem; font-weight: 700;">
-                                            <i class="fas fa-trash"></i> <?php echo __('remove'); ?>
-                                        </button>
-                                    </form>
-                                </div>
-                              <!-- Order Items -->
-                            <div style="display: flex; flex-wrap: wrap; gap: 10px;">
-                                <?php 
-                                $o_stmt = $pdo->prepare("SELECT oi.*, p.name, p.name_vi, p.image FROM order_items oi JOIN products p ON oi.product_id = p.id WHERE oi.order_id = ?");
-                                $o_stmt->execute([$order['id']]);
-                                $items = $o_stmt->fetchAll();
-                                foreach($items as $item): ?>
-                                    <div style="flex: 1 1 100%; display: flex; align-items: center; gap: 15px; background: #f8fafc; padding: 12px; border-radius: 15px; border: 1px solid var(--border);">
-                                        <img src="<?php echo $item['image']; ?>" style="width: 50px; height: 50px; border-radius: 10px; object-fit: cover;">
-                                        <div style="flex-grow: 1;">
-                                            <p style="color: var(--text-main); font-weight: 700;">
-                                                <?php echo (isset($current_lang) && $current_lang === 'vi' && !empty($item['name_vi'])) ? htmlspecialchars($item['name_vi']) : htmlspecialchars($item['name']); ?>
-                                                <?php if (!empty($item['variant'])): ?>
-                                                    <span style="color: var(--primary); font-size: 0.85rem;">(<?php echo htmlspecialchars($item['variant']); ?>)</span>
-                                                <?php endif; ?>
-                                            </p>
-                                            <p style="color: var(--text-muted); font-size: 0.8rem;"><?php echo __('quantity'); ?>: <?php echo $item['quantity']; ?></p>
-                                        </div>
-                                        
-                                        <!-- Product Review Button -->
-                                        <?php 
-                                        $r_check = $pdo->prepare("SELECT id FROM product_reviews WHERE user_id = ? AND product_id = ?");
-                                        $r_check->execute([$user_id, $item['product_id']]);
-                                        if (!$r_check->fetch()): ?>
-                                            <button onclick="document.getElementById('rev-form-<?php echo $item['id']; ?>').style.display='block'" 
-                                                    style="background: none; border: 1px solid var(--primary); color: var(--primary); padding: 5px 10px; border-radius: 5px; cursor: pointer; font-size: 0.8rem;"><?php echo __('review_btn'); ?></button>
-                                        <?php else: ?>
-                                            <span style="color: #00C851; font-size: 0.8rem;"><?php echo __('reviewed_label'); ?></span>
-                                        <?php endif; ?>
-                                    </div>
- 
-                                    <!-- Review Form (Hidden by default) -->
-                                    <form id="rev-form-<?php echo $item['id']; ?>" method="POST" style="display: none; width: 100%; background: rgba(255,255,255,0.05); padding: 1rem; border-radius: 8px; margin-top: 5px;">
-                                        <input type="hidden" name="product_id" value="<?php echo $item['product_id']; ?>">
-                                        <div style="display: flex; gap: 10px; margin-bottom: 10px;">
-                                            <select name="rating" required style="background: #f1f5f9; color: var(--text-main); border: 2px solid transparent; padding: 8px; border-radius: 10px; font-size: 0.85rem; outline: none;">
-                                                <option value="5">5 ★</option>
-                                                <option value="4">4 ★</option>
-                                                <option value="3">3 ★</option>
-                                                <option value="2">2 ★</option>
-                                                <option value="1">1 ★</option>
-                                            </select>
-                                            <input type="text" name="comment" placeholder="<?php echo __('short_review_placeholder'); ?>" required style="flex-grow: 1; background: #f1f5f9; color: var(--text-main); border: 2px solid transparent; padding: 8px 15px; border-radius: 10px; font-size: 0.85rem; outline: none;">
-                                            <button type="submit" name="submit_product_review" class="btn-auth" style="padding: 5px 15px; font-size: 0.8rem;"><?php echo __('post'); ?></button>
-                                        </div>
-                                    </form>
-                                <?php endforeach; ?>
-                            </div>
+                <!-- Single main page preview card for Order History -->
+                <?php $top_o = $orders[0]; ?>
+                <div onclick="document.getElementById('modal-all-orders').style.display='flex'"
+                     style="background: var(--bg-card); padding: 1.25rem 1.5rem; border-radius: 18px; border: 1px solid var(--border); box-shadow: var(--shadow-premium); display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 12px; cursor: pointer;">
+                    <div>
+                        <div style="display: flex; align-items: center; gap: 8px;">
+                            <h4 style="color: var(--text-main); margin: 0; font-weight: 700; font-size: 1rem;">Order #<?php echo $top_o['id']; ?></h4>
+                            <?php if ($top_o['status'] === 'pending'): ?>
+                                <span style="background: #f59e0b; color: #000; padding: 3px 8px; border-radius: 12px; font-weight: 800; font-size: 0.72rem; text-transform: uppercase;">
+                                    🚚 <?php echo __('order_status_delivering'); ?>
+                                </span>
+                            <?php elseif ($top_o['status'] === 'completed'): ?>
+                                <span style="background: #10b981; color: #fff; padding: 3px 8px; border-radius: 12px; font-weight: 800; font-size: 0.72rem; text-transform: uppercase;">
+                                    ✔ Thành Công
+                                </span>
+                            <?php else: ?>
+                                <span style="background: #ef4444; color: #fff; padding: 3px 8px; border-radius: 12px; font-weight: 800; font-size: 0.72rem; text-transform: uppercase;">
+                                    ✖ Đã Hủy
+                                </span>
+                            <?php endif; ?>
                         </div>
-                    <?php endforeach; ?>
+                        <p style="color: var(--text-muted); font-size: 0.8rem; margin: 2px 0 0;"><i class="far fa-clock" style="margin-right: 4px;"></i><?php echo date('d/m/Y H:i', strtotime($top_o['created_at'])); ?></p>
+                    </div>
+                    
+                    <div style="display: flex; align-items: center; gap: 12px;">
+                        <span class="price" style="font-size: 1.1rem; font-weight: 800; color: var(--primary);">$<?php echo number_format($top_o['total_price'], 2); ?></span>
+                    </div>
+                </div>
+
+                <!-- ALL Order History Modal -->
+                <div id="modal-all-orders" class="profile-modal-backdrop" onclick="if(event.target===this) this.style.display='none'" style="display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.6); z-index: 10000; align-items: center; justify-content: center; backdrop-filter: blur(6px); padding: 1rem;">
+                    <div style="background: #fff; border-radius: 24px; width: 100%; max-width: 560px; max-height: 85vh; box-shadow: 0 25px 60px rgba(0,0,0,0.3); overflow: hidden; display: flex; flex-direction: column;">
+                        <div style="background: linear-gradient(135deg,#0f172a,#1e3a5f); padding: 1.2rem 1.5rem; display: flex; justify-content: space-between; align-items: center; color: white; flex-shrink: 0;">
+                            <h4 style="margin: 0; font-size: 1.05rem; font-weight: 800;"><i class="fas fa-shopping-bag" style="color: #60a5fa; margin-right: 8px;"></i><?php echo __('order_history'); ?> (<?php echo count($orders); ?>)</h4>
+                            <button onclick="document.getElementById('modal-all-orders').style.display='none'" style="background: rgba(255,255,255,0.15); border: none; color: white; width: 30px; height: 30px; border-radius: 50%; cursor: pointer; font-size: 1.1rem; display: flex; align-items: center; justify-content: center;">×</button>
+                        </div>
+                        
+                        <div style="padding: 1.5rem; overflow-y: auto; display: flex; flex-direction: column; gap: 16px;">
+                            <?php foreach($orders as $order): ?>
+                                <div style="background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 18px; padding: 1.2rem; display: flex; flex-direction: column; gap: 12px;">
+                                    <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 8px;">
+                                        <div>
+                                            <h4 style="margin: 0 0 2px 0; font-size: 0.98rem; font-weight: 800; color: #0f172a;">Order #<?php echo $order['id']; ?></h4>
+                                            <span style="color: var(--text-muted); font-size: 0.78rem;"><?php echo date('d/m/Y H:i', strtotime($order['created_at'])); ?></span>
+                                        </div>
+                                        <div style="display: flex; align-items: center; gap: 8px;">
+                                            <span style="font-weight: 800; color: var(--primary); font-size: 1rem;">$<?php echo number_format($order['total_price'], 2); ?></span>
+                                            <?php if ($order['status'] === 'pending'): ?>
+                                                <span style="background: #f59e0b; color: #000; padding: 3px 8px; border-radius: 10px; font-weight: 800; font-size: 0.7rem; text-transform: uppercase;">
+                                                    🚚 <?php echo __('order_status_delivering'); ?>
+                                                </span>
+                                            <?php elseif ($order['status'] === 'completed'): ?>
+                                                <span style="background: #10b981; color: #fff; padding: 3px 8px; border-radius: 10px; font-weight: 800; font-size: 0.7rem; text-transform: uppercase;">
+                                                    ✔ Thành Công
+                                                </span>
+                                            <?php else: ?>
+                                                <span style="background: #ef4444; color: #fff; padding: 3px 8px; border-radius: 10px; font-weight: 800; font-size: 0.7rem; text-transform: uppercase;">
+                                                    ✖ Đã Hủy
+                                                </span>
+                                            <?php endif; ?>
+                                        </div>
+                                    </div>
+
+                                    <!-- Actions if pending -->
+                                    <?php if ($order['status'] === 'pending'): ?>
+                                        <div style="display: flex; gap: 8px; background: #fff8e6; padding: 8px 10px; border-radius: 12px; border: 1px solid #fde68a;">
+                                            <form method="POST" style="margin: 0; flex: 1;" onsubmit="return confirmOrderCustom(event, this, '<?php echo __('confirm_order_prompt'); ?>', '<?php echo __('confirm_order_success'); ?>', '✅');">
+                                                <input type="hidden" name="order_id" value="<?php echo $order['id']; ?>">
+                                                <input type="hidden" name="action_confirm_order" value="1">
+                                                <button type="submit" name="action_confirm_order" style="width: 100%; background: #10b981; color: white; border: none; padding: 6px 10px; border-radius: 8px; font-weight: 700; font-size: 0.78rem; cursor: pointer;">
+                                                    <i class="fas fa-check-circle"></i> <?php echo __('confirm_order_success'); ?>
+                                                </button>
+                                            </form>
+                                            <form method="POST" style="margin: 0; flex: 1;" onsubmit="return confirmOrderCustom(event, this, '<?php echo __('cancel_order_prompt'); ?>', '<?php echo __('cancel_order'); ?>', '⚠️');">
+                                                <input type="hidden" name="order_id" value="<?php echo $order['id']; ?>">
+                                                <input type="hidden" name="action_cancel_order" value="1">
+                                                <button type="submit" name="action_cancel_order" style="width: 100%; background: rgba(239,68,68,0.1); color: #ef4444; border: 1px solid rgba(239,68,68,0.3); padding: 6px 10px; border-radius: 8px; font-weight: 700; font-size: 0.78rem; cursor: pointer;">
+                                                    <i class="fas fa-times-circle"></i> <?php echo __('cancel_order'); ?>
+                                                </button>
+                                            </form>
+                                        </div>
+                                    <?php else: ?>
+                                        <div style="display: flex; justify-content: flex-end;">
+                                            <form method="POST" onsubmit="return confirm('Are you sure you want to remove this order from your history?');" style="margin: 0;">
+                                                <input type="hidden" name="order_id" value="<?php echo $order['id']; ?>">
+                                                <button type="submit" name="delete_order" style="background: none; border: none; color: #ef4444; cursor: pointer; font-size: 0.78rem; font-weight: 700;">
+                                                    <i class="fas fa-trash"></i> <?php echo __('remove'); ?>
+                                                </button>
+                                            </form>
+                                        </div>
+                                    <?php endif; ?>
+
+                                    <!-- Items in order -->
+                                    <div style="display: flex; flex-direction: column; gap: 8px;">
+                                        <?php 
+                                        $o_stmt = $pdo->prepare("SELECT oi.*, p.name, p.name_vi, p.image FROM order_items oi JOIN products p ON oi.product_id = p.id WHERE oi.order_id = ?");
+                                        $o_stmt->execute([$order['id']]);
+                                        $items = $o_stmt->fetchAll();
+                                        foreach($items as $item): ?>
+                                            <div style="display: flex; align-items: center; gap: 10px; background: #ffffff; padding: 8px 12px; border-radius: 12px; border: 1px solid #cbd5e1;">
+                                                <img src="<?php echo $item['image']; ?>" style="width: 38px; height: 38px; border-radius: 8px; object-fit: cover;">
+                                                <div style="flex-grow: 1;">
+                                                    <p style="color: var(--text-main); font-weight: 700; margin: 0 0 2px 0; font-size: 0.85rem;">
+                                                        <?php echo (isset($current_lang) && $current_lang === 'vi' && !empty($item['name_vi'])) ? htmlspecialchars($item['name_vi']) : htmlspecialchars($item['name']); ?>
+                                                    </p>
+                                                    <p style="color: var(--text-muted); font-size: 0.75rem; margin: 0;"><?php echo __('quantity'); ?>: <?php echo $item['quantity']; ?> × $<?php echo number_format($item['price'], 2); ?></p>
+                                                </div>
+                                                
+                                                <?php 
+                                                $r_check = $pdo->prepare("SELECT id FROM product_reviews WHERE user_id = ? AND product_id = ?");
+                                                $r_check->execute([$user_id, $item['product_id']]);
+                                                if (!$r_check->fetch()): ?>
+                                                    <button onclick="document.getElementById('rev-form-<?php echo $item['id']; ?>').style.display='block'" 
+                                                            style="background: none; border: 1px solid var(--primary); color: var(--primary); padding: 4px 8px; border-radius: 6px; cursor: pointer; font-size: 0.75rem; font-weight: 600;"><?php echo __('review_btn'); ?></button>
+                                                <?php else: ?>
+                                                    <span style="color: #00C851; font-size: 0.75rem; font-weight: 700;"><?php echo __('reviewed_label'); ?></span>
+                                                <?php endif; ?>
+                                            </div>
+
+                                            <form id="rev-form-<?php echo $item['id']; ?>" method="POST" style="display: none; background: #ffffff; padding: 8px 12px; border-radius: 10px; border: 1px solid #cbd5e1; margin-top: 2px;">
+                                                <input type="hidden" name="product_id" value="<?php echo $item['product_id']; ?>">
+                                                <div style="display: flex; gap: 6px;">
+                                                    <select name="rating" required style="background: white; color: var(--text-main); border: 1px solid #cbd5e1; padding: 6px; border-radius: 6px; font-size: 0.78rem; outline: none;">
+                                                        <option value="5">5 ★</option>
+                                                        <option value="4">4 ★</option>
+                                                        <option value="3">3 ★</option>
+                                                        <option value="2">2 ★</option>
+                                                        <option value="1">1 ★</option>
+                                                    </select>
+                                                    <input type="text" name="comment" placeholder="<?php echo __('short_review_placeholder'); ?>" required style="flex-grow: 1; background: white; color: var(--text-main); border: 1px solid #cbd5e1; padding: 6px 10px; border-radius: 6px; font-size: 0.78rem; outline: none;">
+                                                    <button type="submit" name="submit_product_review" class="btn-auth" style="padding: 4px 10px; font-size: 0.78rem; margin: 0; border-radius: 6px;"><?php echo __('post'); ?></button>
+                                                </div>
+                                            </form>
+                                        <?php endforeach; ?>
+                                    </div>
+                                </div>
+                            <?php endforeach; ?>
+                        </div>
+                    </div>
                 </div>
             <?php endif; ?>
         </div>
     </div>
 </section>
 
-<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-<?php if (!empty($metrics_history)): 
-    $dates = [];
-    $weights = [];
-    $muscles = [];
-    $fats = [];
-    foreach ($metrics_history as $hist) {
-        $dates[] = date('d/m', strtotime($hist['recorded_date']));
-        $weights[] = (float)$hist['weight'];
-        $muscles[] = $hist['muscle_mass'] ? (float)$hist['muscle_mass'] : null;
-        $fats[] = $hist['fat_mass'] ? (float)$hist['fat_mass'] : null;
-    }
-?>
-<script>
-    document.addEventListener("DOMContentLoaded", function() {
-        const ctx = document.getElementById('metricsChart').getContext('2d');
-        new Chart(ctx, {
-            type: 'line',
-            data: {
-                labels: <?php echo json_encode($dates); ?>,
-                datasets: [
-                    {
-                        label: 'Cân nặng / Weight (kg)',
-                        data: <?php echo json_encode($weights); ?>,
-                        borderColor: '#1a2744',
-                        backgroundColor: 'rgba(26, 39, 68, 0.03)',
-                        borderWidth: 2,
-                        tension: 0.35,
-                        fill: true
-                    },
-                    {
-                        label: 'Lượng cơ / Muscle (kg)',
-                        data: <?php echo json_encode($muscles); ?>,
-                        borderColor: '#10b981',
-                        backgroundColor: 'rgba(16, 185, 129, 0.03)',
-                        borderWidth: 2,
-                        tension: 0.35,
-                        fill: true
-                    },
-                    {
-                        label: 'Lượng mỡ / Fat (kg)',
-                        data: <?php echo json_encode($fats); ?>,
-                        borderColor: '#ef4444',
-                        backgroundColor: 'rgba(239, 68, 68, 0.03)',
-                        borderWidth: 2,
-                        tension: 0.35,
-                        fill: true
-                    }
-                ]
-            },
-            options: {
-                responsive: true,
-                maintainAspectRatio: false,
-                plugins: {
-                    legend: {
-                        position: 'top',
-                        labels: {
-                            font: {
-                                family: 'Outfit',
-                                size: 12
-                            }
-                        }
-                    }
-                },
-                scales: {
-                    y: {
-                        beginAtZero: false,
-                        grid: {
-                            color: 'rgba(0, 0, 0, 0.03)'
-                        },
-                        ticks: {
-                            font: {
-                                family: 'Outfit'
-                            }
-                        }
-                    },
-                    x: {
-                        grid: {
-                            display: false
-                        },
-                        ticks: {
-                            font: {
-                                family: 'Outfit'
-                            }
-                        }
-                    }
-                }
-            }
-        });
-    });
-</script>
-<?php endif; ?>
+<?php include_once __DIR__ . '/../includes/footer.php'; ?>
 
-<?php include __DIR__ . '/../includes/footer.php'; ?>
+

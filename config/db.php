@@ -11,3 +11,19 @@ try {
 } catch (PDOException $e) {
     die("Connection failed: " . $e->getMessage());
 }
+
+if (!function_exists('get_image_url')) {
+    function get_image_url($path) {
+        if (empty($path)) {
+            return 'https://images.unsplash.com/photo-1593095948071-474c5cc2989d?q=80&w=2070&auto=format&fit=crop';
+        }
+        if (strpos($path, 'http://') === 0 || strpos($path, 'https://') === 0) {
+            return $path;
+        }
+        if (strpos($path, '/Gym Manager/') === 0) {
+            return $path;
+        }
+        return '/Gym Manager/' . ltrim($path, '/');
+    }
+}
+

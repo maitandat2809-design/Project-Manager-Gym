@@ -64,17 +64,46 @@ try {
     $user_id = null;
     $temp_created = false;
     
-    $stmt_u = $pdo->prepare("SELECT id FROM users WHERE email = ?");
+    // Check if phone belongs to another user
+    $clean_phone = preg_replace('/[^0-9]/', '', $phone);
+    
+    $stmt_u = $pdo->prepare("SELECT id FROM users WHERE LOWER(email) = LOWER(?)");
     $stmt_u->execute([$email]);
     $existing_user = $stmt_u->fetch();
     
     if ($existing_user) {
         $user_id = $existing_user['id'];
         
+        // Verify phone doesn't belong to another user
+        $stmt_check_p = $pdo->prepare("SELECT id FROM users WHERE (phone = ? OR phone = ?) AND id != ? AND phone IS NOT NULL AND phone != ''");
+        $stmt_check_p->execute([$phone, $clean_phone, $user_id]);
+        if ($stmt_check_p->fetch()) {
+            echo json_encode([
+                'success' => false,
+                'message' => ($lang === 'vi' 
+                    ? 'Số điện thoại này đã được đăng ký bởi một tài khoản khác. Vui lòng nhập số điện thoại khác!' 
+                    : 'This phone number is already registered under another account. Please use a different phone number!')
+            ]);
+            exit();
+        }
+
         // Update phone if it's empty
         $stmt_update_phone = $pdo->prepare("UPDATE users SET phone = ? WHERE id = ? AND (phone IS NULL OR phone = '')");
         $stmt_update_phone->execute([$phone, $user_id]);
     } else {
+        // Verify phone doesn't belong to any user
+        $stmt_check_p = $pdo->prepare("SELECT id FROM users WHERE (phone = ? OR phone = ?) AND phone IS NOT NULL AND phone != ''");
+        $stmt_check_p->execute([$phone, $clean_phone]);
+        if ($stmt_check_p->fetch()) {
+            echo json_encode([
+                'success' => false,
+                'message' => ($lang === 'vi' 
+                    ? 'Số điện thoại này đã được đăng ký bởi một tài khoản khác. Vui lòng nhập số điện thoại khác!' 
+                    : 'This phone number is already registered under another account. Please use a different phone number!')
+            ]);
+            exit();
+        }
+
         // Create a new guest user
         $temp_pass = password_hash(bin2hex(random_bytes(8)), PASSWORD_DEFAULT);
         $stmt_insert = $pdo->prepare("INSERT INTO users (name, email, password, role, phone) VALUES (?, ?, ?, 'user', ?)");
@@ -177,6 +206,10 @@ try {
         $training_plan,
         $phone
     ]);
+
+    $booking_id = $pdo->lastInsertId();
+    require_once __DIR__ . '/../includes/booking_mailer.php';
+    sendNewBookingNotificationEmail($pdo, $booking_id);
     
     echo json_encode([
         'success' => true,

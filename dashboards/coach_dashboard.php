@@ -122,40 +122,12 @@ if (isset($_POST['update_class_details'])) {
     $room_number = $_POST['room_number'];
     $training_plan = $_POST['training_plan'];
     $attendance = $_POST['attendance'];
+    $coach_message = $_POST['coach_message'] ?? '';
 
-    $stmt = $pdo->prepare("UPDATE bookings SET class_name = ?, specialty = ?, room_number = ?, training_plan = ?, attendance = ? WHERE id = ? AND coach_id = ?");
-    $stmt->execute([$class_name, $specialty, $room_number, $training_plan, $attendance, $booking_id, $coach_id]);
+    $stmt = $pdo->prepare("UPDATE bookings SET class_name = ?, specialty = ?, room_number = ?, training_plan = ?, attendance = ?, coach_message = ? WHERE id = ? AND coach_id = ?");
+    $stmt->execute([$class_name, $specialty, $room_number, $training_plan, $attendance, $coach_message, $booking_id, $coach_id]);
     header("Location: /Gym Manager/dashboards/coach_dashboard.php?tab=schedule&success=" . urlencode("Cập nhật thông tin lớp học thành công"));
     exit();
-}
-
-// Handle coach logging metrics for student
-if (isset($_POST['coach_log_metrics'])) {
-    $student_id = (int)$_POST['student_id'];
-    $recorded_date = $_POST['recorded_date'];
-    $weight = (float)$_POST['weight'];
-    $muscle_mass = $_POST['muscle_mass'] ? (float)$_POST['muscle_mass'] : null;
-    $fat_mass = $_POST['fat_mass'] ? (float)$_POST['fat_mass'] : null;
-    $height = $_POST['height'] ? (float)$_POST['height'] : null;
-    $notes = $_POST['notes'] ?? '';
-    
-    $bmi = null;
-    if ($height && $weight) {
-        $bmi = round($weight / (($height / 100) * ($height / 100)), 2);
-    }
-    
-    try {
-        $stmt_m = $pdo->prepare("
-            INSERT INTO body_metrics (user_id, recorded_date, weight, muscle_mass, fat_mass, bmi, notes) 
-            VALUES (?, ?, ?, ?, ?, ?, ?)
-        ");
-        $stmt_m->execute([$student_id, $recorded_date, $weight, $muscle_mass, $fat_mass, $bmi, $notes]);
-        header("Location: /Gym Manager/dashboards/coach_dashboard.php?tab=schedule&success=" . urlencode("Ghi nhận chỉ số thể hình cho học viên thành công"));
-        exit();
-    } catch (Exception $e) {
-        header("Location: /Gym Manager/dashboards/coach_dashboard.php?tab=schedule&error=" . urlencode("Lỗi: " . $e->getMessage()));
-        exit();
-    }
 }
 
 // Handle Bio Update
@@ -282,6 +254,11 @@ $c_info = $coach_details->fetch();
                                             </span>
                                         </div>
                                     <?php endif; ?>
+                                    <?php if (!empty($b['coach_message'])): ?>
+                                        <div style="margin-top: 6px; font-size: 0.8rem; background: #fff8e6; color: #92400e; border: 1px solid #fde68a; padding: 6px 10px; border-radius: 8px;">
+                                            <i class="fas fa-edit" style="margin-right: 4px; color: #d97706;"></i> <strong><?php echo __('coach_notes_title'); ?>:</strong> <?php echo htmlspecialchars($b['coach_message']); ?>
+                                        </div>
+                                    <?php endif; ?>
                                 </td>
                                 <td><?php echo date('d/m/Y H:i', strtotime($b['booking_date'])); ?></td>
                                 <td>
@@ -305,15 +282,12 @@ $c_info = $coach_details->fetch();
                                                 "specialty" => $b["specialty"] ?? "",
                                                 "room_number" => $b["room_number"] ?? "",
                                                 "training_plan" => $b["training_plan"] ?? "",
-                                                "attendance" => $b["attendance"] ?? "pending"
+                                                "attendance" => $b["attendance"] ?? "pending",
+                                                "coach_message" => $b["coach_message"] ?? ""
                                             ]); ?>)' class="action-btn" style="font-size: 0.85rem; padding: 8px 12px; cursor: pointer; border: none; width: 100%; justify-content: center; background: var(--primary); color: white; border-radius: 8px;">
                                                 <i class="fas fa-edit" style="margin-right: 5px;"></i> Manage Class
                                             </button>
-                                            <?php if ($b['user_id']): ?>
-                                                <button type="button" onclick="openStudentProgressModal(<?php echo $b['user_id']; ?>, '<?php echo addslashes($b['client_name']); ?>')" class="action-btn" style="font-size: 0.85rem; padding: 8px 12px; cursor: pointer; border: none; width: 100%; justify-content: center; background: #10b981; color: white; border-radius: 8px; margin-top: 5px;">
-                                                    <i class="fas fa-heartbeat" style="margin-right: 5px;"></i> Body Metrics
-                                                </button>
-                                            <?php endif; ?>
+
                                         <?php endif; ?>
                                     </div>
                                 </td>
@@ -358,6 +332,11 @@ $c_info = $coach_details->fetch();
                         <div class="form-group" style="margin-bottom: 15px;">
                             <label style="font-weight: 600; color: var(--text-main);"><?php echo __('training_plan_label'); ?></label>
                             <textarea name="training_plan" id="modal_training_plan" placeholder="<?php echo __('training_plan_placeholder'); ?>" style="width: 100%; padding: 10px 15px; border-radius: 10px; border: 1px solid #cbd5e1; height: 80px; outline: none; background: #f8fafc; font-family: inherit; resize: vertical;"></textarea>
+                        </div>
+
+                        <div class="form-group" style="margin-bottom: 15px;">
+                            <label style="font-weight: 600; color: var(--text-main);"><?php echo __('coach_improvement_notes'); ?></label>
+                            <textarea name="coach_message" id="modal_coach_message" placeholder="<?php echo __('coach_improvement_notes_placeholder'); ?>" style="width: 100%; padding: 10px 15px; border-radius: 10px; border: 1px solid #cbd5e1; height: 80px; outline: none; background: #f8fafc; font-family: inherit; resize: vertical;"></textarea>
                         </div>
 
                         <div class="form-group" style="margin-bottom: 25px;">
@@ -465,6 +444,7 @@ $c_info = $coach_details->fetch();
                 roomSelect.value = data.room_number;
                 
                 document.getElementById('modal_training_plan').value = data.training_plan;
+                document.getElementById('modal_coach_message').value = data.coach_message || '';
                 document.getElementById('modal_attendance').value = data.attendance;
                 document.getElementById('classModal').style.display = 'flex';
             }
@@ -480,126 +460,7 @@ $c_info = $coach_details->fetch();
             }
             </script>
 
-            <!-- Student Progress Modal -->
-            <div id="studentProgressModal" style="display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.6); z-index: 10000; align-items: center; justify-content: center; backdrop-filter: blur(5px);">
-                <div style="background: white; padding: 2rem; border-radius: 20px; width: 90%; max-width: 600px; position: relative; box-shadow: 0 20px 50px rgba(0,0,0,0.3); font-family: 'Outfit', sans-serif;">
-                    <button type="button" onclick="closeStudentProgressModal()" style="position: absolute; right: 20px; top: 20px; border: none; background: #f1f5f9; color: var(--text-muted); width: 35px; height: 35px; border-radius: 50%; font-size: 1.2rem; cursor: pointer; display: flex; align-items: center; justify-content: center;"><i class="fas fa-times"></i></button>
-                    
-                    <h3 style="margin-top: 0; color: var(--text-main); font-size: 1.4rem; font-weight: 800; margin-bottom: 1.2rem; border-bottom: 2.5px solid #f1f5f9; padding-bottom: 10px; font-family: 'Playfair Display', serif;"><?php echo __('body_metrics'); ?>: <span id="student_name_span" style="color: var(--primary);"></span></h3>
-                    
-                    <div style="position: relative; height: 230px; width: 100%; background: #ffffff; padding: 0.5rem; border-radius: 15px; border: 1px solid var(--border); margin-bottom: 1.2rem;">
-                        <canvas id="studentMetricsChart"></canvas>
-                    </div>
 
-                    <!-- Log metrics for student form -->
-                    <form method="POST" style="background: #f8fafc; padding: 1.2rem; border-radius: 15px; border: 1px solid #e2e8f0; margin-bottom: 0;">
-                        <h4 style="margin: 0 0 0.8rem; font-weight: 700; color: var(--text-main); font-size: 0.95rem;"><?php echo __('record_student_metrics'); ?></h4>
-                        <input type="hidden" name="student_id" id="metrics_student_id">
-                        <div style="display: grid; grid-template-columns: repeat(5, 1fr); gap: 8px;">
-                            <div class="form-group" style="margin-bottom: 0;">
-                                <label style="font-size: 0.75rem; font-weight: 600; display: block; margin-bottom: 3px;"><?php echo __('date'); ?></label>
-                                <input type="date" name="recorded_date" value="<?php echo date('Y-m-d'); ?>" required style="padding: 6px; border-radius: 6px; border: 1px solid #cbd5e1; width: 100%; font-size: 0.8rem;">
-                            </div>
-                            <div class="form-group" style="margin-bottom: 0;">
-                                <label style="font-size: 0.75rem; font-weight: 600; display: block; margin-bottom: 3px;"><?php echo __('metric_weight'); ?></label>
-                                <input type="number" step="0.1" name="weight" required placeholder="70" style="padding: 6px; border-radius: 6px; border: 1px solid #cbd5e1; width: 100%; font-size: 0.8rem;">
-                            </div>
-                            <div class="form-group" style="margin-bottom: 0;">
-                                <label style="font-size: 0.75rem; font-weight: 600; display: block; margin-bottom: 3px;"><?php echo __('metric_muscle'); ?></label>
-                                <input type="number" step="0.1" name="muscle_mass" placeholder="30" style="padding: 6px; border-radius: 6px; border: 1px solid #cbd5e1; width: 100%; font-size: 0.8rem;">
-                            </div>
-                            <div class="form-group" style="margin-bottom: 0;">
-                                <label style="font-size: 0.75rem; font-weight: 600; display: block; margin-bottom: 3px;"><?php echo __('metric_fat'); ?></label>
-                                <input type="number" step="0.1" name="fat_mass" placeholder="15" style="padding: 6px; border-radius: 6px; border: 1px solid #cbd5e1; width: 100%; font-size: 0.8rem;">
-                            </div>
-                            <div class="form-group" style="margin-bottom: 0;">
-                                <label style="font-size: 0.75rem; font-weight: 600; display: block; margin-bottom: 3px;"><?php echo __('height_label'); ?></label>
-                                <input type="number" step="0.1" name="height" placeholder="175" style="padding: 6px; border-radius: 6px; border: 1px solid #cbd5e1; width: 100%; font-size: 0.8rem;">
-                            </div>
-                        </div>
-                        <div class="form-group" style="margin-top: 8px; margin-bottom: 10px;">
-                            <input type="text" name="notes" placeholder="<?php echo __('coach_notes_placeholder'); ?>" style="padding: 8px; border-radius: 8px; border: 1px solid #cbd5e1; width: 100%; font-size: 0.85rem;">
-                        </div>
-                        <button type="submit" name="coach_log_metrics" class="btn-auth" style="margin: 0; padding: 8px; font-size: 0.85rem; width: 100%;"><?php echo __('save_body_metrics'); ?></button>
-                    </form>
-                </div>
-            </div>
-
-            <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-            <script>
-            let studentChart = null;
-            function openStudentProgressModal(studentId, studentName) {
-                document.getElementById('student_name_span').innerText = studentName;
-                document.getElementById('metrics_student_id').value = studentId;
-                document.getElementById('studentProgressModal').style.display = 'flex';
-                
-                fetch('api_student_metrics.php?student_id=' + studentId)
-                    .then(response => response.json())
-                    .then(data => {
-                        if (data.success) {
-                            const metrics = data.metrics;
-                            const dates = metrics.map(m => {
-                                const d = new Date(m.recorded_date);
-                                return d.getDate() + '/' + (d.getMonth() + 1);
-                            });
-                            const weights = metrics.map(m => parseFloat(m.weight));
-                            const muscles = metrics.map(m => parseFloat(m.muscle_mass) || null);
-                            const fats = metrics.map(m => parseFloat(m.fat_mass) || null);
-                            
-                            const ctx = document.getElementById('studentMetricsChart').getContext('2d');
-                            if (studentChart) {
-                                studentChart.destroy();
-                            }
-                            studentChart = new Chart(ctx, {
-                                type: 'line',
-                                data: {
-                                    labels: dates,
-                                    datasets: [
-                                        {
-                                            label: '<?php echo __('weight_kg'); ?>',
-                                            data: weights,
-                                            borderColor: '#1a2744',
-                                            borderWidth: 2,
-                                            tension: 0.35,
-                                            fill: false
-                                        },
-                                        {
-                                            label: '<?php echo __('muscle_kg'); ?>',
-                                            data: muscles,
-                                            borderColor: '#10b981',
-                                            borderWidth: 2,
-                                            tension: 0.35,
-                                            fill: false
-                                        },
-                                        {
-                                            label: '<?php echo __('fat_kg'); ?>',
-                                            data: fats,
-                                            borderColor: '#ef4444',
-                                            borderWidth: 2,
-                                            tension: 0.35,
-                                            fill: false
-                                        }
-                                    ]
-                                },
-                                options: {
-                                    responsive: true,
-                                    maintainAspectRatio: false,
-                                    scales: {
-                                        y: { beginAtZero: false }
-                                    }
-                                }
-                            });
-                        }
-                    });
-            }
-            function closeStudentProgressModal() {
-                document.getElementById('studentProgressModal').style.display = 'none';
-                if (studentChart) {
-                    studentChart.destroy();
-                    studentChart = null;
-                }
-            }
-            </script>
 
 
         <?php elseif ($tab == 'report'): 
@@ -725,7 +586,7 @@ $c_info = $coach_details->fetch();
             $end_date_str = $sunday->format('Y-m-d 23:59:59');
 
             $stmt_b = $pdo->prepare("
-                SELECT b.*, u.name as client_name 
+                SELECT b.*, u.name as client_name, COALESCE(b.user_phone, u.phone) as client_phone 
                 FROM bookings b 
                 LEFT JOIN users u ON b.user_id = u.id 
                 WHERE b.booking_date >= ? AND b.booking_date <= ? AND b.status != 'cancelled'
@@ -738,17 +599,33 @@ $c_info = $coach_details->fetch();
             foreach ($bookings as $b) {
                 $date = date('Y-m-d', strtotime($b['booking_date']));
                 $time = date('H:i', strtotime($b['booking_date']));
-                // Assuming 1.5 hour per session based on image
                 $end_time = date('H:i', strtotime($b['booking_date']) + 3600);
-                $time_str = "<strong>" . $time . " - " . $end_time . "</strong>";
-                if (!empty($b['class_name'])) {
-                    $att_color = $b['attendance'] == 'present' ? 'color: #16a34a;' : ($b['attendance'] == 'absent' ? 'color: #dc2626;' : 'color: #f59e0b;');
-                    $time_str .= "<div style='font-size: 0.75rem; margin-top: 4px; color: var(--primary);'>".htmlspecialchars($b['class_name'])."</div>";
-                    $time_str .= "<div style='font-size: 0.7rem; color: #475569;'>Phòng: ".htmlspecialchars($b['room_number'])."</div>";
-                    $time_str .= "<div style='font-size: 0.7rem; {$att_color}'>Điểm danh: ".($b['attendance'] == 'present' ? 'Có' : ($b['attendance'] == 'absent' ? 'Vắng' : 'Chưa'))."</div>";
-                }
                 
-                $roster[$b['coach_id']][$date][] = "<div style='background: #f8fafc; padding: 5px; border-radius: 5px; border: 1px solid #e2e8f0; margin-bottom: 5px;'>" . $time_str . "</div>";
+                $client_name = !empty($b['client_name']) ? htmlspecialchars($b['client_name']) : (!empty($b['class_name']) ? htmlspecialchars($b['class_name']) : __('open_class'));
+                $client_phone = !empty($b['client_phone']) ? htmlspecialchars($b['client_phone']) : '';
+                
+                $att_color = $b['attendance'] == 'present' ? 'color: #16a34a;' : ($b['attendance'] == 'absent' ? 'color: #dc2626;' : 'color: #f59e0b;');
+                $att_text = $b['attendance'] == 'present' ? __('present_label') : ($b['attendance'] == 'absent' ? __('absent_label') : __('pending'));
+
+                $box_html = "<div style='background: #ffffff; padding: 8px 10px; border-radius: 10px; border: 1px solid #cbd5e1; margin-bottom: 6px; text-align: left; box-shadow: 0 2px 4px rgba(0,0,0,0.03);'>";
+                $box_html .= "<div><strong style='color: var(--primary); font-size: 0.85rem;'><i class='far fa-clock'></i> {$time} - {$end_time}</strong></div>";
+                $box_html .= "<div style='font-size: 0.8rem; font-weight: 700; color: #1e293b; margin-top: 4px;'><i class='fas fa-user' style='color: #64748b; width: 14px;'></i> {$client_name}</div>";
+                if ($client_phone) {
+                    $box_html .= "<div style='font-size: 0.75rem; color: #475569; margin-top: 2px;'><i class='fas fa-phone-alt' style='color: #2563eb; width: 14px;'></i> {$client_phone}</div>";
+                }
+                if (!empty($b['class_name'])) {
+                    $box_html .= "<div style='font-size: 0.75rem; color: #1d4ed8; font-weight: 600; margin-top: 2px;'><i class='fas fa-chalkboard-teacher' style='width: 14px;'></i> " . htmlspecialchars($b['class_name']) . "</div>";
+                }
+                if (!empty($b['room_number'])) {
+                    $box_html .= "<div style='font-size: 0.75rem; color: #475569; margin-top: 2px;'><i class='fas fa-door-open' style='width: 14px;'></i> " . htmlspecialchars($b['room_number']) . "</div>";
+                }
+                $box_html .= "<div style='font-size: 0.72rem; {$att_color} font-weight: 700; margin-top: 3px;'><i class='fas fa-user-check' style='width: 14px;'></i> {$att_text}</div>";
+                if (!empty($b['coach_message'])) {
+                    $box_html .= "<div style='font-size: 0.72rem; background: #fff8e6; color: #92400e; border: 1px solid #fde68a; padding: 4px 6px; border-radius: 6px; margin-top: 5px;'><i class='fas fa-edit' style='color: #d97706; margin-right: 3px;'></i> <strong>" . __('coach_notes_title') . ":</strong> " . htmlspecialchars($b['coach_message']) . "</div>";
+                }
+                $box_html .= "</div>";
+                
+                $roster[$b['coach_id']][$date][] = $box_html;
             }
 
             $day_names = ['THỨ 2', 'THỨ 3', 'THỨ 4', 'THỨ 5', 'THỨ 6', 'THỨ 7', 'CHỦ NHẬT'];

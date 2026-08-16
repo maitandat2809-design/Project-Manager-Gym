@@ -7,6 +7,6 @@ if (!isset($_SESSION['user_id'])) {
     exit();
 }
 // Redirect to profile.php where the progress tracker is integrated
-header("Location: profile.php");
+header("Location: /Gym Manager/dashboards/profile.php");
 exit();
 ?>

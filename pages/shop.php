@@ -2,6 +2,11 @@
 if (session_status() === PHP_SESSION_NONE) {
     session_start();
 }
+
+if (isset($_SESSION['role']) && $_SESSION['role'] === 'admin') {
+    header("Location: /Gym Manager/dashboards/admin.php");
+    exit();
+}
 require_once __DIR__ . '/../config/db.php';
 
 // Handle Add to Cart & Buy Now
@@ -121,7 +126,7 @@ $products = $stmt->fetchAll();
     <div class="grid shop-grid">
         <?php foreach($products as $product): ?>
             <div class="card" style="display: flex; flex-direction: column; height: 100%;">
-                <img src="<?php echo $product['image'] ?: 'https://images.unsplash.com/photo-1593095948071-474c5cc2989d?q=80&w=2070&auto=format&fit=crop'; ?>" class="card-img product-img" alt="<?php echo $product['name']; ?>" style="flex-shrink: 0;">
+                <img src="<?php echo get_image_url($product['image']); ?>" class="card-img product-img" alt="<?php echo $product['name']; ?>" style="flex-shrink: 0;">
                 <div class="card-content" style="display: flex; flex-direction: column; flex-grow: 1;">
                     <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 0.5rem; flex-wrap: wrap; gap: 5px;">
                         <div style="display: flex; gap: 5px; flex-wrap: wrap;">

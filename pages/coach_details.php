@@ -3,6 +3,7 @@ if (session_status() === PHP_SESSION_NONE) {
     session_start();
 }
 require_once __DIR__ . '/../config/db.php';
+require_once __DIR__ . '/../includes/lang.php';
 
 if (!isset($_GET['id'])) {
     header("Location: /Gym Manager/pages/coaches.php");
@@ -47,141 +48,17 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['book_now']) && isset($
         } else {
             $stmt = $pdo->prepare("INSERT INTO bookings (user_id, coach_id, booking_date, status, user_phone, user_address) VALUES (?, ?, ?, 'pending', ?, ?)");
         if ($stmt->execute([$_SESSION['user_id'], $id, $booking_date, $user_phone, $user_address])) {
-            
+            $booking_id = $pdo->lastInsertId();
+
             // Save info back to user profile
             $stmt_u = $pdo->prepare("UPDATE users SET phone = ?, address = ? WHERE id = ? AND (phone IS NULL OR address IS NULL OR phone != ? OR address != ?)");
             $stmt_u->execute([$user_phone, $user_address, $_SESSION['user_id'], $user_phone, $user_address]);
 
             $message = __('booking_success');
 
-            // --- Start PHPMailer Notification to Coach ---
-            require_once __DIR__ . '/../libs/PHPMailer/src/Exception.php';
-            require_once __DIR__ . '/../libs/PHPMailer/src/PHPMailer.php';
-            require_once __DIR__ . '/../libs/PHPMailer/src/SMTP.php';
-
-            try {
-                $mail = new PHPMailer\PHPMailer\PHPMailer(true);
-                $mail->CharSet = 'UTF-8';
-                $mail->isSMTP();
-                $mail->Host       = 'smtp.gmail.com';
-                $mail->SMTPAuth   = true;
-                $mail->Username   = 'lamtuoi155@gmail.com';
-                $mail->Password   = 'hpst uazz wdsq sbnf';
-                $mail->SMTPSecure = PHPMailer\PHPMailer\PHPMailer::ENCRYPTION_STARTTLS;
-                $mail->Port       = 587;
-
-                $mail->setFrom('lamtuoi155@gmail.com', 'GymX Booking System');
-                if ($coach['email']) {
-                    $mail->addAddress($coach['email'], $coach['coach_name']);
-                    
-                    $mail->isHTML(true);
-                    $mail->Subject = "🆕 NEW BOOKING: " . $_SESSION['user_name'] . " booked you!";
-                    
-                    $mail_body = "<div style='font-family: Arial, sans-serif; max-width: 600px; padding: 20px; border: 1px solid #e2e8f0; border-radius: 20px;'>";
-                    $mail_body .= "<h2 style='color: #0062ff;'>New Training Request</h2>";
-                    $mail_body .= "<p>A new training session has been booked with you.</p>";
-                    $mail_body .= "<div style='background: #f8fafc; padding: 15px; border-radius: 12px; margin: 20px 0;'>";
-                    $mail_body .= "<strong>Client:</strong> " . $_SESSION['user_name'] . "<br>";
-                    $mail_body .= "<strong>Phone:</strong> " . htmlspecialchars($user_phone) . "<br>";
-                    $mail_body .= "<strong>Address:</strong> " . htmlspecialchars($user_address) . "<br>";
-                    $mail_body .= "<strong>Date/Time:</strong> " . date('l, F d, Y - H:i', strtotime($booking_date));
-                    $mail_body .= "</div>";
-                    $mail_body .= "<p>Please log in to your dashboard to manage this request.</p></div>";
-
-                    $mail->Body = $mail_body;
-                    $mail->send();
-                }
-            } catch (Exception $e) {
-                error_log("Booking Mail to Coach Error: " . $e->getMessage());
-            }
-
-            // --- Start PHPMailer Notification to Managers ---
-            try {
-                $stmt_staff = $pdo->prepare("SELECT email, name FROM users WHERE role = 'manager'");
-                $stmt_staff->execute();
-                $staff = $stmt_staff->fetchAll();
-                
-                if (count($staff) > 0) {
-                    $mail2 = new PHPMailer\PHPMailer\PHPMailer(true);
-                    $mail2->CharSet = 'UTF-8';
-                    $mail2->isSMTP();
-                    $mail2->Host       = 'smtp.gmail.com';
-                    $mail2->SMTPAuth   = true;
-                    $mail2->Username   = 'lamtuoi155@gmail.com';
-                    $mail2->Password   = 'hpst uazz wdsq sbnf';
-                    $mail2->SMTPSecure = PHPMailer\PHPMailer\PHPMailer::ENCRYPTION_STARTTLS;
-                    $mail2->Port       = 587;
-
-                    $mail2->setFrom('lamtuoi155@gmail.com', 'GymX Booking System');
-                    
-                    $has_mgr = false;
-                    foreach ($staff as $s) {
-                        if ($s['email'] && $s['email'] !== $coach['email']) {
-                            $mail2->addAddress($s['email'], $s['name']);
-                            $has_mgr = true;
-                        }
-                    }
-                    
-                    if ($has_mgr) {
-                        $mail2->isHTML(true);
-                        $mail2->Subject = "URGENT: " . $_SESSION['user_name'] . " booked Coach " . $coach['coach_name'];
-                        
-                        $mail_body = "<div style='font-family: Arial, sans-serif; max-width: 600px; padding: 20px; border: 1px solid #e2e8f0; border-radius: 20px;'>";
-                        $mail_body .= "<h2 style='color: #0062ff;'>New Booking Alert</h2>";
-                        $mail_body .= "<div style='background: #f8fafc; padding: 15px; border-radius: 12px; margin: 20px 0;'>";
-                        $mail_body .= "<strong>Coach:</strong> " . $coach['coach_name'] . "<br>";
-                        $mail_body .= "<strong>Client:</strong> " . $_SESSION['user_name'] . "<br>";
-                        $mail_body .= "<strong>Date/Time:</strong> " . date('l, F d, Y - H:i', strtotime($booking_date));
-                        $mail_body .= "</div></div>";
-
-                        $mail2->Body = $mail_body;
-                        $mail2->send();
-                    }
-                }
-            } catch (Exception $e) {
-                error_log("Booking Mail to Manager Error: " . $e->getMessage());
-            }
-
-            // --- Start PHPMailer Notification to User ---
-            try {
-                $stmt_u = $pdo->prepare("SELECT email FROM users WHERE id = ?");
-                $stmt_u->execute([$_SESSION['user_id']]);
-                $user_email = $stmt_u->fetchColumn();
-
-                if ($user_email) {
-                    $mail3 = new PHPMailer\PHPMailer\PHPMailer(true);
-                    $mail3->CharSet = 'UTF-8';
-                    $mail3->isSMTP();
-                    $mail3->Host       = 'smtp.gmail.com';
-                    $mail3->SMTPAuth   = true;
-                    $mail3->Username   = 'lamtuoi155@gmail.com';
-                    $mail3->Password   = 'hpst uazz wdsq sbnf';
-                    $mail3->SMTPSecure = PHPMailer\PHPMailer\PHPMailer::ENCRYPTION_STARTTLS;
-                    $mail3->Port       = 587;
-
-                    $mail3->setFrom('lamtuoi155@gmail.com', 'GymX Booking System');
-                    $mail3->addAddress($user_email, $_SESSION['user_name']);
-                    
-                    $mail3->isHTML(true);
-                    $mail3->Subject = "GymX: Your Booking Confirmation with Coach " . $coach['coach_name'];
-                    
-                    $mail_body = "<div style='font-family: Arial, sans-serif; max-width: 600px; padding: 20px; border: 1px solid #e2e8f0; border-radius: 20px;'>";
-                    $mail_body .= "<h2 style='color: #0062ff;'>Booking Confirmation</h2>";
-                    $mail_body .= "<p>Hello <strong>" . $_SESSION['user_name'] . "</strong>, your training session has been successfully booked!</p>";
-                    $mail_body .= "<div style='background: #f8fafc; padding: 15px; border-radius: 12px; margin: 20px 0;'>";
-                    $mail_body .= "<strong>Coach:</strong> " . $coach['coach_name'] . "<br>";
-                    $mail_body .= "<strong>Date/Time:</strong> " . date('l, F d, Y - H:i', strtotime($booking_date)) . "<br>";
-                    $mail_body .= "<strong>Status:</strong> Pending (Waiting for Coach Approval)";
-                    $mail_body .= "</div>";
-                    $mail_body .= "<p>You will receive another notification once the coach confirms your session.</p></div>";
-
-                    $mail3->Body = $mail_body;
-                    $mail3->send();
-                }
-            } catch (Exception $e) {
-                error_log("Booking Mail to User Error: " . $e->getMessage());
-            }
-            // --- End Notifications ---
+            // Send Email Notifications
+            require_once __DIR__ . '/../includes/booking_mailer.php';
+            sendNewBookingNotificationEmail($pdo, $booking_id);
             } else {
                 $error = __('booking_error');
             }
@@ -247,7 +124,9 @@ if (isset($_SESSION['user_id'])) {
     <?php endif; ?>
 
     <?php if($error): ?>
-        <p style="color: #ff4444; text-align: center; margin-bottom: 2rem; background: rgba(255,68,68,0.1); padding: 1rem; border-radius: 10px;"><?php echo $error; ?></p>
+        <div style="background: #fef2f2; color: #991b1b; border: 1px solid #fca5a5; padding: 1.25rem 1.5rem; border-radius: 16px; margin-bottom: 2rem; box-shadow: 0 4px 14px rgba(239, 68, 68, 0.12); line-height: 1.6; max-width: 800px; margin-left: auto; margin-right: auto;">
+            <?php echo $error; ?>
+        </div>
     <?php endif; ?>
 
     <div class="coach-detail-container">

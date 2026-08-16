@@ -14,7 +14,7 @@ try {
     
     $pdo->exec($sql);
     echo "<h1>Bảng 'order_items' đã được tạo thành công!</h1>";
-    echo "<a href='profile.php'>Quay lại Hồ sơ</a>";
+    echo "<a href='/Gym Manager/dashboards/profile.php'>Quay lại Hồ sơ</a>";
 } catch (PDOException $e) {
     echo "<h1>Lỗi khi tạo bảng:</h1> " . $e->getMessage();
 }

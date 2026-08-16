@@ -2,6 +2,11 @@
 if (session_status() === PHP_SESSION_NONE) {
     session_start();
 }
+
+if (isset($_SESSION['role']) && $_SESSION['role'] === 'admin') {
+    header("Location: /Gym Manager/dashboards/admin.php");
+    exit();
+}
 require_once __DIR__ . '/../config/db.php';
 
 if (!isset($_SESSION['user_id'])) {
@@ -72,10 +77,12 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
     try {
         $pdo->beginTransaction();
 
-        // 1. Create Order
+        $payment_method = $_POST['payment_method'] ?? 'cod';
         $address = trim($_POST['address'] ?? '');
-        $stmt = $pdo->prepare("INSERT INTO orders (user_id, total_price, status, phone, address) VALUES (?, ?, 'completed', ?, ?)");
-        $stmt->execute([$user_id, $total_price, $phone, $address]);
+
+        // Create Order for COD or other standard methods (status = 'pending' representing delivering/in transit)
+        $stmt = $pdo->prepare("INSERT INTO orders (user_id, total_price, status, phone, address, payment_method, admin_seen) VALUES (?, ?, 'pending', ?, ?, ?, 0)");
+        $stmt->execute([$user_id, $total_price, $phone, $address, $payment_method]);
         $order_id = $pdo->lastInsertId();
 
         // Save info back to user profile
@@ -190,7 +197,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
                     $html_body2 .= "</ul>";
                     
                     $admin_body .= $html_body2;
-                    $admin_body .= "<p><a href='http://" . $_SERVER['HTTP_HOST'] . dirname($_SERVER['PHP_SELF']) . "/admin.php?page=orders' style='background: #0062ff; color: white; padding: 10px 20px; text-decoration: none; border-radius: 5px;'>Manage Order</a></p>";
+                    $admin_body .= "<p><a href='http://" . $_SERVER['HTTP_HOST'] . "/Gym%20Manager/dashboards/manager.php?page=orders' style='background: #0062ff; color: white; padding: 12px 24px; text-decoration: none; border-radius: 12px; font-weight: bold;'>Manage Orders Panel</a></p>";
                     
                     $mail2->Body = $admin_body;
                     $mail2->send();
@@ -205,8 +212,10 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
         unset($_SESSION['cart']);
         $success = true;
     } catch (Exception $e) {
-        $pdo->rollBack();
-        $error = "Payment error: " . $e->getMessage();
+        if ($pdo->inTransaction()) {
+            $pdo->rollBack();
+        }
+        $error = $e->getMessage();
     }
     } // End of phone validation else block
 }
@@ -215,6 +224,73 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
 <section>
     <div class="auth-container" style="max-width: 600px;">
         <?php if (isset($success)): ?>
+            <!-- Order Success Modal Popup -->
+            <div id="orderSuccessModal" style="display: flex; position: fixed; inset: 0; background: rgba(15, 23, 42, 0.75); z-index: 99999; align-items: center; justify-content: center; backdrop-filter: blur(8px); padding: 1rem; animation: fadeIn 0.3s ease-out;">
+                <div style="background: #ffffff; padding: 2.5rem 2rem; border-radius: 28px; width: 100%; max-width: 520px; box-shadow: 0 25px 60px rgba(0,0,0,0.3); border: 1px solid rgba(22, 163, 74, 0.2); text-align: center; position: relative; animation: modalPopIn 0.4s cubic-bezier(0.165, 0.84, 0.44, 1);">
+                    
+                    <button onclick="closeOrderSuccessModal()" style="position: absolute; top: 1.2rem; right: 1.2rem; background: #f1f5f9; border: none; color: #64748b; width: 34px; height: 34px; border-radius: 50%; cursor: pointer; font-size: 1.1rem; display: flex; align-items: center; justify-content: center;">✕</button>
+
+                    <div style="width: 90px; height: 90px; background: linear-gradient(135deg, #16a34a, #15803d); border-radius: 50%; display: flex; align-items: center; justify-content: center; margin: 0 auto 1.5rem; box-shadow: 0 12px 30px rgba(22, 163, 74, 0.35);">
+                        <i class="fas fa-check" style="font-size: 2.5rem; color: #ffffff;"></i>
+                    </div>
+
+                    <h2 style="font-size: 1.7rem; font-weight: 900; color: #0f172a; margin-bottom: 0.5rem; letter-spacing: -0.5px;"><?php echo __('order_pay_success_title'); ?></h2>
+                    <p style="color: #64748b; font-size: 0.95rem; margin-bottom: 1.8rem; line-height: 1.6; max-width: 440px; margin-left: auto; margin-right: auto;"><?php echo __('order_pay_success_subtitle'); ?></p>
+
+                    <div style="background: #f0fdf4; border: 1.5px solid #bbf7d0; border-radius: 20px; padding: 1.25rem 1.5rem; margin-bottom: 1.8rem; text-align: left;">
+                        <div style="display: flex; justify-content: space-between; margin-bottom: 0.75rem; border-bottom: 1px dashed #cbd5e1; padding-bottom: 0.5rem;">
+                            <span style="color: #475569; font-weight: 600; font-size: 0.9rem;"><?php echo __('order_pay_id'); ?>:</span>
+                            <strong style="color: #0062ff; font-size: 0.95rem;">#<?php echo $order_id; ?></strong>
+                        </div>
+                        <div style="display: flex; justify-content: space-between; margin-bottom: 0.75rem; border-bottom: 1px dashed #cbd5e1; padding-bottom: 0.5rem;">
+                            <span style="color: #475569; font-weight: 600; font-size: 0.9rem;"><?php echo __('order_pay_total'); ?>:</span>
+                            <strong style="color: #16a34a; font-size: 1.1rem; font-weight: 800;">$<?php echo number_format($total_price, 2); ?></strong>
+                        </div>
+                        <div style="display: flex; justify-content: space-between; margin-bottom: 0.75rem; border-bottom: 1px dashed #cbd5e1; padding-bottom: 0.5rem;">
+                            <span style="color: #475569; font-weight: 600; font-size: 0.9rem;"><?php echo __('order_pay_phone'); ?>:</span>
+                            <strong style="color: #0f172a; font-size: 0.9rem;"><?php echo htmlspecialchars($phone); ?></strong>
+                        </div>
+                        <div style="display: flex; justify-content: space-between; margin-bottom: 0.75rem; border-bottom: 1px dashed #cbd5e1; padding-bottom: 0.5rem;">
+                            <span style="color: #475569; font-weight: 600; font-size: 0.9rem;"><?php echo __('order_pay_address'); ?>:</span>
+                            <strong style="color: #0f172a; font-size: 0.9rem; max-width: 240px; text-align: right; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;"><?php echo htmlspecialchars($address); ?></strong>
+                        </div>
+                        <div style="display: flex; justify-content: space-between;">
+                            <span style="color: #475569; font-weight: 600; font-size: 0.9rem;"><?php echo __('order_pay_method'); ?>:</span>
+                            <strong style="color: #2563eb; font-size: 0.9rem;">
+                                <?php 
+                                $pm = $_POST['payment_method'] ?? 'cod';
+                                if ($pm === 'bank') echo __('payment_bank');
+                                elseif ($pm === 'momo') echo __('payment_momo');
+                                else echo __('payment_cod');
+                                ?>
+                            </strong>
+                        </div>
+                    </div>
+
+                    <div style="display: flex; gap: 12px; justify-content: center; flex-wrap: wrap;">
+                        <a href="/Gym Manager/dashboards/profile.php" class="cta-btn" style="background: linear-gradient(135deg, #0062ff, #004ed8); color: white; border: none; font-size: 0.95rem; padding: 0.85rem 1.6rem; border-radius: 12px; box-shadow: 0 4px 15px rgba(0,98,255,0.3); text-decoration: none; font-weight: 700;">
+                            <i class="fas fa-box" style="margin-right: 8px;"></i><?php echo __('order_pay_view_history'); ?>
+                        </a>
+                        <button onclick="closeOrderSuccessModal()" style="background: #f1f5f9; color: #475569; border: none; padding: 0.85rem 1.5rem; border-radius: 12px; font-weight: 700; cursor: pointer; font-size: 0.95rem;">
+                            <?php echo __('close'); ?>
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+            <script>
+            function closeOrderSuccessModal() {
+                var m = document.getElementById('orderSuccessModal');
+                if (m) m.style.display = 'none';
+            }
+            </script>
+            <style>
+            @keyframes modalPopIn {
+                0% { opacity: 0; transform: scale(0.85) translateY(20px); }
+                100% { opacity: 1; transform: scale(1) translateY(0); }
+            }
+            </style>
+
             <div style="text-align: center; padding: 4rem 1rem; animation: fadeInUp 0.8s ease;">
                 <div style="width: 120px; height: 120px; background: #f0fdf4; border-radius: 50%; display: flex; align-items: center; justify-content: center; margin: 0 auto 2.5rem; border: 3px solid #16a34a; box-shadow: 0 15px 35px rgba(22, 163, 74, 0.15);">
                     <svg width="60" height="60" viewBox="0 0 24 24" fill="none" stroke="#16a34a" stroke-width="4" stroke-linecap="round" stroke-linejoin="round">
@@ -234,7 +310,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
                     $items = $o_stmt->fetchAll();
                     foreach($items as $item): ?>
                         <div style="display: flex; flex-wrap: wrap; align-items: center; gap: 15px; background: #f8fafc; padding: 12px; border-radius: 15px; border: 1px solid var(--border); margin-bottom: 1rem;">
-                            <img src="<?php echo $item['image']; ?>" style="width: 50px; height: 50px; border-radius: 10px; object-fit: cover;">
+                            <img src="<?php echo htmlspecialchars(get_image_url($item['image'])); ?>" style="width: 50px; height: 50px; border-radius: 10px; object-fit: cover;">
                             <div style="flex-grow: 1;">
                                 <p style="color: var(--text-main); font-weight: 700; margin: 0;">
                                     <?php echo (isset($current_lang) && $current_lang === 'vi' && !empty($item['name_vi'])) ? htmlspecialchars($item['name_vi']) : htmlspecialchars($item['name']); ?>
@@ -243,7 +319,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
                                     <?php endif; ?>
                                 </p>
                             </div>
-                            <form action="profile.php" method="POST" style="display: flex; gap: 10px; align-items: center; margin: 0; flex-grow: 1;">
+                            <form action="/Gym Manager/dashboards/profile.php" method="POST" style="display: flex; gap: 10px; align-items: center; margin: 0; flex-grow: 1;">
                                 <input type="hidden" name="product_id" value="<?php echo $item['product_id']; ?>">
                                 <select name="rating" required style="background: white; border: 1px solid #e2e8f0; padding: 8px; border-radius: 10px; font-size: 0.85rem; outline: none; font-weight: 600; color: var(--text-main);">
                                     <option value="5">5 ★</option>
@@ -263,7 +339,6 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
                     <a href="/Gym Manager/dashboards/profile.php" class="cta-btn" style="background: white; color: var(--primary); border: 2px solid var(--primary); font-size: 0.95rem; box-shadow: none;"><?php echo __('view_orders'); ?></a>
                     <a href="/Gym Manager/pages/shop.php" class="cta-btn" style="font-size: 0.95rem;"><?php echo __('back_to_shop'); ?></a>
                 </div>
-            </div>
         <?php else: 
             // Get current user info for autofill
             $stmt_curr = $pdo->prepare("SELECT phone, address FROM users WHERE id = ?");
@@ -306,6 +381,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
                     ];
                 }
             }
+            $total_price_vnd = (int)round($total_display_price * 25000);
         ?>
             <div class="section-title">
                 <h2><?php echo __('checkout_confirmation'); ?></h2>
@@ -324,7 +400,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
                     <?php foreach($display_items as $item): ?>
                         <div style="display: flex; justify-content: space-between; margin-bottom: 1rem; padding-bottom: 1rem; border-bottom: 1px solid #e2e8f0;">
                             <div style="display: flex; gap: 15px; align-items: center;">
-                                <img src="<?php echo htmlspecialchars($item['image']); ?>" style="width: 50px; height: 50px; border-radius: 10px; object-fit: cover;">
+                                <img src="<?php echo htmlspecialchars(get_image_url($item['image'])); ?>" style="width: 50px; height: 50px; border-radius: 10px; object-fit: cover;">
                                 <div>
                                     <h4 style="margin: 0; color: var(--text-main); font-size: 1rem;"><?php echo htmlspecialchars($item['name']); ?></h4>
                                     <span style="color: var(--text-muted); font-size: 0.9rem;"><?php echo __('quantity'); ?>: <?php echo $item['qty']; ?></span>
@@ -337,7 +413,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
                     <?php endforeach; ?>
                     <div style="display: flex; justify-content: space-between; margin-top: 1.5rem; font-size: 1.2rem; font-weight: 800; color: var(--text-main);">
                         <span><?php echo __('total'); ?>:</span>
-                        <span>$<?php echo number_format($total_display_price, 2); ?></span>
+                        <span>$<?php echo number_format($total_display_price, 2); ?> <span style="font-size:0.95rem; color:var(--text-muted); font-weight:600;">(<?php echo number_format($total_price_vnd, 0, ',', '.'); ?>đ)</span></span>
                     </div>
                 </div>
 
@@ -355,45 +431,33 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
                                value="<?php echo isset($curr_user['phone']) ? htmlspecialchars($curr_user['phone']) : ''; ?>"
                                style="background: white;">
                     </div>
-                              <div style="background: #f8fafc; padding: 2rem; border-radius: 20px; margin-bottom: 2.5rem; border: 1px solid var(--border);">
+                </div>
+
+                <div style="background: #f8fafc; padding: 2rem; border-radius: 20px; margin-bottom: 2.5rem; border: 1px solid var(--border);">
                     <h3 style="margin-bottom: 1.5rem; color: var(--text-main); font-weight: 700;"><?php echo __('payment_method'); ?></h3>
-                    <div style="display: flex; flex-direction: column; gap: 1.5rem; color: var(--text-main); font-weight: 600;">
-                        <label style="display: flex; gap: 1.2rem; align-items: center; cursor: pointer; padding: 10px; border-radius: 10px; transition: 0.3s;" onmouseover="this.style.background='#f1f5f9'" onmouseout="this.style.background='transparent'">
-                            <input type="radio" name="payment_method" value="cod" checked onchange="toggleBankInfo()" style="width: 20px; height: 20px; accent-color: var(--primary);">
-                            <span><?php echo __('payment_cod'); ?></span>
-                        </label>
-                        
-                        <div>
-                            <label style="display: flex; gap: 1.2rem; align-items: center; cursor: pointer; padding: 10px; border-radius: 10px; transition: 0.3s;" onmouseover="this.style.background='#f1f5f9'" onmouseout="this.style.background='transparent'">
-                                <input type="radio" name="payment_method" value="bank" onchange="toggleBankInfo()" style="width: 20px; height: 20px; accent-color: var(--primary);">
-                                <span><?php echo __('payment_bank'); ?></span>
-                            </label>
-                            
-                            <div id="bank-info" style="display: none; margin-top: 1rem; padding: 1.5rem; background: white; border-radius: 15px; border: 1px solid var(--border-bright); box-shadow: 0 10px 25px rgba(0,98,255,0.05); animation: fadeInUp 0.5s ease;">
-                                <div style="display: flex; gap: 2rem; align-items: flex-start; flex-wrap: wrap;">
-                                    <div style="text-align: center; background: #fff; padding: 10px; border-radius: 15px; border: 1px dashed #ccc; flex-shrink: 0;">
-                                        <!-- Using VietQR API with real account -->
-                                        <img src="https://img.vietqr.io/image/MB-0364112108-compact2.png?amount=<?php echo floor($total_display_price * 25000); ?>&addInfo=Order%20Payment&accountName=GYMX%20STORE" style="width: 180px; height: auto;" alt="VietQR">
-                                        <p style="font-size: 0.85rem; color: var(--text-muted); margin-top: 10px; font-weight: 500;"><i class="fas fa-qrcode"></i> <?php echo __('scan_banking_app'); ?></p>
-                                    </div>
-                                    <div style="flex-grow: 1;">
-                                        <h4 style="margin: 0 0 15px 0; color: var(--primary); font-size: 1.1rem; border-bottom: 1px solid #e2e8f0; padding-bottom: 10px;"><?php echo __('bank_details'); ?></h4>
-                                        <p style="margin: 8px 0; font-size: 0.95rem;"><strong>Bank:</strong> MB Bank (Military Bank)</p>
-                                        <p style="margin: 8px 0; font-size: 0.95rem;"><strong>Account Name:</strong> GYMX STORE</p>
-                                        <p style="margin: 8px 0; font-size: 0.95rem;"><strong>Account Number:</strong> <span style="background: #f1f5f9; padding: 2px 8px; border-radius: 5px; font-family: monospace; letter-spacing: 1px;">0364112108</span></p>
-                                        <p style="margin: 8px 0; font-size: 0.95rem;"><strong><?php echo __('amount_to_pay'); ?></strong> <span style="color: #ef4444; font-weight: 700;">$<?php echo number_format($total_display_price, 2); ?></span> (<?php echo number_format($total_display_price * 25000, 0, ',', '.'); ?> VND)</p>
-                                        <div style="margin: 15px 0 0 0; font-size: 0.85rem; color: #b45309; background: #fef3c7; padding: 10px 15px; border-radius: 10px; border: 1px solid #fde68a; display: flex; gap: 10px; align-items: flex-start;">
-                                            <i class="fas fa-info-circle" style="margin-top: 3px;"></i> 
-                                            <span><?php echo __('bank_transfer_warning'); ?></span>
-                                        </div>
-                                    </div>
-                                </div>
-                            </div>
+                    <?php if (!empty($_SESSION['momo_error'])): ?>
+                        <div style="background:#fdf4ff;border:1.5px solid #e879f9;color:#a21caf;padding:1rem;border-radius:12px;margin-bottom:1.2rem;font-weight:600;">
+                            <i class="fas fa-exclamation-circle" style="margin-right:6px;"></i><?php echo htmlspecialchars($_SESSION['momo_error']); unset($_SESSION['momo_error']); ?>
                         </div>
+                    <?php endif; ?>
+                    <div style="display: flex; flex-direction: column; gap: 1.5rem; color: var(--text-main); font-weight: 600;">
+                        <!-- COD Option -->
+                        <label id="lbl-cod" style="display: flex; gap: 1.2rem; align-items: center; cursor: pointer; padding: 12px 16px; border-radius: 12px; border: 2px solid transparent; transition: 0.3s;" onmouseover="this.style.background='#f1f5f9'" onmouseout="this.style.background='transparent'">
+                            <input type="radio" name="payment_method" value="cod" checked style="width: 20px; height: 20px; accent-color: var(--primary);" onchange="highlightPayment()">
+                            <span>🚚 <?php echo __('payment_cod'); ?></span>
+                        </label>
+                        <!-- MoMo Option -->
+                        <label id="lbl-momo" style="display: flex; gap: 1.2rem; align-items: center; cursor: pointer; padding: 12px 16px; border-radius: 12px; border: 2px solid transparent; transition: 0.3s;" onmouseover="this.style.background='#fdf4ff'" onmouseout="this.style.background='transparent'">
+                            <input type="radio" name="payment_method" value="momo" style="width: 20px; height: 20px; accent-color: #a21caf;" onchange="highlightPayment()">
+                            <span style="display:flex;align-items:center;gap:10px;">
+                                <img src="https://upload.wikimedia.org/wikipedia/vi/f/fe/MoMo_Logo.png" onerror="this.onerror=null; this.src='https://cdn.haitrieu.com/wp-content/uploads/2022/10/Logo-MoMo-Square.png';" style="width:32px;height:32px;border-radius:8px;object-fit:cover;" alt="MoMo">
+                                <span><?php echo __('payment_momo'); ?></span>
+                            </span>
+                        </label>
                     </div>
                 </div>
- 
-                <button type="button" class="btn-auth" onclick="confirmCheckout()"><?php echo __('complete_order'); ?></button>
+
+                <button type="button" class="btn-auth" id="btnCheckout" onclick="confirmCheckout()"><?php echo __('complete_order'); ?></button>
             </form>
         <?php endif; ?>
     </div>
@@ -422,6 +486,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
         </div>
 
         <div style="background: #f8fafc; border-radius: 15px; padding: 15px; margin-bottom: 1.5rem; border: 1px solid var(--border);">
+            <div style="margin-bottom: 8px; font-size: 0.95rem;"><strong><?php echo __('payment_method'); ?>:</strong> <span id="modal-payment-method" style="color: var(--primary); font-weight: 700;"></span></div>
             <div style="margin-bottom: 8px; font-size: 0.95rem;"><strong><?php echo __('phone_number'); ?>:</strong> <span id="modal-phone"></span></div>
             <div style="font-size: 0.95rem;"><strong><?php echo __('address'); ?>:</strong> <span id="modal-address"></span></div>
         </div>
@@ -434,37 +499,82 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
 </div>
 
 <script>
-function toggleBankInfo() {
-    var bankRadio = document.querySelector('input[name="payment_method"][value="bank"]');
-    var bankInfo = document.getElementById('bank-info');
-    if(bankRadio && bankRadio.checked) {
-        bankInfo.style.display = 'block';
-    } else if (bankInfo) {
-        bankInfo.style.display = 'none';
-    }
+function highlightPayment() {
+    var isMomo = document.querySelector('input[name="payment_method"][value="momo"]').checked;
+    var lblMomo = document.getElementById('lbl-momo');
+    var lblCod  = document.getElementById('lbl-cod');
+    if (lblMomo) lblMomo.style.borderColor = isMomo ? '#a21caf' : 'transparent';
+    if (lblCod)  lblCod.style.borderColor  = !isMomo ? 'var(--primary)' : 'transparent';
 }
 
 function confirmCheckout() {
-    // Basic validation
-    let phone = document.querySelector('input[name="phone"]').value;
-    let address = document.querySelector('input[name="address"]').value;
-    let form = document.getElementById('checkoutForm');
-    
-    if(!phone || !address || !form.checkValidity()) {
+    var form = document.getElementById('checkoutForm');
+    var phoneInput   = document.querySelector('input[name="phone"]');
+    var addressInput = document.querySelector('input[name="address"]');
+    var payMethod    = document.querySelector('input[name="payment_method"]:checked').value;
+
+    if (!form.checkValidity()) {
+        var invalidInput = form.querySelector(':invalid');
+        if (invalidInput) {
+            invalidInput.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            invalidInput.focus();
+            invalidInput.style.borderColor = '#ef4444';
+            invalidInput.style.boxShadow = '0 0 0 3px rgba(239, 68, 68, 0.2)';
+            setTimeout(function() { invalidInput.style.borderColor = ''; invalidInput.style.boxShadow = ''; }, 2500);
+        }
         form.reportValidity();
         return;
     }
-    
-    // Update modal with current inputs
-    document.getElementById('modal-phone').innerText = phone;
-    document.getElementById('modal-address').innerText = address;
 
+    var phone   = phoneInput   ? phoneInput.value.trim()   : '';
+    var address = addressInput ? addressInput.value.trim() : '';
+
+    // ── MoMo Flow ──────────────────────────────────────────────
+    if (payMethod === 'momo') {
+        var btn = document.getElementById('btnCheckout');
+        btn.disabled = true;
+        btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Đang kết nối MoMo...';
+
+        fetch('/gymmanager/api/momo_pay_order.php', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ phone: phone, address: address })
+        })
+        .then(r => r.json())
+        .then(data => {
+            if (data.success && data.payUrl) {
+                window.location.href = data.payUrl;
+            } else {
+                btn.disabled = false;
+                btn.innerHTML = '<?php echo addslashes(__('complete_order')); ?>';
+                alert('❌ ' + (data.message || 'Lỗi kết nối MoMo'));
+            }
+        })
+        .catch(() => {
+            btn.disabled = false;
+            btn.innerHTML = '<?php echo addslashes(__('complete_order')); ?>';
+            alert('❌ Không thể kết nối đến máy chủ. Vui lòng thử lại.');
+        });
+        return;
+    }
+
+    // ── COD / Standard Flow ─────────────────────────────────────
+    var paymentLabel = '<?php echo addslashes(__('payment_cod')); ?>';
+    document.getElementById('modal-payment-method').innerText = paymentLabel;
+    document.getElementById('modal-phone').innerText   = phone;
+    document.getElementById('modal-address').innerText = address;
     document.getElementById('checkoutConfirmModal').style.display = 'flex';
 }
+
 function closeCheckoutModal() {
     document.getElementById('checkoutConfirmModal').style.display = 'none';
 }
 function submitCheckout() {
+    var btn = event.target;
+    if (btn) {
+        btn.disabled = true;
+        btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> <?php echo addslashes(__('processing')); ?>...';
+    }
     document.getElementById('checkoutForm').submit();
 }
 </script>

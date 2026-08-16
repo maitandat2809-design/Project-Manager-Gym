@@ -37,32 +37,17 @@ include_once __DIR__ . '/../includes/header.php';
             echo '</div>';
         }
         
-        $gymItems = [
-            ['name' => __('eq_gym_item1_name'), 'desc' => __('eq_gym_item1_desc'), 'img' => 'assets/img/equipment/treadmills.png'],
-            ['name' => __('eq_gym_item2_name'), 'desc' => __('eq_gym_item2_desc'), 'img' => 'assets/img/equipment/dumbbells.png'],
-            ['name' => __('eq_gym_item3_name'), 'desc' => __('eq_gym_item3_desc'), 'img' => 'assets/img/equipment/barbells.png'],
-            ['name' => __('eq_gym_item4_name'), 'desc' => __('eq_gym_item4_desc'), 'img' => 'assets/img/equipment/cable_machine.png'],
-            ['name' => __('eq_gym_item5_name'), 'desc' => __('eq_gym_item5_desc'), 'img' => 'assets/img/equipment/smith_machine.png'],
-            ['name' => __('eq_gym_item6_name'), 'desc' => __('eq_gym_item6_desc'), 'img' => 'assets/img/equipment/leg_press.png'],
-        ];
+        $gymStmt = $pdo->prepare("SELECT name, description as `desc`, image as img FROM equipment WHERE discipline = 'gym' AND status = 'active' ORDER BY id ASC");
+        $gymStmt->execute();
+        $gymItems = $gymStmt->fetchAll(PDO::FETCH_ASSOC);
 
-        $muayItems = [
-            ['name' => __('eq_muay_item1_name'), 'desc' => __('eq_muay_item1_desc'), 'img' => 'assets/img/equipment/heavy_bags.png'],
-            ['name' => __('eq_muay_item2_name'), 'desc' => __('eq_muay_item2_desc'), 'img' => 'assets/img/equipment/boxing_gloves.png'],
-            ['name' => __('eq_muay_item3_name'), 'desc' => __('eq_muay_item3_desc'), 'img' => 'assets/img/equipment/focus_mitts.png'],
-            ['name' => __('eq_muay_item4_name'), 'desc' => __('eq_muay_item4_desc'), 'img' => 'assets/img/equipment/shin_guards.png'],
-            ['name' => __('eq_muay_item5_name'), 'desc' => __('eq_muay_item5_desc'), 'img' => 'assets/img/equipment/thai_kick_pads.png'],
-            ['name' => __('eq_muay_item6_name'), 'desc' => __('eq_muay_item6_desc'), 'img' => 'assets/img/equipment/belly_pad.png'],
-        ];
+        $muayStmt = $pdo->prepare("SELECT name, description as `desc`, image as img FROM equipment WHERE discipline = 'muay' AND status = 'active' ORDER BY id ASC");
+        $muayStmt->execute();
+        $muayItems = $muayStmt->fetchAll(PDO::FETCH_ASSOC);
 
-        $yogaItems = [
-            ['name' => __('eq_yoga_item1_name'), 'desc' => __('eq_yoga_item1_desc'), 'img' => 'assets/img/equipment/yoga_mats.png'],
-            ['name' => __('eq_yoga_item2_name'), 'desc' => __('eq_yoga_item2_desc'), 'img' => 'assets/img/equipment/yoga_blocks.png'],
-            ['name' => __('eq_yoga_item3_name'), 'desc' => __('eq_yoga_item3_desc'), 'img' => 'assets/img/equipment/yoga_bands.png'],
-            ['name' => __('eq_yoga_item4_name'), 'desc' => __('eq_yoga_item4_desc'), 'img' => 'assets/img/equipment/balance_balls.png'],
-            ['name' => __('eq_yoga_item5_name'), 'desc' => __('eq_yoga_item5_desc'), 'img' => 'assets/img/equipment/yoga_wheel.png'],
-            ['name' => __('eq_yoga_item6_name'), 'desc' => __('eq_yoga_item6_desc'), 'img' => 'assets/img/equipment/yoga_bolster.png'],
-        ];
+        $yogaStmt = $pdo->prepare("SELECT name, description as `desc`, image as img FROM equipment WHERE discipline = 'yoga' AND status = 'active' ORDER BY id ASC");
+        $yogaStmt->execute();
+        $yogaItems = $yogaStmt->fetchAll(PDO::FETCH_ASSOC);
 
         renderEquipmentSection(__('eq_gym_title'), 'fas fa-dumbbell', $gymItems);
         renderEquipmentSection(__('eq_muay_title'), 'fas fa-hand-rock', $muayItems);

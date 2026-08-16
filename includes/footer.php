@@ -11,7 +11,10 @@
                     <h4><?php echo __('information'); ?></h4>
                     <ul>
                         <li><a href="/Gym Manager/pages/about.php"><?php echo __('about_us'); ?></a></li>
+                        <?php if(!isset($_SESSION['role']) || $_SESSION['role'] === 'user'): ?>
+                        <li><a href="/Gym Manager/pages/membership.php"><?php echo __('membership_rates'); ?></a></li>
                         <li><a href="/Gym Manager/pages/coaches.php"><?php echo __('gym_system'); ?></a></li>
+                        <?php endif; ?>
                         <li><a href="/Gym Manager/pages/news.php"><?php echo __('news_updates'); ?></a></li>
                         <li><a href="/Gym Manager/pages/careers.php"><?php echo __('careers'); ?></a></li>
                         <li><a href="/Gym Manager/pages/about.php#contact"><?php echo __('contact_us'); ?></a></li>
@@ -20,7 +23,9 @@
                 <div class="footer-col">
                     <h4><?php echo __('gym_network'); ?></h4>
                     <ul>
+                        <?php if(!isset($_SESSION['role']) || $_SESSION['role'] === 'user'): ?>
                         <li><a href="/Gym Manager/pages/coaches.php"><?php echo __('gym_network'); ?></a></li>
+                        <?php endif; ?>
                         <li><a href="/Gym Manager/pages/equipment.php"><?php echo __('premium_facilities'); ?></a></li>
                     </ul>
                 </div>
@@ -473,7 +478,123 @@
 
   }); // end DOMContentLoaded
 })();
+</script>
 
+<!-- GymX Global Custom Alert & Confirm Modal -->
+<div id="gymx-custom-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.65);z-index:999999;align-items:center;justify-content:center;backdrop-filter:blur(8px);padding:1rem;">
+    <div style="background:#fff;border-radius:24px;width:100%;max-width:440px;box-shadow:0 30px 80px rgba(0,0,0,0.35);overflow:hidden;animation:gymxModalPop 0.25s cubic-bezier(0.175, 0.885, 0.32, 1.275) forwards;border:1px solid rgba(255,255,255,0.2);">
+        <!-- Header -->
+        <div id="gymx-modal-header" style="background:linear-gradient(135deg,#0f172a,#1e3a5f);padding:1.3rem 1.6rem;display:flex;justify-content:space-between;align-items:center;">
+            <div style="display:flex;align-items:center;gap:12px;">
+                <div id="gymx-modal-icon-bg" style="width:36px;height:36px;border-radius:10px;background:rgba(255,255,255,0.12);display:flex;align-items:center;justify-content:center;font-size:1.2rem;">
+                    <span id="gymx-modal-icon">⚠️</span>
+                </div>
+                <h4 id="gymx-modal-title" style="color:#fff;margin:0;font-size:1.08rem;font-weight:800;font-family:inherit;">Thông Báo</h4>
+            </div>
+            <button onclick="closeGymXModal(false)" style="background:rgba(255,255,255,0.12);border:none;color:#fff;width:32px;height:32px;border-radius:50%;cursor:pointer;font-size:1.2rem;display:flex;align-items:center;justify-content:center;transition:all 0.2s;" onmouseover="this.style.background='rgba(255,255,255,0.25)'" onmouseout="this.style.background='rgba(255,255,255,0.12)'">×</button>
+        </div>
+        <!-- Body -->
+        <div style="padding:1.6rem 1.8rem;text-align:center;">
+            <p id="gymx-modal-message" style="color:#334155;font-size:0.98rem;line-height:1.6;margin:0;white-space:pre-line;font-weight:600;font-family:inherit;"></p>
+        </div>
+        <!-- Footer / Actions -->
+        <div style="padding:0 1.6rem 1.6rem;display:flex;gap:12px;justify-content:center;">
+            <button id="gymx-modal-btn-cancel" onclick="closeGymXModal(false)" style="display:none;flex:1;padding:0.9rem;background:#f1f5f9;color:#64748b;border:none;border-radius:14px;font-weight:700;font-size:0.92rem;cursor:pointer;transition:all 0.2s;" onmouseover="this.style.background='#e2e8f0'" onmouseout="this.style.background='#f1f5f9'">
+                Hủy Bỏ
+            </button>
+            <button id="gymx-modal-btn-confirm" onclick="closeGymXModal(true)" style="flex:1;padding:0.9rem;background:linear-gradient(135deg,#2563eb,#1d4ed8);color:#fff;border:none;border-radius:14px;font-weight:700;font-size:0.92rem;cursor:pointer;box-shadow:0 4px 15px rgba(37,99,235,0.3);transition:all 0.2s;" onmouseover="this.style.transform='translateY(-1px)'" onmouseout="this.style.transform='none'">
+                Đã Hiểu
+            </button>
+        </div>
+    </div>
+</div>
+
+<style>
+@keyframes gymxModalPop {
+    from { opacity: 0; transform: scale(0.9) translateY(10px); }
+    to { opacity: 1; transform: scale(1) translateY(0); }
+}
+</style>
+
+<script>
+let gymxModalResolver = null;
+const GYMX_LANG = <?php echo json_encode($_SESSION['lang'] ?? 'vi'); ?>;
+
+function showGymXAlert(message, title = null, icon = '⚠️') {
+    if (!title) title = GYMX_LANG === 'vi' ? 'Thông Báo' : 'Notification';
+    return new Promise((resolve) => {
+        gymxModalResolver = resolve;
+        document.getElementById('gymx-modal-icon').textContent = icon;
+        document.getElementById('gymx-modal-title').textContent = title;
+        document.getElementById('gymx-modal-message').textContent = message;
+        document.getElementById('gymx-modal-btn-cancel').style.display = 'none';
+        const confirmBtn = document.getElementById('gymx-modal-btn-confirm');
+        confirmBtn.textContent = GYMX_LANG === 'vi' ? 'Đã Hiểu' : 'Got It';
+        confirmBtn.style.background = 'linear-gradient(135deg,#2563eb,#1d4ed8)';
+        confirmBtn.style.boxShadow = '0 4px 15px rgba(37,99,235,0.3)';
+        document.getElementById('gymx-custom-modal').style.display = 'flex';
+    });
+}
+
+function showGymXConfirm(message, title = null, icon = '❓') {
+    if (!title) title = GYMX_LANG === 'vi' ? 'Xác Nhận Thao Tác' : 'Confirmation';
+    return new Promise((resolve) => {
+        gymxModalResolver = resolve;
+        document.getElementById('gymx-modal-icon').textContent = icon;
+        document.getElementById('gymx-modal-title').textContent = title;
+        document.getElementById('gymx-modal-message').textContent = message;
+        
+        const cancelBtn = document.getElementById('gymx-modal-btn-cancel');
+        cancelBtn.textContent = GYMX_LANG === 'vi' ? 'Hủy Bỏ' : 'Cancel';
+        cancelBtn.style.display = 'block';
+
+        const confirmBtn = document.getElementById('gymx-modal-btn-confirm');
+        confirmBtn.textContent = GYMX_LANG === 'vi' ? 'Xác Nhận' : 'Confirm';
+        confirmBtn.style.background = 'linear-gradient(135deg,#2563eb,#1d4ed8)';
+        confirmBtn.style.boxShadow = '0 4px 15px rgba(37,99,235,0.3)';
+        document.getElementById('gymx-custom-modal').style.display = 'flex';
+    });
+}
+
+function closeGymXModal(result = false) {
+    document.getElementById('gymx-custom-modal').style.display = 'none';
+    if (gymxModalResolver) {
+        gymxModalResolver(result);
+        gymxModalResolver = null;
+    }
+}
+
+// Close custom modal when clicking backdrop
+document.getElementById('gymx-custom-modal').addEventListener('click', function(e) {
+    if (e.target === this) closeGymXModal(false);
+});
+
+async function confirmOrderCustom(event, form, message, title = null, icon = '❓') {
+    if (event) event.preventDefault();
+    const submitter = event ? event.submitter : null;
+    const confirmed = await showGymXConfirm(message, title, icon);
+    if (confirmed) {
+        if (submitter && submitter.name && !form.querySelector(`input[name="${submitter.name}"]`)) {
+            const hidden = document.createElement('input');
+            hidden.type = 'hidden';
+            hidden.name = submitter.name;
+            hidden.value = submitter.value || '1';
+            form.appendChild(hidden);
+        }
+        form.submit();
+    }
+    return false;
+}
+
+async function confirmLinkCustom(event, link, message, title = null, icon = '❓') {
+    if (event) event.preventDefault();
+    const href = link.getAttribute('href');
+    const confirmed = await showGymXConfirm(message, title, icon);
+    if (confirmed && href) {
+        window.location.href = href;
+    }
+    return false;
+}
 </script>
 
 </body>

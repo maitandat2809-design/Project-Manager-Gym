@@ -64,21 +64,43 @@ if ($role == 'coach') {
         }
     }
 } elseif ($role == 'admin' || $role == 'manager') {
-    // Fetch new orders for admin/manager
-    $stmt = $pdo->query("
+    // Fetch new orders & membership applications for admin/manager
+    $stmt_orders = $pdo->query("
         SELECT o.*, u.name as customer_name 
         FROM orders o 
         JOIN users u ON o.user_id = u.id 
-        ORDER BY o.created_at DESC LIMIT 10
+        ORDER BY o.created_at DESC LIMIT 5
     ");
-    $orders = $stmt->fetchAll();
+    $orders = $stmt_orders->fetchAll();
 
-    if (empty($orders)) {
-        echo '<div class="no-notif"><i class="fas fa-shopping-bag"></i><p>No orders yet.</p></div>';
+    $stmt_mem = $pdo->query("
+        SELECT ms.*, u.name as customer_name, mp.name as plan_name, mp.name_vi as plan_name_vi 
+        FROM member_subscriptions ms 
+        JOIN users u ON ms.user_id = u.id 
+        JOIN membership_plans mp ON ms.plan_id = mp.id 
+        ORDER BY ms.created_at DESC LIMIT 5
+    ");
+    $memberships = $stmt_mem->fetchAll();
+
+    if (empty($orders) && empty($memberships)) {
+        echo '<div class="no-notif"><i class="fas fa-bell-slash"></i><p>No new notifications yet.</p></div>';
     } else {
+        foreach ($memberships as $m) {
+            $is_unread = $m['admin_seen'] == 0 ? 'unread' : '';
+            $p_name = ($_SESSION['lang'] ?? 'vi') === 'vi' ? ($m['plan_name_vi'] ?? $m['plan_name']) : $m['plan_name'];
+            echo '<a href="/Gym Manager/dashboards/manager.php?page=member_subscriptions" class="notif-item ' . $is_unread . '">';
+            echo '<h4>💳 Thẻ Thành Viên #' . $m['id'] . ' (Chờ xác nhận)</h4>';
+            echo '<p>Khách hàng: <strong>' . htmlspecialchars($m['customer_name']) . '</strong> — Gói: <strong>' . htmlspecialchars($p_name) . '</strong></p>';
+            echo '<div style="display: flex; justify-content: space-between; align-items: center; margin-top: 5px;">';
+            echo '<span class="price" style="font-size: 0.85rem; color: #ea580c; font-weight: 700;">' . number_format($m['price_paid'], 0, ',', '.') . 'đ</span>';
+            echo '<span class="notif-time" style="margin:0;">' . date('M d, H:i', strtotime($m['created_at'])) . '</span>';
+            echo '</div>';
+            echo '</a>';
+        }
+
         foreach ($orders as $o) {
             $is_unread = $o['admin_seen'] == 0 ? 'unread' : '';
-            echo '<a href="admin.php?page=orders" class="notif-item ' . $is_unread . '">';
+            echo '<a href="/Gym Manager/dashboards/manager.php?page=orders" class="notif-item ' . $is_unread . '">';
             echo '<h4>🛒 New Order #' . $o['id'] . '</h4>';
             echo '<p>From: <strong>' . htmlspecialchars($o['customer_name']) . '</strong></p>';
             echo '<div style="display: flex; justify-content: space-between; align-items: center; margin-top: 5px;">';
@@ -89,6 +111,7 @@ if ($role == 'coach') {
         }
         // Mark all as seen for admin/manager
         $pdo->exec("UPDATE orders SET admin_seen = 1 WHERE admin_seen = 0");
+        $pdo->exec("UPDATE member_subscriptions SET admin_seen = 1 WHERE admin_seen = 0");
     }
 } else {
     // Fetch responses for this user
@@ -110,7 +133,7 @@ if ($role == 'coach') {
             $is_unread = $n['user_seen'] == 0 ? 'unread' : '';
             $status_class = 'status-' . $n['status'] . '-notif';
             
-            echo '<a href="profile.php" class="notif-item ' . $is_unread . '">';
+            echo '<a href="/Gym Manager/dashboards/profile.php" class="notif-item ' . $is_unread . '">';
             echo '<h4>Coach ' . htmlspecialchars($n['coach_name']) . ' replied</h4>';
             echo '<p style="color: var(--text-main); font-weight: 600; margin: 5px 0;">"' . htmlspecialchars($n['coach_message']) . '"</p>';
             echo '<div style="display: flex; justify-content: space-between; align-items: center; margin-top: 8px;">';

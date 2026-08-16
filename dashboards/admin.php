@@ -12,6 +12,10 @@ if (!isset($_SESSION['user_id']) || $_SESSION['role'] !== 'admin') {
 include_once __DIR__ . '/../includes/header.php';
 
 $page = $_GET['page'] ?? 'dashboard';
+if ($page == 'memberships') {
+    header("Location: /Gym Manager/dashboards/admin.php?page=dashboard");
+    exit();
+}
 $message = '';
 
 // Handle Actions (Add/Update/Delete)
@@ -81,6 +85,17 @@ if ($page == 'coaches' && isset($_POST['add_coach'])) {
     try {
         $zalo = $_POST['zalo'] ?? null;
         $gmail = $_POST['gmail'] ?? null;
+        $room_name   = trim($_POST['room_name'] ?? '');
+        $room_number = trim($_POST['room_number'] ?? '');
+
+        // Check room duplicate by room number
+        if ($room_number !== '') {
+            $stmt_check = $pdo->prepare("SELECT COUNT(*) FROM coaches WHERE room_number = ?");
+            $stmt_check->execute([$room_number]);
+            if ($stmt_check->fetchColumn() > 0) {
+                throw new Exception(__('room_already_assigned'));
+            }
+        }
         
         $pdo->beginTransaction();
         // 1. Create User
@@ -89,14 +104,16 @@ if ($page == 'coaches' && isset($_POST['add_coach'])) {
         $user_id = $pdo->lastInsertId();
         
         // 2. Create Coach Entry
-        $stmt = $pdo->prepare("INSERT INTO coaches (user_id, specialty, hourly_rate, bio, zalo, gmail) VALUES (?, ?, ?, 'Professional fitness instructor', ?, ?)");
-        $stmt->execute([$user_id, $specialty, $rate, $zalo, $gmail]);
+        $stmt = $pdo->prepare("INSERT INTO coaches (user_id, specialty, hourly_rate, bio, zalo, gmail, room_name, room_number) VALUES (?, ?, ?, 'Professional fitness instructor', ?, ?, ?, ?)");
+        $stmt->execute([$user_id, $specialty, $rate, $zalo, $gmail, $room_name ?: null, $room_number ?: null]);
         
         $pdo->commit();
         $message = "Coach added successfully! Default password: 123456";
     } catch(Exception $e) {
-        $pdo->rollBack();
-        $message = "Error: " . $e->getMessage();
+        if ($pdo->inTransaction()) {
+            $pdo->rollBack();
+        }
+        $message = $e->getMessage();
     }
 }
 
@@ -107,9 +124,20 @@ if ($page == 'coaches' && isset($_POST['update_coach'])) {
     $rate = $_POST['rate'];
     
     try {
-        $zalo = $_POST['zalo'] ?? null;
-        $gmail = $_POST['gmail'] ?? null;
+        $zalo        = $_POST['zalo']        ?? null;
+        $gmail       = $_POST['gmail']       ?? null;
+        $room_name   = trim($_POST['room_name'] ?? '');
+        $room_number = trim($_POST['room_number'] ?? '');
         
+        // Check room duplicate by room number
+        if ($room_number !== '') {
+            $stmt_check = $pdo->prepare("SELECT COUNT(*) FROM coaches WHERE room_number = ? AND id != ?");
+            $stmt_check->execute([$room_number, $coach_id]);
+            if ($stmt_check->fetchColumn() > 0) {
+                throw new Exception(__('room_already_assigned'));
+            }
+        }
+
         $pdo->beginTransaction();
         $stmt = $pdo->prepare("SELECT user_id FROM coaches WHERE id = ?");
         $stmt->execute([$coach_id]);
@@ -118,14 +146,16 @@ if ($page == 'coaches' && isset($_POST['update_coach'])) {
         $stmt = $pdo->prepare("UPDATE users SET name = ? WHERE id = ?");
         $stmt->execute([$name, $uid]);
         
-        $stmt = $pdo->prepare("UPDATE coaches SET specialty = ?, hourly_rate = ?, zalo = ?, gmail = ? WHERE id = ?");
-        $stmt->execute([$specialty, $rate, $zalo, $gmail, $coach_id]);
+        $stmt = $pdo->prepare("UPDATE coaches SET specialty = ?, hourly_rate = ?, zalo = ?, gmail = ?, room_name = ?, room_number = ? WHERE id = ?");
+        $stmt->execute([$specialty, $rate, $zalo, $gmail, $room_name ?: null, $room_number ?: null, $coach_id]);
         
         $pdo->commit();
         $message = "Coach updated successfully!";
     } catch(Exception $e) {
-        $pdo->rollBack();
-        $message = "Error: " . $e->getMessage();
+        if ($pdo->inTransaction()) {
+            $pdo->rollBack();
+        }
+        $message = $e->getMessage();
     }
 }
 
@@ -188,9 +218,24 @@ if ($page == 'users' && isset($_POST['add_user'])) {
     if ($check->fetch()) {
         $message = "Error: Email already exists!";
     } else {
-        $stmt = $pdo->prepare("INSERT INTO users (name, email, password, role) VALUES (?, ?, ?, ?)");
-        $stmt->execute([$name, $email, $password, $role]);
-        $message = "User created successfully!";
+        try {
+            $pdo->beginTransaction();
+            $stmt = $pdo->prepare("INSERT INTO users (name, email, password, role) VALUES (?, ?, ?, ?)");
+            $stmt->execute([$name, $email, $password, $role]);
+            $user_id = $pdo->lastInsertId();
+
+            if ($role === 'coach') {
+                $stmt = $pdo->prepare("INSERT INTO coaches (user_id, specialty, hourly_rate, bio) VALUES (?, 'Gym', 20.00, 'Professional fitness instructor')");
+                $stmt->execute([$user_id]);
+            }
+            $pdo->commit();
+            $message = "User created successfully!";
+        } catch (Exception $e) {
+            if ($pdo->inTransaction()) {
+                $pdo->rollBack();
+            }
+            $message = "Error: " . $e->getMessage();
+        }
     }
 }
 
@@ -200,9 +245,27 @@ if ($page == 'users' && isset($_POST['update_user_details'])) {
     $email = $_POST['email'];
     $role = $_POST['role'];
 
-    $stmt = $pdo->prepare("UPDATE users SET name = ?, email = ?, role = ? WHERE id = ?");
-    $stmt->execute([$name, $email, $role, $uid]);
-    $message = "User updated successfully!";
+    try {
+        $pdo->beginTransaction();
+        $stmt = $pdo->prepare("UPDATE users SET name = ?, email = ?, role = ? WHERE id = ?");
+        $stmt->execute([$name, $email, $role, $uid]);
+
+        if ($role === 'coach') {
+            $check_c = $pdo->prepare("SELECT id FROM coaches WHERE user_id = ?");
+            $check_c->execute([$uid]);
+            if (!$check_c->fetch()) {
+                $stmt = $pdo->prepare("INSERT INTO coaches (user_id, specialty, hourly_rate, bio) VALUES (?, 'Gym', 20.00, 'Professional fitness instructor')");
+                $stmt->execute([$uid]);
+            }
+        }
+        $pdo->commit();
+        $message = "User updated successfully!";
+    } catch (Exception $e) {
+        if ($pdo->inTransaction()) {
+            $pdo->rollBack();
+        }
+        $message = "Error: " . $e->getMessage();
+    }
 }
 
 if (isset($_GET['delete_user'])) {
@@ -213,6 +276,50 @@ if (isset($_GET['delete_user'])) {
         $stmt = $pdo->prepare("DELETE FROM users WHERE id = ?");
         $stmt->execute([$uid]);
         $message = "User deleted successfully!";
+    }
+}
+
+if ($page == 'managers' && isset($_POST['add_manager'])) {
+    $name = $_POST['name'];
+    $email = $_POST['email'];
+    $password_raw = !empty($_POST['password']) ? $_POST['password'] : '123456';
+    $password = password_hash($password_raw, PASSWORD_DEFAULT);
+    
+    $check = $pdo->prepare("SELECT id FROM users WHERE email = ?");
+    $check->execute([$email]);
+    if ($check->fetch()) {
+        $message = "Error: Email already exists!";
+    } else {
+        $stmt = $pdo->prepare("INSERT INTO users (name, email, password, role) VALUES (?, ?, ?, 'manager')");
+        $stmt->execute([$name, $email, $password]);
+        $message = "Manager account created successfully! Default password: " . htmlspecialchars($password_raw);
+    }
+}
+
+if ($page == 'managers' && isset($_POST['update_manager'])) {
+    $uid = $_POST['user_id'];
+    $name = $_POST['name'];
+    $email = $_POST['email'];
+    
+    if (!empty($_POST['password'])) {
+        $password = password_hash($_POST['password'], PASSWORD_DEFAULT);
+        $stmt = $pdo->prepare("UPDATE users SET name = ?, email = ?, password = ? WHERE id = ? AND role = 'manager'");
+        $stmt->execute([$name, $email, $password, $uid]);
+    } else {
+        $stmt = $pdo->prepare("UPDATE users SET name = ?, email = ? WHERE id = ? AND role = 'manager'");
+        $stmt->execute([$name, $email, $uid]);
+    }
+    $message = "Manager updated successfully!";
+}
+
+if (isset($_GET['delete_manager'])) {
+    $uid = $_GET['delete_manager'];
+    if ($uid == $_SESSION['user_id']) {
+        $message = "Error: You cannot delete yourself!";
+    } else {
+        $stmt = $pdo->prepare("DELETE FROM users WHERE id = ? AND role = 'manager'");
+        $stmt->execute([$uid]);
+        $message = "Manager account deleted successfully!";
     }
 }
 
@@ -451,7 +558,8 @@ if ($page == 'bookings' && isset($_GET['change_status']) && isset($_GET['booking
             <ul>
                 <li><a href="/Gym Manager/dashboards/admin.php?page=dashboard" class="<?php echo $page == 'dashboard' ? 'active' : ''; ?>"><?php echo __("overview"); ?></a></li>
                 <li><a href="/Gym Manager/dashboards/admin.php?page=users" class="<?php echo $page == 'users' ? 'active' : ''; ?>"><?php echo __("user_management"); ?></a></li>
-                <li><a href="/Gym Manager/dashboards/admin.php?page=yearly_report" class="<?php echo $page == 'yearly_report' ? 'active' : ''; ?>"><?php echo __("yearly_report"); ?></a></li>
+                <li><a href="/Gym Manager/dashboards/admin.php?page=coaches" class="<?php echo $page == 'coaches' ? 'active' : ''; ?>"><?php echo __("coach_management"); ?></a></li>
+                <li><a href="/Gym Manager/dashboards/admin.php?page=managers" class="<?php echo $page == 'managers' ? 'active' : ''; ?>">👔 <?php echo __("manager_management"); ?></a></li>
             </ul>
         </div>
 
@@ -462,17 +570,29 @@ if ($page == 'bookings' && isset($_GET['change_status']) && isset($_GET['booking
 
             <?php if ($page == 'dashboard'): ?>
                 <h2><?php echo __("system_overview"); ?></h2>
-                <div class="grid" style="margin-top: 2rem;">
-                    <div style="background: white; padding: 2.5rem; border-radius: 25px; text-align: center; box-shadow: var(--shadow-premium); border: 1px solid var(--border);">
-                        <h3 style="color: var(--primary); text-transform: uppercase; font-size: 0.9rem; letter-spacing: 1px;"><?php echo __("total_users"); ?></h3>
-                        <p style="font-size: 3rem; font-weight: 800; color: var(--text-main);">
-                            <?php echo $pdo->query("SELECT COUNT(*) FROM users")->fetchColumn(); ?>
+                <div class="grid" style="margin-top: 2rem; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 1.5rem;">
+                    <div style="background: white; padding: 2rem; border-radius: 25px; text-align: center; box-shadow: var(--shadow-premium); border: 1px solid var(--border);">
+                        <h3 style="color: var(--primary); text-transform: uppercase; font-size: 0.85rem; letter-spacing: 1px; margin-bottom: 0.5rem;">User Accounts</h3>
+                        <p style="font-size: 2.5rem; font-weight: 800; color: var(--text-main); margin: 0;">
+                            <?php echo $pdo->query("SELECT COUNT(*) FROM users WHERE role = 'user'")->fetchColumn(); ?>
                         </p>
                     </div>
-                    <div style="background: white; padding: 2.5rem; border-radius: 25px; text-align: center; box-shadow: var(--shadow-premium); border: 1px solid var(--border);">
-                        <h3 style="color: var(--primary); text-transform: uppercase; font-size: 0.9rem; letter-spacing: 1px;">Total Orders</h3>
-                        <p style="font-size: 3rem; font-weight: 800; color: var(--text-main);">
-                            <?php echo $pdo->query("SELECT COUNT(*) FROM orders")->fetchColumn(); ?>
+                    <div style="background: white; padding: 2rem; border-radius: 25px; text-align: center; box-shadow: var(--shadow-premium); border: 1px solid var(--border);">
+                        <h3 style="color: #3b82f6; text-transform: uppercase; font-size: 0.85rem; letter-spacing: 1px; margin-bottom: 0.5rem;">Coach Accounts</h3>
+                        <p style="font-size: 2.5rem; font-weight: 800; color: var(--text-main); margin: 0;">
+                            <?php echo $pdo->query("SELECT COUNT(*) FROM users WHERE role = 'coach'")->fetchColumn(); ?>
+                        </p>
+                    </div>
+                    <div style="background: white; padding: 2rem; border-radius: 25px; text-align: center; box-shadow: var(--shadow-premium); border: 1px solid var(--border);">
+                        <h3 style="color: #f97316; text-transform: uppercase; font-size: 0.85rem; letter-spacing: 1px; margin-bottom: 0.5rem;">Manager Accounts</h3>
+                        <p style="font-size: 2.5rem; font-weight: 800; color: var(--text-main); margin: 0;">
+                            <?php echo $pdo->query("SELECT COUNT(*) FROM users WHERE role = 'manager'")->fetchColumn(); ?>
+                        </p>
+                    </div>
+                    <div style="background: white; padding: 2rem; border-radius: 25px; text-align: center; box-shadow: var(--shadow-premium); border: 1px solid var(--border);">
+                        <h3 style="color: #22c55e; text-transform: uppercase; font-size: 0.85rem; letter-spacing: 1px; margin-bottom: 0.5rem;">Admin Accounts</h3>
+                        <p style="font-size: 2.5rem; font-weight: 800; color: var(--text-main); margin: 0;">
+                            <?php echo $pdo->query("SELECT COUNT(*) FROM users WHERE role = 'admin'")->fetchColumn(); ?>
                         </p>
                     </div>
                 </div>
@@ -522,7 +642,7 @@ if ($page == 'bookings' && isset($_GET['change_status']) && isset($_GET['booking
                         <label style="font-weight: 600;">Product Image</label>
                         <div style="display: flex; align-items: center; gap: 1rem;">
                             <?php if ($edit_prod['image']): ?>
-                                <img src="<?php echo $edit_prod['image']; ?>" style="width: 50px; height: 50px; object-fit: cover; border-radius: 10px;">
+                                <img src="<?php echo get_image_url($edit_prod['image']); ?>" style="width: 50px; height: 50px; object-fit: cover; border-radius: 10px;">
                             <?php endif; ?>
                             <input type="file" name="image" accept="image/*" style="padding: 0.5rem; background: #f1f5f9; border-radius: 10px; width: 100%;">
                         </div>
@@ -532,12 +652,12 @@ if ($page == 'bookings' && isset($_GET['change_status']) && isset($_GET['booking
                         <textarea name="description" required style="width: 100%; padding: 1.1rem; border-radius: 15px; background: #f1f5f9; border: none; outline: none; min-height: 100px;"><?php echo htmlspecialchars($edit_prod['description']); ?></textarea>
                     </div>
                     <div class="form-group">
-                        <label style="font-weight: 600; color: var(--gold);">🇻🇳 Tên Tiếng Việt</label>
+                        <label style="font-weight: 600; color: var(--gold);">🇻🇳 Vietnamese Name</label>
                         <input type="text" name="name_vi" value="<?php echo htmlspecialchars($edit_prod['name_vi'] ?? ''); ?>" placeholder="e.g. Sữa Whey Protein" style="background: #fffbea; border: 1px solid rgba(201,168,76,0.3);">
                     </div>
                     <div class="form-group">
-                        <label style="font-weight: 600; color: var(--gold);">🇻🇳 Mô Tả Tiếng Việt</label>
-                        <textarea name="description_vi" style="width: 100%; padding: 1.1rem; border-radius: 15px; background: #fffbea; border: 1px solid rgba(201,168,76,0.3); outline: none; min-height: 80px;" placeholder="Mô tả sản phẩm bằng tiếng Việt..."><?php echo htmlspecialchars($edit_prod['description_vi'] ?? ''); ?></textarea>
+                        <label style="font-weight: 600; color: var(--gold);">🇻🇳 Vietnamese Description</label>
+                        <textarea name="description_vi" style="width: 100%; padding: 1.1rem; border-radius: 15px; background: #fffbea; border: 1px solid rgba(201,168,76,0.3); outline: none; min-height: 80px;" placeholder="Product description in Vietnamese..."><?php echo htmlspecialchars($edit_prod['description_vi'] ?? ''); ?></textarea>
                     </div>
                     <div style="display: flex; gap: 1rem;">
                         <button type="submit" name="update_product" class="btn-auth" style="margin-top: 0; width: auto; padding: 1.1rem 2rem;"><?php echo __("update_product"); ?></button>
@@ -581,12 +701,12 @@ if ($page == 'bookings' && isset($_GET['change_status']) && isset($_GET['booking
                         <textarea name="description" placeholder="Describe the product..." style="width: 100%; padding: 1.1rem; border-radius: 15px; background: #f1f5f9; border: none; outline: none; min-height: 100px;"></textarea>
                     </div>
                     <div class="form-group">
-                        <label style="font-weight: 600; color: var(--gold);">🇻🇳 Tên Tiếng Việt</label>
+                        <label style="font-weight: 600; color: var(--gold);">🇻🇳 Vietnamese Name</label>
                         <input type="text" name="name_vi" placeholder="e.g. Sữa Whey Protein" style="background: #fffbea; border: 1px solid rgba(201,168,76,0.3);">
                     </div>
                     <div class="form-group">
-                        <label style="font-weight: 600; color: var(--gold);">🇻🇳 Mô Tả Tiếng Việt</label>
-                        <textarea name="description_vi" placeholder="Mô tả sản phẩm bằng tiếng Việt..." style="width: 100%; padding: 1.1rem; border-radius: 15px; background: #fffbea; border: 1px solid rgba(201,168,76,0.3); outline: none; min-height: 80px;"></textarea>
+                        <label style="font-weight: 600; color: var(--gold);">🇻🇳 Vietnamese Description</label>
+                        <textarea name="description_vi" placeholder="Product description in Vietnamese..." style="width: 100%; padding: 1.1rem; border-radius: 15px; background: #fffbea; border: 1px solid rgba(201,168,76,0.3); outline: none; min-height: 80px;"></textarea>
                     </div>
                     <button type="submit" name="add_product" class="btn-auth" style="margin-top: 0; width: auto; padding: 1.1rem 2rem;"><?php echo __("add_product"); ?></button>
                 </form>
@@ -611,7 +731,7 @@ if ($page == 'bookings' && isset($_GET['change_status']) && isset($_GET['booking
                             foreach($prods as $p): ?>
                             <tr>
                                 <td>#<?php echo $p['id']; ?></td>
-                                <td><img src="<?php echo $p['image']; ?>" style="width: 40px; height: 40px; object-fit: cover; border-radius: 8px;"></td>
+                                <td><img src="<?php echo get_image_url($p['image']); ?>" style="width: 40px; height: 40px; object-fit: cover; border-radius: 8px;"></td>
                                 <td><?php echo $p['name']; ?></td>
                                 <td><span style="font-size: 0.8rem; padding: 4px 10px; background: #e2e8f0; border-radius: 20px; font-weight: 600;"><?php echo ucfirst($p['category'] ?? 'supplement'); ?></span></td>
                                 <td>$<?php echo $p['price']; ?></td>
@@ -645,25 +765,43 @@ if ($page == 'bookings' && isset($_GET['change_status']) && isset($_GET['booking
                     <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 1.5rem; margin-bottom: 1.5rem;">
                         <div class="form-group" style="margin-bottom: 0;">
                             <label style="font-weight: 600;">Full Name</label>
-                            <input type="text" name="name" value="<?php echo $edit_coach['name']; ?>" required style="background: #f1f5f9;">
+                            <input type="text" name="name" value="<?php echo htmlspecialchars($edit_coach['name']); ?>" required style="background: #f1f5f9;">
                         </div>
                         <div class="form-group" style="margin-bottom: 0;">
-                            <label style="font-weight: 600;">Specialty</label>
-                            <input type="text" name="specialty" value="<?php echo $edit_coach['specialty']; ?>" required style="background: #f1f5f9;">
+                            <label style="font-weight: 600;">Discipline</label>
+                            <select name="specialty" required style="padding: 1.1rem; border-radius: 15px; background: #f1f5f9; border: none; width: 100%; outline: none; font-weight: 600;">
+                                <option value="Gym" <?php echo (strtolower($edit_coach['specialty']) == 'gym') ? 'selected' : ''; ?>>Gym Fitness</option>
+                                <option value="Yoga" <?php echo (strtolower($edit_coach['specialty']) == 'yoga') ? 'selected' : ''; ?>>Yoga</option>
+                                <option value="Muay Thai" <?php echo (strtolower($edit_coach['specialty']) == 'muay thai') ? 'selected' : ''; ?>>Muay Thai</option>
+                            </select>
                         </div>
                         <div class="form-group" style="margin-bottom: 0;">
                             <label style="font-weight: 600;">Rate/h ($)</label>
                             <input type="number" step="0.01" name="rate" value="<?php echo $edit_coach['hourly_rate']; ?>" required style="background: #f1f5f9;">
                         </div>
                     </div>
-                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1.5rem; margin-bottom: 1.5rem;">
+                    <div style="display: grid; grid-template-columns: 1fr 1fr 1fr 1fr; gap: 1.5rem; margin-bottom: 1.5rem;">
                         <div class="form-group" style="margin-bottom: 0;">
                             <label style="font-weight: 600;">Zalo Number/Link</label>
-                            <input type="text" name="zalo" value="<?php echo $edit_coach['zalo']; ?>" placeholder="09xxxxxxx or link" style="background: #f1f5f9;">
+                            <input type="text" name="zalo" value="<?php echo htmlspecialchars($edit_coach['zalo'] ?? ''); ?>" placeholder="09xxxxxxx or link" style="background: #f1f5f9;">
                         </div>
                         <div class="form-group" style="margin-bottom: 0;">
                             <label style="font-weight: 600;">Gmail Address</label>
-                            <input type="email" name="gmail" value="<?php echo $edit_coach['gmail']; ?>" placeholder="coach@gmail.com" style="background: #f1f5f9;">
+                            <input type="email" name="gmail" value="<?php echo htmlspecialchars($edit_coach['gmail'] ?? ''); ?>" placeholder="coach@gmail.com" style="background: #f1f5f9;">
+                        </div>
+                        <div class="form-group" style="margin-bottom: 0;">
+                            <label style="font-weight: 600;">Room Name</label>
+                            <select name="room_name" id="edit_room_name" onchange="updateAdminRoomOptions('edit_room_name', 'edit_room_number')" style="padding: 1.1rem; border-radius: 15px; background: #f1f5f9; border: none; width: 100%; outline: none; font-weight: 600; height: 54px;">
+                                <option value="Gym">Gym</option>
+                                <option value="Muay">Muay</option>
+                                <option value="Yoga">Yoga</option>
+                            </select>
+                        </div>
+                        <div class="form-group" style="margin-bottom: 0;">
+                            <label style="font-weight: 600;">Room Number</label>
+                            <select name="room_number" id="edit_room_number" style="padding: 1.1rem; border-radius: 15px; background: #f1f5f9; border: none; width: 100%; outline: none; font-weight: 600; height: 54px;">
+                                <!-- Will be populated dynamically -->
+                            </select>
                         </div>
                     </div>
                     <div style="display: flex; gap: 0.8rem;">
@@ -683,10 +821,14 @@ if ($page == 'bookings' && isset($_GET['change_status']) && isset($_GET['booking
                             <input type="email" name="email" required placeholder="john@gymx.com" style="background: #f1f5f9;">
                         </div>
                     </div>
-                    <div style="display: grid; grid-template-columns: 1fr 1fr 1fr 1fr; gap: 1.5rem; margin-bottom: 1.5rem;">
+                    <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 1.5rem; margin-bottom: 1.5rem;">
                         <div class="form-group" style="margin-bottom: 0;">
-                            <label style="font-weight: 600;">Specialty</label>
-                            <input type="text" name="specialty" required placeholder="Bodybuilding" style="background: #f1f5f9;">
+                            <label style="font-weight: 600;">Discipline</label>
+                            <select name="specialty" required style="padding: 1.1rem; border-radius: 15px; background: #f1f5f9; border: none; width: 100%; outline: none; font-weight: 600;">
+                                <option value="Gym">Gym Fitness</option>
+                                <option value="Yoga">Yoga</option>
+                                <option value="Muay Thai">Muay Thai</option>
+                            </select>
                         </div>
                         <div class="form-group" style="margin-bottom: 0;">
                             <label style="font-weight: 600;">Rate/h ($)</label>
@@ -700,6 +842,20 @@ if ($page == 'bookings' && isset($_GET['change_status']) && isset($_GET['booking
                             <label style="font-weight: 600;">Contact Gmail</label>
                             <input type="email" name="gmail" placeholder="coach@gmail.com" style="background: #f1f5f9;">
                         </div>
+                        <div class="form-group" style="margin-bottom: 0;">
+                            <label style="font-weight: 600;">Room Name</label>
+                            <select name="room_name" id="add_room_name" onchange="updateAdminRoomOptions('add_room_name', 'add_room_number')" style="padding: 1.1rem; border-radius: 15px; background: #f1f5f9; border: none; width: 100%; outline: none; font-weight: 600; height: 54px;">
+                                <option value="Gym">Gym</option>
+                                <option value="Muay">Muay</option>
+                                <option value="Yoga">Yoga</option>
+                            </select>
+                        </div>
+                        <div class="form-group" style="margin-bottom: 0;">
+                            <label style="font-weight: 600;">Room Number</label>
+                            <select name="room_number" id="add_room_number" style="padding: 1.1rem; border-radius: 15px; background: #f1f5f9; border: none; width: 100%; outline: none; font-weight: 600; height: 54px;">
+                                <!-- Will be populated dynamically -->
+                            </select>
+                        </div>
                     </div>
                     <button type="submit" name="add_coach" class="btn-auth" style="margin-top: 0; width: auto; padding: 1.1rem 2.8rem;">Add Coach</button>
                 </form>
@@ -712,6 +868,8 @@ if ($page == 'bookings' && isset($_GET['change_status']) && isset($_GET['booking
                                 <th>Name</th>
                                 <th><?php echo __("email"); ?></th>
                                 <th>Specialty</th>
+                                <th>Room Name</th>
+                                <th>Room Number</th>
                                 <th>Rate/h</th>
                                 <th><?php echo __("actions"); ?></th>
                             </tr>
@@ -721,14 +879,166 @@ if ($page == 'bookings' && isset($_GET['change_status']) && isset($_GET['booking
                             $coaches = $pdo->query("SELECT c.*, u.name, u.email FROM coaches c JOIN users u ON c.user_id = u.id")->fetchAll();
                             foreach($coaches as $c): ?>
                             <tr>
-                                <td><?php echo $c['name']; ?></td>
-                                <td><?php echo $c['email']; ?></td>
-                                <td><?php echo $c['specialty']; ?></td>
-                                <td>$<?php echo $c['hourly_rate']; ?></td>
+                                <td><?php echo htmlspecialchars($c['name'] ?? ''); ?></td>
+                                <td><?php echo htmlspecialchars($c['email'] ?? ''); ?></td>
+                                <td><?php echo htmlspecialchars($c['specialty'] ?? ''); ?></td>
+                                <td><?php echo !empty($c['room_name']) ? htmlspecialchars($c['room_name']) : '<span style="color:#aaa;">—</span>'; ?></td>
+                                <td><?php echo !empty($c['room_number']) ? '<strong style="color:var(--primary);">' . htmlspecialchars($c['room_number']) . '</strong>' : '<span style="color:#aaa;">—</span>'; ?></td>
+                                <td>$<?php echo htmlspecialchars($c['hourly_rate'] ?? '0'); ?></td>
                                 <td>
                                     <div class="actions-cell-flex">
                                         <a href="/Gym Manager/dashboards/admin.php?page=coaches&edit_coach=<?php echo $c['id']; ?>" class="action-btn btn-edit" style="font-size: 0.8rem; padding: 5px 10px; display: inline-block;">Edit</a>
                                         <a href="/Gym Manager/dashboards/admin.php?page=coaches&delete_coach=<?php echo $c['id']; ?>" class="action-btn btn-delete" style="font-size: 0.8rem; padding: 5px 10px; display: inline-block;" onclick="return confirm('Confirm delete this coach?')">Delete</a>
+                                    </div>
+                                </td>
+                            </tr>
+                            <?php endforeach; ?>
+                        </tbody>
+                    </table>
+                </div>
+
+                <script>
+                function updateAdminRoomOptions(roomNameId, roomNumberId) {
+                    const nameSelect = document.getElementById(roomNameId);
+                    if (!nameSelect) return;
+                    const roomNameVal = nameSelect.value;
+                    const numberSelect = document.getElementById(roomNumberId);
+                    if (!numberSelect) return;
+                    
+                    numberSelect.innerHTML = '';
+                    
+                    const nameLower = roomNameVal.toLowerCase();
+                    let rooms = [];
+                    if (nameLower.includes('gym')) {
+                        rooms = ['Room 1', 'Room 2', 'Room 3'];
+                    } else if (nameLower.includes('muay')) {
+                        rooms = ['Room 4', 'Room 5', 'Room 6', 'Room 7'];
+                    } else if (nameLower.includes('yoga')) {
+                        rooms = ['Room 8', 'Room 9', 'Room 10'];
+                    } else {
+                        rooms = ['Room 1', 'Room 2', 'Room 3', 'Room 4', 'Room 5', 'Room 6', 'Room 7', 'Room 8', 'Room 9', 'Room 10'];
+                    }
+                    
+                    rooms.forEach(r => {
+                        const opt = document.createElement('option');
+                        opt.value = r;
+                        opt.textContent = r;
+                        numberSelect.appendChild(opt);
+                    });
+                }
+                
+                // Initialize for Add form if present
+                if (document.getElementById('add_room_name')) {
+                    updateAdminRoomOptions('add_room_name', 'add_room_number');
+                }
+                // Initialize for Edit form if present
+                if (document.getElementById('edit_room_name')) {
+                    const savedRoomName = "<?php echo isset($edit_coach) ? htmlspecialchars($edit_coach['room_name'] ?? 'Gym') : 'Gym'; ?>";
+                    const savedRoomNumber = "<?php echo isset($edit_coach) ? htmlspecialchars($edit_coach['room_number'] ?? '') : ''; ?>";
+                    
+                    let cleanName = 'Gym';
+                    if (savedRoomName.toLowerCase().includes('gym')) cleanName = 'Gym';
+                    else if (savedRoomName.toLowerCase().includes('muay')) cleanName = 'Muay';
+                    else if (savedRoomName.toLowerCase().includes('yoga')) cleanName = 'Yoga';
+                    
+                    document.getElementById('edit_room_name').value = cleanName;
+                    updateAdminRoomOptions('edit_room_name', 'edit_room_number');
+                    if (savedRoomNumber) {
+                        document.getElementById('edit_room_number').value = savedRoomNumber;
+                    }
+                }
+                </script>
+
+            <?php elseif ($page == 'managers'): 
+                $edit_mgr = null;
+                if (isset($_GET['edit_manager'])) {
+                    $stmt = $pdo->prepare("SELECT * FROM users WHERE id = ? AND role = 'manager'");
+                    $stmt->execute([$_GET['edit_manager']]);
+                    $edit_mgr = $stmt->fetch();
+                }
+            ?>
+                <h2>👔 <?php echo __("manager_management"); ?></h2>
+
+                <?php if ($edit_mgr): ?>
+                <!-- Edit Manager Form -->
+                <form method="POST" style="background: white; padding: 2.5rem; border-radius: 25px; margin: 2rem 0; border: 2px solid var(--primary); box-shadow: var(--shadow-premium);">
+                    <input type="hidden" name="user_id" value="<?php echo $edit_mgr['id']; ?>">
+                    <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 1.5rem; margin-bottom: 1.5rem;">
+                        <div class="form-group" style="margin-bottom: 0;">
+                            <label style="font-weight: 600;">Full Name</label>
+                            <input type="text" name="name" value="<?php echo htmlspecialchars($edit_mgr['name']); ?>" required style="background: #f1f5f9;">
+                        </div>
+                        <div class="form-group" style="margin-bottom: 0;">
+                            <label style="font-weight: 600;">Email</label>
+                            <input type="email" name="email" value="<?php echo htmlspecialchars($edit_mgr['email']); ?>" required style="background: #f1f5f9;">
+                        </div>
+                        <div class="form-group" style="margin-bottom: 0;">
+                            <label style="font-weight: 600;">New Password (leave empty to keep current)</label>
+                            <input type="password" name="password" placeholder="******" style="background: #f1f5f9;">
+                        </div>
+                    </div>
+                    <div style="display: flex; gap: 0.8rem;">
+                        <button type="submit" name="update_manager" class="btn-auth" style="margin-top: 0; width: auto; padding: 1.1rem 1.8rem;">Update Manager</button>
+                        <a href="/Gym Manager/dashboards/admin.php?page=managers" class="action-btn" style="background: #f1f5f9; color: var(--text-muted); border-radius: 15px; padding: 1.1rem 1.5rem; height: auto; display: flex; align-items: center; text-decoration: none; font-weight: 700;">Cancel</a>
+                    </div>
+                </form>
+                <?php else: ?>
+                <!-- Add Manager Form -->
+                <form method="POST" style="background: white; padding: 2.5rem; border-radius: 25px; margin: 2rem 0; box-shadow: var(--shadow-premium); border: 1px solid var(--border);">
+                    <h3 style="margin-bottom: 1.5rem; color: var(--text-main);">Add New Manager</h3>
+                    <div style="display: grid; grid-template-columns: repeat(3, 1fr) auto; gap: 1.5rem; align-items: flex-end;">
+                        <div class="form-group" style="margin-bottom: 0;">
+                            <label style="font-weight: 600;">Full Name</label>
+                            <input type="text" name="name" required placeholder="Manager Name" style="background: #f1f5f9;">
+                        </div>
+                        <div class="form-group" style="margin-bottom: 0;">
+                            <label style="font-weight: 600;">Email</label>
+                            <input type="email" name="email" required placeholder="manager@gym.com" style="background: #f1f5f9;">
+                        </div>
+                        <div class="form-group" style="margin-bottom: 0;">
+                            <label style="font-weight: 600;">Password (Default: 123456)</label>
+                            <input type="password" name="password" placeholder="123456" style="background: #f1f5f9;">
+                        </div>
+                        <button type="submit" name="add_manager" class="btn-auth" style="margin-top: 0; width: auto; padding: 1.1rem 1.8rem;">Add Manager</button>
+                    </div>
+                </form>
+                <?php endif; ?>
+
+                <div class="table-responsive" style="overflow-x: auto; width: 100%; max-width: calc(100vw - 320px);">
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>Name</th>
+                                <th>Email</th>
+                                <th>Status</th>
+                                <th>Created At</th>
+                                <th>Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <?php 
+                            $managers = $pdo->query("SELECT * FROM users WHERE role = 'manager' ORDER BY created_at DESC")->fetchAll();
+                            foreach($managers as $m): ?>
+                            <tr>
+                                <td>
+                                    <div style="display: flex; align-items: center; gap: 10px;">
+                                        <div style="width: 32px; height: 32px; background: #fff7ed; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-weight: 800; color: #f97316; font-size: 0.8rem;">
+                                            <?php echo strtoupper($m['name'][0]); ?>
+                                        </div>
+                                        <strong><?php echo htmlspecialchars($m['name']); ?></strong>
+                                    </div>
+                                </td>
+                                <td><?php echo htmlspecialchars($m['email']); ?></td>
+                                <td>
+                                    <span style="display: flex; align-items: center; gap: 5px; color: #22c55e; font-size: 0.85rem; font-weight: 600;">
+                                        <span style="width: 8px; height: 8px; background: #22c55e; border-radius: 50%;"></span> Active Manager
+                                    </span>
+                                </td>
+                                <td><?php echo date('d/m/Y', strtotime($m['created_at'])); ?></td>
+                                <td>
+                                    <div class="actions-cell-flex">
+                                        <a href="/Gym Manager/dashboards/admin.php?page=managers&edit_manager=<?php echo $m['id']; ?>" class="action-btn btn-edit" style="font-size: 0.75rem; padding: 8px 12px;">Edit</a>
+                                        <a href="/Gym Manager/dashboards/admin.php?page=managers&delete_manager=<?php echo $m['id']; ?>" class="action-btn btn-delete" style="font-size: 0.75rem; padding: 8px 12px;" onclick="return confirm('Confirm delete this manager account?')">Delete</a>
                                     </div>
                                 </td>
                             </tr>
@@ -810,6 +1120,17 @@ if ($page == 'bookings' && isset($_GET['change_status']) && isset($_GET['booking
                     </form>
                 <?php endif; ?>
 
+                <?php 
+                $role_filter = $_GET['role_filter'] ?? 'all';
+                ?>
+                <div style="display: flex; gap: 0.8rem; margin: 1.5rem 0;">
+                    <a href="/Gym Manager/dashboards/admin.php?page=users&role_filter=all" class="action-btn" style="background: <?php echo $role_filter == 'all' ? 'var(--primary)' : '#f1f5f9'; ?>; color: <?php echo $role_filter == 'all' ? 'white' : 'var(--text-main)'; ?>; border-radius: 12px; padding: 0.6rem 1.2rem; text-decoration: none; font-weight: 700; font-size: 0.85rem;">All</a>
+                    <a href="/Gym Manager/dashboards/admin.php?page=users&role_filter=user" class="action-btn" style="background: <?php echo $role_filter == 'user' ? 'var(--primary)' : '#f1f5f9'; ?>; color: <?php echo $role_filter == 'user' ? 'white' : 'var(--text-main)'; ?>; border-radius: 12px; padding: 0.6rem 1.2rem; text-decoration: none; font-weight: 700; font-size: 0.85rem;">User</a>
+                    <a href="/Gym Manager/dashboards/admin.php?page=users&role_filter=coach" class="action-btn" style="background: <?php echo $role_filter == 'coach' ? '#3b82f6' : '#f1f5f9'; ?>; color: <?php echo $role_filter == 'coach' ? 'white' : 'var(--text-main)'; ?>; border-radius: 12px; padding: 0.6rem 1.2rem; text-decoration: none; font-weight: 700; font-size: 0.85rem;">Coach</a>
+                    <a href="/Gym Manager/dashboards/admin.php?page=users&role_filter=manager" class="action-btn" style="background: <?php echo $role_filter == 'manager' ? '#f97316' : '#f1f5f9'; ?>; color: <?php echo $role_filter == 'manager' ? 'white' : 'var(--text-main)'; ?>; border-radius: 12px; padding: 0.6rem 1.2rem; text-decoration: none; font-weight: 700; font-size: 0.85rem;">Manager</a>
+                    <a href="/Gym Manager/dashboards/admin.php?page=users&role_filter=admin" class="action-btn" style="background: <?php echo $role_filter == 'admin' ? '#22c55e' : '#f1f5f9'; ?>; color: <?php echo $role_filter == 'admin' ? 'white' : 'var(--text-main)'; ?>; border-radius: 12px; padding: 0.6rem 1.2rem; text-decoration: none; font-weight: 700; font-size: 0.85rem;">Admin</a>
+                </div>
+
                 <div class="table-responsive" style="overflow-x: auto; width: 100%; max-width: calc(100vw - 320px);">
                     <table>
                         <thead>
@@ -823,7 +1144,13 @@ if ($page == 'bookings' && isset($_GET['change_status']) && isset($_GET['booking
                         </thead>
                         <tbody>
                             <?php 
-                            $all_users = $pdo->query("SELECT * FROM users ORDER BY created_at DESC")->fetchAll();
+                            if ($role_filter != 'all' && in_array($role_filter, ['user', 'coach', 'manager', 'admin'])) {
+                                $stmt = $pdo->prepare("SELECT * FROM users WHERE role = ? ORDER BY created_at DESC");
+                                $stmt->execute([$role_filter]);
+                                $all_users = $stmt->fetchAll();
+                            } else {
+                                $all_users = $pdo->query("SELECT * FROM users ORDER BY created_at DESC")->fetchAll();
+                            }
                             foreach($all_users as $u): ?>
                             <tr>
                                 <td>
@@ -1392,6 +1719,9 @@ if ($page == 'bookings' && isset($_GET['change_status']) && isset($_GET['booking
                                     <span class="status-badge" style="background: #dcfce7; color: #16a34a; padding: 5px 10px; border-radius: 20px; font-weight: 800; font-size: 0.7rem;">
                                         <?php echo strtoupper($o['status']); ?>
                                     </span>
+                                    <span class="status-badge" style="background: #eff6ff; color: #1d4ed8; padding: 5px 10px; border-radius: 20px; font-weight: 800; font-size: 0.7rem; display: block; margin-top: 4px;">
+                                        <?php echo strtoupper($o['payment_method'] ?? 'COD'); ?>
+                                    </span>
                                 </td>
                             </tr>
                             <?php endforeach; ?>
@@ -1401,6 +1731,7 @@ if ($page == 'bookings' && isset($_GET['change_status']) && isset($_GET['booking
                         </tbody>
                     </table>
                 </div>
+
             <?php endif; ?>
         </div>
     </div>
