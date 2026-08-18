@@ -128,15 +128,25 @@ if (isset($_SESSION['user_id'])) {
                             <?php
                             $notif_count = 0;
                             if($_SESSION['role'] == 'coach') {
-                                $stmt_n = $pdo->prepare("SELECT COUNT(*) FROM bookings b JOIN coaches c ON b.coach_id = c.id WHERE c.user_id = ? AND b.coach_seen = 0");
-                                $stmt_n->execute([$_SESSION['user_id']]);
+                                $stmt_n = $pdo->prepare("
+                                    SELECT 
+                                        (SELECT COUNT(*) FROM bookings b JOIN coaches c ON b.coach_id = c.id WHERE c.user_id = ? AND b.coach_seen = 0) +
+                                        (SELECT COUNT(*) FROM bookings b JOIN coaches c ON b.coach_id = c.id WHERE c.user_id = ? AND b.user_rating IS NOT NULL AND b.review_seen_by_coach = 0) +
+                                        (SELECT COUNT(*) FROM bookings b JOIN coaches c ON b.coach_id = c.id WHERE c.user_id = ? AND b.attendance = 'present' AND b.coach_session_notes IS NULL)
+                                ");
+                                $stmt_n->execute([$_SESSION['user_id'], $_SESSION['user_id'], $_SESSION['user_id']]);
                                 $notif_count = $stmt_n->fetchColumn();
                             } elseif($_SESSION['role'] == 'admin' || $_SESSION['role'] == 'manager') {
                                 $stmt_n = $pdo->query("SELECT (SELECT COUNT(*) FROM orders WHERE admin_seen = 0) + (SELECT COUNT(*) FROM member_subscriptions WHERE admin_seen = 0) + (SELECT COUNT(*) FROM bookings WHERE admin_seen = 0)");
                                 $notif_count = $stmt_n->fetchColumn();
                             } else {
-                                $stmt_n = $pdo->prepare("SELECT COUNT(*) FROM bookings WHERE user_id = ? AND user_seen = 0 AND coach_message IS NOT NULL");
-                                $stmt_n->execute([$_SESSION['user_id']]);
+                                $stmt_n = $pdo->prepare("
+                                    SELECT 
+                                        (SELECT COUNT(*) FROM bookings WHERE user_id = ? AND user_seen = 0 AND coach_message IS NOT NULL) +
+                                        (SELECT COUNT(*) FROM bookings WHERE user_id = ? AND (attendance = 'present' OR status = 'confirmed') AND user_rating IS NULL) +
+                                        (SELECT COUNT(*) FROM bookings WHERE user_id = ? AND coach_session_notes IS NOT NULL AND notes_seen_by_user = 0)
+                                ");
+                                $stmt_n->execute([$_SESSION['user_id'], $_SESSION['user_id'], $_SESSION['user_id']]);
                                 $notif_count = $stmt_n->fetchColumn();
                             }
                             ?>
@@ -256,6 +266,7 @@ if (isset($_SESSION['user_id'])) {
 
     <?php include_once __DIR__ . '/coach_notification.php'; ?>
     <?php include_once __DIR__ . '/admin_notification.php'; ?>
+    <?php include_once __DIR__ . '/session_eval_modals.php'; ?>
 
     <script>
         function openLogoutModal(e) {
@@ -303,20 +314,16 @@ if (isset($_SESSION['user_id'])) {
 
         if (notifBell) {
             notifBell.addEventListener('click', function(e) {
-                const isCoach = <?php echo json_encode(isset($_SESSION['role']) && $_SESSION['role'] === 'coach'); ?>;
-                
-                if (isCoach) {
-                    window.location.href = '/Gym Manager/notifications/coach_notifications.php';
-                } else {
-                    e.preventDefault();
-                    e.stopPropagation();
+                e.preventDefault();
+                e.stopPropagation();
+                if (notifDropdown) {
                     notifDropdown.classList.toggle('active');
                     
                     if (notifDropdown.classList.contains('active')) {
                         fetch('/Gym Manager/includes/notif_fetch.php')
                             .then(response => response.text())
                             .then(html => {
-                                notifBody.innerHTML = html;
+                                if (notifBody) notifBody.innerHTML = html;
                             });
                     }
                 }

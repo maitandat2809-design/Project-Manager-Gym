@@ -209,7 +209,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['user_cancel_booking'])
     $reason = trim($_POST['cancel_reason'] ?? '');
     
     try {
-        $stmt_check = $pdo->prepare("SELECT id, status, booking_date, class_name, user_id FROM bookings WHERE id = ?");
+        $stmt_check = $pdo->prepare("SELECT id, status, attendance, booking_date, class_name, user_id FROM bookings WHERE id = ?");
         $stmt_check->execute([$booking_id]);
         $b_check = $stmt_check->fetch();
         
@@ -218,6 +218,8 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['user_cancel_booking'])
                 $error = "Unauthorized action.";
             } elseif (!empty($b_check['class_name'])) {
                 $error = __('cannot_cancel_coach_class');
+            } elseif (($b_check['attendance'] ?? '') === 'present' || ($b_check['attendance'] ?? '') === 'absent' || ($b_check['status'] ?? '') === 'completed') {
+                $error = (($_SESSION['lang'] ?? 'vi') === 'en') ? "Session has already been confirmed/attended by Coach and cannot be cancelled." : "Buổi tập đã được HLV xác nhận/điểm danh, không thể hủy buổi tập.";
             } elseif (strtotime($b_check['booking_date']) <= time()) {
                 $error = __('cannot_cancel_past_session');
             } else {
@@ -440,7 +442,7 @@ $orders = $stmt->fetchAll();
                 <?php
                 // Fetch active/pending membership subscription plan badge for user
                 $stmt_profile_mem = $pdo->prepare("
-                    SELECT mp.name, mp.name_vi, mp.badge, mp.badge_color, ms.status
+                    SELECT mp.name, mp.name_vi, mp.badge, mp.badge_color, ms.status, ms.pt_sessions_total, ms.pt_sessions_used
                     FROM member_subscriptions ms
                     JOIN membership_plans mp ON ms.plan_id = mp.id
                     WHERE ms.user_id = ? AND ms.status IN ('active', 'pending') AND (ms.status = 'pending' OR ms.end_date >= CURDATE())
@@ -448,17 +450,26 @@ $orders = $stmt->fetchAll();
                 ");
                 $stmt_profile_mem->execute([$user_id]);
                 $profile_mem = $stmt_profile_mem->fetch();
+                $pt_total = (int)($profile_mem['pt_sessions_total'] ?? 0);
+                $pt_used  = (int)($profile_mem['pt_sessions_used'] ?? 0);
+                $pt_rem   = max(0, $pt_total - $pt_used);
                 ?>
 
-                <div style="margin-bottom: 1rem;">
+                <div style="margin-bottom: 1rem; display: flex; align-items: center; justify-content: center; gap: 8px; flex-wrap: wrap;">
                     <?php if ($profile_mem): ?>
-                        <span style="background: <?php echo !empty($profile_mem['badge_color']) ? $profile_mem['badge_color'] : '#2563eb'; ?>; color: #fff; padding: 5px 14px; border-radius: 20px; font-weight: 800; font-size: 0.78rem; text-transform: uppercase; letter-spacing: 0.6px; display: inline-block; box-shadow: 0 4px 12px rgba(0,0,0,0.15);">
-                            <i class="fas fa-certificate" style="margin-right: 5px;"></i>
+                        <span style="background: <?php echo !empty($profile_mem['badge_color']) ? $profile_mem['badge_color'] : '#2563eb'; ?>; color: #fff; padding: 6px 16px; border-radius: 20px; font-weight: 800; font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.6px; display: inline-flex; align-items: center; gap: 5px; box-shadow: 0 4px 12px rgba(0,0,0,0.15);">
+                            <i class="fas fa-certificate"></i>
                             <?php echo htmlspecialchars(!empty($profile_mem['badge']) ? $profile_mem['badge'] : mb_strtoupper($profile_mem['name'])); ?>
                         </span>
+                        <?php if ($pt_total > 0): ?>
+                            <span style="background: linear-gradient(135deg, #eff6ff, #dbeafe); color: #1e40af; border: 1.5px solid #93c5fd; padding: 5px 12px; border-radius: 20px; font-weight: 800; font-size: 0.78rem; display: inline-flex; align-items: center; gap: 5px; box-shadow: 0 2px 8px rgba(37,99,235,0.15);">
+                                <i class="fas fa-dumbbell" style="color: #2563eb;"></i> 
+                                <?php echo (($_SESSION['lang'] ?? 'vi') === 'vi' ? "Còn {$pt_rem}/{$pt_total} buổi PT" : "{$pt_rem}/{$pt_total} PT Left"); ?>
+                            </span>
+                        <?php endif; ?>
                     <?php else: ?>
-                        <span style="background: #64748b; color: #fff; padding: 5px 14px; border-radius: 20px; font-weight: 800; font-size: 0.78rem; text-transform: uppercase; letter-spacing: 0.6px; display: inline-block;">
-                            <i class="fas fa-user-circle" style="margin-right: 5px;"></i>
+                        <span style="background: #64748b; color: #fff; padding: 6px 16px; border-radius: 20px; font-weight: 800; font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.6px; display: inline-flex; align-items: center; gap: 5px;">
+                            <i class="fas fa-user-circle"></i>
                             <?php echo strtoupper($_SESSION['role'] ?? 'USER'); ?>
                         </span>
                     <?php endif; ?>
@@ -578,6 +589,7 @@ $orders = $stmt->fetchAll();
                                 $is_b_cancelled = ($booking['status'] === 'cancelled');
                                 $is_future_b = (strtotime($booking['booking_date']) > time());
                                 $is_coach_class = !empty($booking['class_name']);
+                                $is_b_attended = (in_array($booking['attendance'] ?? '', ['present', 'absent']) || $booking['status'] === 'completed');
                             ?>
                                 <div style="background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 16px; padding: 1rem 1.2rem; display: flex; flex-direction: column; gap: 10px;">
                                     <div style="display: flex; justify-content: space-between; align-items: center;">
@@ -604,11 +616,13 @@ $orders = $stmt->fetchAll();
 
                                     <?php if (!$is_b_cancelled): ?>
                                         <div style="display: flex; gap: 8px; margin-top: 4px;">
-                                            <button onclick="document.getElementById('edit-booking-<?php echo $booking['id']; ?>').style.display='flex';"
-                                                    style="flex: 1; background: #fff; border: 1px solid #cbd5e1; padding: 7px; border-radius: 8px; cursor: pointer; color: var(--text-main); font-weight: 700; font-size: 0.8rem; display: flex; align-items: center; justify-content: center; gap: 4px;">
-                                                <i class="fas fa-edit"></i> <?php echo __('edit'); ?>
-                                            </button>
-                                            <?php if ($is_future_b && !$is_coach_class): ?>
+                                            <?php if (!$is_b_attended): ?>
+                                                <button onclick="document.getElementById('edit-booking-<?php echo $booking['id']; ?>').style.display='flex';"
+                                                        style="flex: 1; background: #fff; border: 1px solid #cbd5e1; padding: 7px; border-radius: 8px; cursor: pointer; color: var(--text-main); font-weight: 700; font-size: 0.8rem; display: flex; align-items: center; justify-content: center; gap: 4px;">
+                                                    <i class="fas fa-edit"></i> <?php echo __('edit'); ?>
+                                                </button>
+                                            <?php endif; ?>
+                                            <?php if ($is_future_b && !$is_coach_class && !$is_b_attended): ?>
                                                 <button onclick="document.getElementById('cancel-booking-<?php echo $booking['id']; ?>').style.display='flex';"
                                                         style="flex: 1; background: #fee2e2; border: 1px solid #fca5a5; padding: 7px; border-radius: 8px; cursor: pointer; color: #dc2626; font-weight: 700; font-size: 0.8rem; display: flex; align-items: center; justify-content: center; gap: 4px;">
                                                     <i class="fas fa-times-circle"></i> <?php echo __('cancel_session'); ?>

@@ -10,19 +10,35 @@ require_once __DIR__ . '/../config/db.php';
 require_once __DIR__ . '/../includes/lang.php';
 
 $message = '';
+$error = '';
+
 if (isset($_GET['book']) && isset($_SESSION['user_id'])) {
     $coach_id = $_GET['book'];
     
-    // Default booking for tomorrow at 8 AM for simplicity
-    $booking_date = date('Y-m-d H:i:s', strtotime('+1 day 08:00:00'));
-    
-    $stmt = $pdo->prepare("INSERT INTO bookings (user_id, coach_id, booking_date, status) VALUES (?, ?, ?, 'pending')");
-    if ($stmt->execute([$_SESSION['user_id'], $coach_id, $booking_date])) {
-        $booking_id = $pdo->lastInsertId();
-        $message = __('booking_success');
+    // Check if user currently has an active uncompleted workout session
+    $stmt_active = $pdo->prepare("
+        SELECT b.id FROM bookings b 
+        WHERE b.user_id = ? 
+          AND b.status NOT IN ('cancelled', 'rejected', 'completed') 
+          AND (b.attendance IS NULL OR b.attendance NOT IN ('present', 'attended', 'absent'))
+          AND (UNIX_TIMESTAMP(b.booking_date) + 3600) > UNIX_TIMESTAMP(NOW())
+        LIMIT 1
+    ");
+    $stmt_active->execute([$_SESSION['user_id']]);
+    if ($stmt_active->fetch()) {
+        $error = __('ongoing_session_conflict');
+    } else {
+        // Default booking for tomorrow at 8 AM for simplicity
+        $booking_date = date('Y-m-d H:i:s', strtotime('+1 day 08:00:00'));
+        
+        $stmt = $pdo->prepare("INSERT INTO bookings (user_id, coach_id, booking_date, status) VALUES (?, ?, ?, 'pending')");
+        if ($stmt->execute([$_SESSION['user_id'], $coach_id, $booking_date])) {
+            $booking_id = $pdo->lastInsertId();
+            $message = __('booking_success');
 
-        require_once __DIR__ . '/../includes/booking_mailer.php';
-        sendNewBookingNotificationEmail($pdo, $booking_id);
+            require_once __DIR__ . '/../includes/booking_mailer.php';
+            sendNewBookingNotificationEmail($pdo, $booking_id);
+        }
     }
 } elseif (isset($_GET['book'])) {
     header("Location: /Gym Manager/auth/login.php");
@@ -130,6 +146,12 @@ foreach($coaches as $coach) {
 
         <?php if($message): ?>
             <p style="color: #16a34a; text-align: center; margin-bottom: 1.5rem; background: #f0fdf4; padding: 1rem; border-radius: 16px; border: 1px solid #bbf7d0; font-weight: 600;"><?php echo $message; ?></p>
+        <?php endif; ?>
+
+        <?php if($error): ?>
+            <div style="background: #fef2f2; color: #991b1b; border: 1px solid #fca5a5; padding: 1rem 1.5rem; border-radius: 16px; margin-bottom: 1.5rem; text-align: center; font-weight: 600; box-shadow: 0 4px 14px rgba(239, 68, 68, 0.12);">
+                <i class="fas fa-exclamation-circle" style="margin-right: 6px;"></i><?php echo $error; ?>
+            </div>
         <?php endif; ?>
 
         <!-- Search Form -->

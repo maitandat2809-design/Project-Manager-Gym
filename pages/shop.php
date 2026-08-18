@@ -206,7 +206,7 @@ function openReviewModal(productId, productName) {
     document.getElementById('reviewModalTitle').innerText = productName;
     document.getElementById('reviewModalContent').innerHTML = '<div style="text-align: center; color: #64748b; padding: 2rem 0;"><i class="fas fa-spinner fa-spin fa-2x"></i></div>';
     
-    fetch('get_reviews.php?product_id=' + productId)
+    fetch('/Gym Manager/api/get_reviews.php?product_id=' + productId)
         .then(response => response.text())
         .then(html => {
             document.getElementById('reviewModalContent').innerHTML = html;

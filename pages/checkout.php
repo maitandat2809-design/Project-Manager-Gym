@@ -374,6 +374,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
                     $total_display_price += $price * $qty;
                     $p_name = (isset($current_lang) && $current_lang === 'vi' && !empty($p['name_vi'])) ? $p['name_vi'] : $p['name'];
                     $display_items[] = [
+                        'cart_key' => $k,
                         'name' => $p_name . $ns,
                         'qty' => $qty,
                         'price' => $price,
@@ -397,23 +398,36 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
             <form method="POST" id="checkoutForm">
                 <div style="background: #f8fafc; padding: 2rem; border-radius: 20px; margin-bottom: 2rem; border: 1px solid var(--border);">
                     <h3 style="margin-bottom: 1.5rem; color: var(--text-main); font-weight: 700;"><?php echo __('order_summary'); ?></h3>
+                    <div id="checkoutItemsList">
                     <?php foreach($display_items as $item): ?>
-                        <div style="display: flex; justify-content: space-between; margin-bottom: 1rem; padding-bottom: 1rem; border-bottom: 1px solid #e2e8f0;">
+                        <div id="checkout_row_<?php echo $item['cart_key']; ?>" style="display: flex; justify-content: space-between; margin-bottom: 1rem; padding-bottom: 1rem; border-bottom: 1px solid #e2e8f0; align-items: center;">
                             <div style="display: flex; gap: 15px; align-items: center;">
-                                <img src="<?php echo htmlspecialchars(get_image_url($item['image'])); ?>" style="width: 50px; height: 50px; border-radius: 10px; object-fit: cover;">
+                                <img src="<?php echo htmlspecialchars(get_image_url($item['image'])); ?>" style="width: 55px; height: 55px; border-radius: 12px; object-fit: cover; border: 1px solid #e2e8f0;">
                                 <div>
-                                    <h4 style="margin: 0; color: var(--text-main); font-size: 1rem;"><?php echo htmlspecialchars($item['name']); ?></h4>
-                                    <span style="color: var(--text-muted); font-size: 0.9rem;"><?php echo __('quantity'); ?>: <?php echo $item['qty']; ?></span>
+                                    <h4 style="margin: 0; color: var(--text-main); font-size: 1rem; font-weight: 700;"><?php echo htmlspecialchars($item['name']); ?></h4>
+                                    <!-- Interactive Quantity Selector -->
+                                    <div style="display: flex; align-items: center; gap: 8px; margin-top: 6px;">
+                                        <span style="color: var(--text-muted); font-size: 0.85rem; font-weight: 600;"><?php echo __('quantity'); ?>:</span>
+                                        <div style="display: inline-flex; align-items: center; border: 1.5px solid #cbd5e1; border-radius: 10px; overflow: hidden; background: white; box-shadow: 0 1px 3px rgba(0,0,0,0.05);">
+                                            <button type="button" onclick="modifyCheckoutQty('<?php echo $item['cart_key']; ?>', -1)" style="border: none; background: #f8fafc; width: 28px; height: 28px; font-weight: bold; cursor: pointer; color: #334155; font-size: 1.1rem; display: flex; align-items: center; justify-content: center; transition: 0.2s;" onmouseover="this.style.background='#e2e8f0'" onmouseout="this.style.background='#f8fafc'">-</button>
+                                            <input type="number" id="qty_val_<?php echo $item['cart_key']; ?>" value="<?php echo $item['qty']; ?>" min="1" max="99" onchange="modifyCheckoutQty('<?php echo $item['cart_key']; ?>', 0, this.value)" style="width: 42px; height: 28px; text-align: center; border: none; font-weight: 800; font-size: 0.9rem; color: #0f172a; outline: none; background: transparent;">
+                                            <button type="button" onclick="modifyCheckoutQty('<?php echo $item['cart_key']; ?>', 1)" style="border: none; background: #f8fafc; width: 28px; height: 28px; font-weight: bold; cursor: pointer; color: #334155; font-size: 1.1rem; display: flex; align-items: center; justify-content: center; transition: 0.2s;" onmouseover="this.style.background='#e2e8f0'" onmouseout="this.style.background='#f8fafc'">+</button>
+                                        </div>
+                                        <button type="button" onclick="modifyCheckoutQty('<?php echo $item['cart_key']; ?>', 0, 0)" style="border: none; background: transparent; color: #ef4444; font-size: 0.85rem; font-weight: 600; cursor: pointer; margin-left: 4px;" title="<?php echo __('remove'); ?>">
+                                            <i class="fas fa-trash-alt"></i>
+                                        </button>
+                                    </div>
                                 </div>
                             </div>
-                            <div style="font-weight: 700; color: var(--primary);">
-                                $<?php echo number_format($item['price'] * $item['qty'], 2); ?>
+                            <div style="font-weight: 800; color: var(--primary); font-size: 1.05rem;">
+                                $<span id="item_total_<?php echo $item['cart_key']; ?>" data-price="<?php echo $item['price']; ?>"><?php echo number_format($item['price'] * $item['qty'], 2); ?></span>
                             </div>
                         </div>
                     <?php endforeach; ?>
+                    </div>
                     <div style="display: flex; justify-content: space-between; margin-top: 1.5rem; font-size: 1.2rem; font-weight: 800; color: var(--text-main);">
                         <span><?php echo __('total'); ?>:</span>
-                        <span>$<?php echo number_format($total_display_price, 2); ?> <span style="font-size:0.95rem; color:var(--text-muted); font-weight:600;">(<?php echo number_format($total_price_vnd, 0, ',', '.'); ?>đ)</span></span>
+                        <span>$<span id="checkout_total_usd"><?php echo number_format($total_display_price, 2); ?></span> <span style="font-size:0.95rem; color:var(--text-muted); font-weight:600;">(<span id="checkout_total_vnd"><?php echo number_format($total_price_vnd, 0, ',', '.'); ?>đ</span>)</span></span>
                     </div>
                 </div>
 
@@ -499,6 +513,55 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
 </div>
 
 <script>
+function modifyCheckoutQty(cartKey, changeDelta, exactValue) {
+    var payload = { cart_key: cartKey };
+    if (exactValue === 0) {
+        payload.action = 'remove';
+    } else if (changeDelta !== 0) {
+        payload.action = 'change';
+        payload.quantity = changeDelta;
+    } else {
+        payload.action = 'set';
+        payload.quantity = parseInt(exactValue) || 1;
+    }
+
+    fetch('/Gym Manager/api/update_cart.php', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+    })
+    .then(function(r) { return r.json(); })
+    .then(function(data) {
+        if (data.success) {
+            if (data.cart_empty) {
+                window.location.href = '/Gym Manager/pages/shop.php';
+                return;
+            }
+            if (data.current_qty <= 0) {
+                var row = document.getElementById('checkout_row_' + cartKey);
+                if (row) row.remove();
+            } else {
+                var qtyInput = document.getElementById('qty_val_' + cartKey);
+                if (qtyInput) qtyInput.value = data.current_qty;
+                var itemTotal = document.getElementById('item_total_' + cartKey);
+                if (itemTotal) itemTotal.innerText = data.item_subtotal_formatted;
+            }
+            var usdTotal = document.getElementById('checkout_total_usd');
+            if (usdTotal) usdTotal.innerText = data.total_formatted;
+            var vndTotal = document.getElementById('checkout_total_vnd');
+            if (vndTotal) vndTotal.innerText = data.total_vnd_formatted;
+
+            var cartBadges = document.querySelectorAll('.cart-count-badge, .nav-cart-count');
+            cartBadges.forEach(function(b) { b.innerText = data.cart_count; });
+        } else {
+            alert('❌ ' + (data.message || 'Lỗi cập nhật số lượng'));
+        }
+    })
+    .catch(function(err) {
+        console.error(err);
+    });
+}
+
 function highlightPayment() {
     var isMomo = document.querySelector('input[name="payment_method"][value="momo"]').checked;
     var lblMomo = document.getElementById('lbl-momo');

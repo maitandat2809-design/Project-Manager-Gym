@@ -1,4 +1,4 @@
-<?php include 'includes/header.php'; ?>
+<?php include_once __DIR__ . '/includes/header.php'; ?>
 
 
 <!-- Ambient Orbs -->
@@ -741,7 +741,7 @@
     </div>
 </section>
 
-<?php include 'includes/footer.php'; ?>
+<?php include_once __DIR__ . '/includes/footer.php'; ?>
 
 
 <?php if(!isset($_SESSION['user_id'])): ?>

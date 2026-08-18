@@ -24,7 +24,7 @@ if (!isset($_SESSION['lang'])) {
 
 $current_lang = $_SESSION['lang'];
 
-// Include the translation file
+// Include the translation file into global scope
 $lang_file = __DIR__ . "/../languages/{$current_lang}.php";
 if (file_exists($lang_file)) {
     include $lang_file;
@@ -32,8 +32,25 @@ if (file_exists($lang_file)) {
     include __DIR__ . "/../languages/en.php"; // Fallback
 }
 
-// Global function for translation
-function __($key) {
-    global $lang;
-    return $lang[$key] ?? $key;
+if (isset($lang) && is_array($lang)) {
+    $GLOBALS['lang_dict'] = $lang;
+    $GLOBALS['lang'] = $lang;
 }
+
+// Global function for translation
+if (!function_exists('__')) {
+    function __($key) {
+        global $lang;
+        if (isset($lang) && is_array($lang) && isset($lang[$key])) {
+            return $lang[$key];
+        }
+        if (isset($GLOBALS['lang_dict']) && is_array($GLOBALS['lang_dict']) && isset($GLOBALS['lang_dict'][$key])) {
+            return $GLOBALS['lang_dict'][$key];
+        }
+        if (isset($GLOBALS['lang']) && is_array($GLOBALS['lang']) && isset($GLOBALS['lang'][$key])) {
+            return $GLOBALS['lang'][$key];
+        }
+        return $key;
+    }
+}
+?>

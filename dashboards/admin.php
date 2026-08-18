@@ -604,9 +604,68 @@ if ($page == 'bookings' && isset($_GET['change_status']) && isset($_GET['booking
                     $stmt->execute([$_GET['edit_product']]);
                     $edit_prod = $stmt->fetch();
                 }
+
+                // Calculate Product Stock Metrics for Real-time Monitoring
+                $prods_all = $pdo->query("SELECT * FROM products ORDER BY id DESC")->fetchAll();
+                $total_products_cnt = count($prods_all);
+                $total_stock_units = 0;
+                $total_sales_cnt = 0;
+                $low_stock_cnt = 0;
+
+                foreach ($prods_all as $pr_item) {
+                    $stk_val = (int)($pr_item['stock'] ?? 0);
+                    $total_stock_units += $stk_val;
+                    $total_sales_cnt += (int)($pr_item['sales_count'] ?? 0);
+                    if ($stk_val <= 5) {
+                        $low_stock_cnt++;
+                    }
+                }
             ?>
                 <div style="display: flex; justify-content: space-between; align-items: center;">
                     <h2><?php echo __("product_management"); ?></h2>
+                </div>
+
+                <!-- Product Stock Metrics Dashboard -->
+                <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 1.25rem; margin: 1.5rem 0;">
+                    <div style="background: white; padding: 1.25rem 1.5rem; border-radius: 20px; border: 1px solid #e2e8f0; box-shadow: 0 4px 15px rgba(0,0,0,0.03); display: flex; align-items: center; gap: 1rem;">
+                        <div style="width: 50px; height: 50px; border-radius: 14px; background: #eff6ff; color: #2563eb; display: flex; align-items: center; justify-content: center; font-size: 1.4rem;">
+                            <i class="fas fa-boxes"></i>
+                        </div>
+                        <div>
+                            <div style="font-size: 0.8rem; color: #64748b; font-weight: 700; text-transform: uppercase;"><?php echo ($current_lang === 'vi') ? 'Tổng sản phẩm' : 'Total Products'; ?></div>
+                            <div style="font-size: 1.4rem; font-weight: 900; color: #0f172a;"><?php echo $total_products_cnt; ?></div>
+                        </div>
+                    </div>
+                    
+                    <div style="background: white; padding: 1.25rem 1.5rem; border-radius: 20px; border: 1px solid #e2e8f0; box-shadow: 0 4px 15px rgba(0,0,0,0.03); display: flex; align-items: center; gap: 1rem;">
+                        <div style="width: 50px; height: 50px; border-radius: 14px; background: #f0fdf4; color: #16a34a; display: flex; align-items: center; justify-content: center; font-size: 1.4rem;">
+                            <i class="fas fa-cubes"></i>
+                        </div>
+                        <div>
+                            <div style="font-size: 0.8rem; color: #64748b; font-weight: 700; text-transform: uppercase;"><?php echo ($current_lang === 'vi') ? 'Tổng tồn kho' : 'Total Warehouse Stock'; ?></div>
+                            <div style="font-size: 1.4rem; font-weight: 900; color: #16a34a;"><?php echo number_format($total_stock_units); ?> <span style="font-size: 0.8rem; font-weight: 600; color: #475569;"><?php echo ($current_lang === 'vi') ? 'món' : 'units'; ?></span></div>
+                        </div>
+                    </div>
+
+                    <div style="background: white; padding: 1.25rem 1.5rem; border-radius: 20px; border: 1px solid #e2e8f0; box-shadow: 0 4px 15px rgba(0,0,0,0.03); display: flex; align-items: center; gap: 1rem;">
+                        <div style="width: 50px; height: 50px; border-radius: 14px; background: #fef3c7; color: #d97706; display: flex; align-items: center; justify-content: center; font-size: 1.4rem;">
+                            <i class="fas fa-shopping-cart"></i>
+                        </div>
+                        <div>
+                            <div style="font-size: 0.8rem; color: #64748b; font-weight: 700; text-transform: uppercase;"><?php echo ($current_lang === 'vi') ? 'Đã bán (Khách mua)' : 'Total Items Sold'; ?></div>
+                            <div style="font-size: 1.4rem; font-weight: 900; color: #d97706;"><?php echo number_format($total_sales_cnt); ?> <span style="font-size: 0.8rem; font-weight: 600; color: #475569;"><?php echo ($current_lang === 'vi') ? 'sản phẩm' : 'sold'; ?></span></div>
+                        </div>
+                    </div>
+
+                    <div style="background: white; padding: 1.25rem 1.5rem; border-radius: 20px; border: 1px solid #e2e8f0; box-shadow: 0 4px 15px rgba(0,0,0,0.03); display: flex; align-items: center; gap: 1rem;">
+                        <div style="width: 50px; height: 50px; border-radius: 14px; background: #fee2e2; color: #dc2626; display: flex; align-items: center; justify-content: center; font-size: 1.4rem;">
+                            <i class="fas fa-exclamation-triangle"></i>
+                        </div>
+                        <div>
+                            <div style="font-size: 0.8rem; color: #64748b; font-weight: 700; text-transform: uppercase;"><?php echo ($current_lang === 'vi') ? 'Cảnh báo tồn kho' : 'Low Stock Alert'; ?></div>
+                            <div style="font-size: 1.4rem; font-weight: 900; color: #dc2626;"><?php echo $low_stock_cnt; ?> <span style="font-size: 0.8rem; font-weight: 600; color: #475569;"><?php echo ($current_lang === 'vi') ? 'mặt hàng (≤5)' : 'items (≤5)'; ?></span></div>
+                        </div>
+                    </div>
                 </div>
                 
                 <?php if ($edit_prod): ?>
@@ -721,21 +780,45 @@ if ($page == 'bookings' && isset($_GET['change_status']) && isset($_GET['booking
                                 <th>Name</th>
                                 <th>Category</th>
                                 <th><?php echo __("price"); ?></th>
-                                <th><?php echo __("stock"); ?></th>
+                                <th><?php echo ($current_lang === 'vi') ? 'Số Lượng Tồn Kho' : 'Stock Quantity'; ?></th>
                                 <th><?php echo __("actions"); ?></th>
                             </tr>
                         </thead>
                         <tbody>
                             <?php 
-                            $prods = $pdo->query("SELECT * FROM products")->fetchAll();
-                            foreach($prods as $p): ?>
+                            foreach($prods_all as $p): ?>
                             <tr>
                                 <td>#<?php echo $p['id']; ?></td>
                                 <td><img src="<?php echo get_image_url($p['image']); ?>" style="width: 40px; height: 40px; object-fit: cover; border-radius: 8px;"></td>
-                                <td><?php echo $p['name']; ?></td>
+                                <td>
+                                    <strong><?php echo htmlspecialchars($p['name']); ?></strong>
+                                    <?php if (!empty($p['name_vi'])): ?>
+                                        <div style="font-size: 0.78rem; color: #64748b; font-weight: 500;"><?php echo htmlspecialchars($p['name_vi']); ?></div>
+                                    <?php endif; ?>
+                                </td>
                                 <td><span style="font-size: 0.8rem; padding: 4px 10px; background: #e2e8f0; border-radius: 20px; font-weight: 600;"><?php echo ucfirst($p['category'] ?? 'supplement'); ?></span></td>
-                                <td>$<?php echo $p['price']; ?></td>
-                                <td><?php echo $p['stock']; ?></td>
+                                <td><strong>$<?php echo number_format($p['price'], 2); ?></strong></td>
+                                <td>
+                                    <?php 
+                                    $stk = (int)$p['stock'];
+                                    $sales = (int)($p['sales_count'] ?? 0);
+                                    if ($stk > 10): ?>
+                                        <span style="background: #dcfce7; color: #15803d; border: 1px solid #86efac; padding: 4px 10px; border-radius: 12px; font-weight: 800; font-size: 0.78rem; display: inline-flex; align-items: center; gap: 5px;">
+                                            <i class="fas fa-check-circle"></i> <?php echo ($current_lang === 'vi') ? "Còn tồn: {$stk}" : "In Stock: {$stk}"; ?>
+                                        </span>
+                                    <?php elseif ($stk > 0): ?>
+                                        <span style="background: #fef3c7; color: #b45309; border: 1px solid #fde047; padding: 4px 10px; border-radius: 12px; font-weight: 800; font-size: 0.78rem; display: inline-flex; align-items: center; gap: 5px;">
+                                            <i class="fas fa-exclamation-circle"></i> <?php echo ($current_lang === 'vi') ? "Sắp hết: Chỉ còn {$stk}" : "Low Stock: {$stk}"; ?>
+                                        </span>
+                                    <?php else: ?>
+                                        <span style="background: #fee2e2; color: #b91c1c; border: 1px solid #fca5a5; padding: 4px 10px; border-radius: 12px; font-weight: 800; font-size: 0.78rem; display: inline-flex; align-items: center; gap: 5px;">
+                                            <i class="fas fa-times-circle"></i> <?php echo ($current_lang === 'vi') ? "HẾT HÀNG (0)" : "OUT OF STOCK (0)"; ?>
+                                        </span>
+                                    <?php endif; ?>
+                                    <div style="font-size: 0.78rem; color: #475569; font-weight: 700; margin-top: 5px;">
+                                        🛒 <?php echo ($current_lang === 'vi') ? "Đã bán: {$sales} SP" : "Sold: {$sales} units"; ?>
+                                    </div>
+                                </td>
                                 <td>
                                     <div class="actions-cell-flex">
                                         <a href="/Gym Manager/dashboards/admin.php?page=products&edit_product=<?php echo $p['id']; ?>" class="action-btn btn-edit">Edit</a>

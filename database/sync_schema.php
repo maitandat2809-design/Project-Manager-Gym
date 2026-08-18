@@ -41,6 +41,13 @@ $alterQueries = [
     "ALTER TABLE bookings ADD COLUMN IF NOT EXISTS room_number VARCHAR(50) DEFAULT NULL",
     "ALTER TABLE bookings ADD COLUMN IF NOT EXISTS training_plan TEXT DEFAULT NULL",
     "ALTER TABLE bookings ADD COLUMN IF NOT EXISTS attendance ENUM('pending', 'present', 'absent') DEFAULT 'pending'",
+    "ALTER TABLE bookings ADD COLUMN IF NOT EXISTS user_rating TINYINT DEFAULT NULL",
+    "ALTER TABLE bookings ADD COLUMN IF NOT EXISTS user_review TEXT DEFAULT NULL",
+    "ALTER TABLE bookings ADD COLUMN IF NOT EXISTS user_reviewed_at DATETIME DEFAULT NULL",
+    "ALTER TABLE bookings ADD COLUMN IF NOT EXISTS coach_session_notes TEXT DEFAULT NULL",
+    "ALTER TABLE bookings ADD COLUMN IF NOT EXISTS coach_notes_at DATETIME DEFAULT NULL",
+    "ALTER TABLE bookings ADD COLUMN IF NOT EXISTS review_seen_by_coach TINYINT(1) DEFAULT 0",
+    "ALTER TABLE bookings ADD COLUMN IF NOT EXISTS notes_seen_by_user TINYINT(1) DEFAULT 0",
 
     // Users table
     "ALTER TABLE users ADD COLUMN IF NOT EXISTS avatar VARCHAR(255) DEFAULT NULL",

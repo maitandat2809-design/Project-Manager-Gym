@@ -6,8 +6,8 @@ header('Content-Type: application/json; charset=utf-8');
 require_once __DIR__ . '/../config/db.php';
 
 // Safe translate function for internal keys
-function translate_key($key, $lang = 'vi') {
-    $lang_file = "languages/{$lang}.php";
+function translate_key($key, $curr_lang = 'vi') {
+    $lang_file = "languages/{$curr_lang}.php";
     if (file_exists($lang_file)) {
         $translations = include $lang_file;
         if (isset($translations[$key])) {
@@ -17,12 +17,12 @@ function translate_key($key, $lang = 'vi') {
     return $key;
 }
 
-$lang = $_SESSION['lang'] ?? 'vi';
+$curr_lang = $_SESSION['lang'] ?? 'vi';
 
 if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
     echo json_encode([
         'success' => false,
-        'message' => translate_key('fs_modal_error', $lang)
+        'message' => translate_key('fs_modal_error', $curr_lang)
     ]);
     exit();
 }
@@ -38,7 +38,7 @@ $note = trim($_POST['note'] ?? '');
 if (empty($name) || empty($phone) || empty($email) || empty($package_id)) {
     echo json_encode([
         'success' => false,
-        'message' => translate_key('fs_modal_fill_all', $lang)
+        'message' => translate_key('fs_modal_fill_all', $curr_lang)
     ]);
     exit();
 }
@@ -46,7 +46,7 @@ if (empty($name) || empty($phone) || empty($email) || empty($package_id)) {
 if (!preg_match('/^[0-9]{10}$/', $phone)) {
     echo json_encode([
         'success' => false,
-        'message' => ($lang === 'vi' ? 'Số điện thoại không hợp lệ! Vui lòng nhập đúng 10 số.' : 'Invalid phone number! Please enter exactly 10 digits.')
+        'message' => ($curr_lang === 'vi' ? 'Số điện thoại không hợp lệ! Vui lòng nhập đúng 10 số.' : 'Invalid phone number! Please enter exactly 10 digits.')
     ]);
     exit();
 }
@@ -54,7 +54,7 @@ if (!preg_match('/^[0-9]{10}$/', $phone)) {
 if (!filter_var($email, FILTER_VALIDATE_EMAIL)) {
     echo json_encode([
         'success' => false,
-        'message' => ($lang === 'vi' ? 'Địa chỉ Email không hợp lệ!' : 'Invalid Email address!')
+        'message' => ($curr_lang === 'vi' ? 'Địa chỉ Email không hợp lệ!' : 'Invalid Email address!')
     ]);
     exit();
 }
@@ -80,7 +80,7 @@ try {
         if ($stmt_check_p->fetch()) {
             echo json_encode([
                 'success' => false,
-                'message' => ($lang === 'vi' 
+                'message' => ($curr_lang === 'vi' 
                     ? 'Số điện thoại này đã được đăng ký bởi một tài khoản khác. Vui lòng nhập số điện thoại khác!' 
                     : 'This phone number is already registered under another account. Please use a different phone number!')
             ]);
@@ -97,7 +97,7 @@ try {
         if ($stmt_check_p->fetch()) {
             echo json_encode([
                 'success' => false,
-                'message' => ($lang === 'vi' 
+                'message' => ($curr_lang === 'vi' 
                     ? 'Số điện thoại này đã được đăng ký bởi một tài khoản khác. Vui lòng nhập số điện thoại khác!' 
                     : 'This phone number is already registered under another account. Please use a different phone number!')
             ]);
@@ -118,27 +118,27 @@ try {
     
     switch ($package_id) {
         case 'gym':
-            $package_name = translate_key('fs_gym_title', $lang);
+            $package_name = translate_key('fs_gym_title', $curr_lang);
             $specialty = 'Gym';
             break;
         case 'pt':
-            $package_name = translate_key('fs_pt_title', $lang);
+            $package_name = translate_key('fs_pt_title', $curr_lang);
             $specialty = 'Gym';
             break;
         case 'fatloss':
-            $package_name = translate_key('fs_fatloss_title', $lang);
+            $package_name = translate_key('fs_fatloss_title', $curr_lang);
             $specialty = 'Gym';
             break;
         case 'yoga':
-            $package_name = translate_key('fs_yoga_title', $lang);
+            $package_name = translate_key('fs_yoga_title', $curr_lang);
             $specialty = 'Yoga';
             break;
         case 'bodypump':
-            $package_name = translate_key('fs_bodypump_title', $lang);
+            $package_name = translate_key('fs_bodypump_title', $curr_lang);
             $specialty = 'Gym';
             break;
         case 'kickboxing':
-            $package_name = translate_key('fs_kickboxing_title', $lang);
+            $package_name = translate_key('fs_kickboxing_title', $curr_lang);
             $specialty = 'Muay';
             break;
         default:
@@ -187,6 +187,26 @@ try {
     
     // 4. Booking Date
     $booking_date = !empty($start_date) ? date('Y-m-d H:i:s', strtotime($start_date)) : date('Y-m-d H:i:s', strtotime('+1 day 08:00:00'));
+
+    // Check if user currently has an active uncompleted workout session
+    if ($user_id) {
+        $stmt_active = $pdo->prepare("
+            SELECT b.id FROM bookings b 
+            WHERE b.user_id = ? 
+              AND b.status NOT IN ('cancelled', 'rejected', 'completed') 
+              AND (b.attendance IS NULL OR b.attendance NOT IN ('present', 'attended', 'absent'))
+              AND (UNIX_TIMESTAMP(b.booking_date) + 3600) > UNIX_TIMESTAMP(NOW())
+            LIMIT 1
+        ");
+        $stmt_active->execute([$user_id]);
+        if ($stmt_active->fetch()) {
+            echo json_encode([
+                'success' => false,
+                'message' => translate_key('ongoing_session_conflict', $curr_lang)
+            ]);
+            exit();
+        }
+    }
     
     // 5. Training Plan Note
     $training_plan = "Registered via homepage Featured Services.\nPackage: {$package_name}\nNote: {$note}";
@@ -213,13 +233,13 @@ try {
     
     echo json_encode([
         'success' => true,
-        'message' => translate_key('fs_modal_success_desc', $lang),
+        'message' => translate_key('fs_modal_success_desc', $curr_lang),
         'temp_created' => $temp_created
     ]);
     
 } catch (Exception $e) {
     echo json_encode([
         'success' => false,
-        'message' => translate_key('fs_modal_error', $lang) . ' ' . $e->getMessage()
+        'message' => translate_key('fs_modal_error', $curr_lang) . ' ' . $e->getMessage()
     ]);
 }

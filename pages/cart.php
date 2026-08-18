@@ -419,8 +419,14 @@ if (isset($_SESSION['user_id'])) {
                                         <span style="font-weight: 700; color: var(--text-main); font-size: 0.95rem;"><?php echo htmlspecialchars($item['name']); ?></span>
                                     </td>
                                     <td style="padding: 1rem; font-weight: 600;">$<?php echo number_format($item['price'], 2); ?></td>
-                                    <td style="padding: 1rem; font-weight: 600; text-align: center;"><?php echo $item['qty']; ?></td>
-                                    <td style="padding: 1rem; font-weight: 800; color: var(--primary); text-align: right;">$<?php echo number_format($item['subtotal'], 2); ?></td>
+                                    <td style="padding: 1rem; font-weight: 600; text-align: center;">
+                                        <div style="display: inline-flex; align-items: center; border: 1.5px solid #cbd5e1; border-radius: 10px; overflow: hidden; background: white; box-shadow: 0 1px 3px rgba(0,0,0,0.05);">
+                                            <button type="button" onclick="modifyCartQty('<?php echo $item['cart_key']; ?>', -1)" style="border: none; background: #f8fafc; width: 28px; height: 28px; font-weight: bold; cursor: pointer; color: #334155; font-size: 1.1rem; display: flex; align-items: center; justify-content: center; transition: 0.2s;" onmouseover="this.style.background='#e2e8f0'" onmouseout="this.style.background='#f8fafc'">-</button>
+                                            <input type="number" id="cart_qty_val_<?php echo $item['cart_key']; ?>" value="<?php echo $item['qty']; ?>" min="1" max="99" onchange="modifyCartQty('<?php echo $item['cart_key']; ?>', 0, this.value)" style="width: 42px; height: 28px; text-align: center; border: none; font-weight: 800; font-size: 0.9rem; color: #0f172a; outline: none; background: transparent;">
+                                            <button type="button" onclick="modifyCartQty('<?php echo $item['cart_key']; ?>', 1)" style="border: none; background: #f8fafc; width: 28px; height: 28px; font-weight: bold; cursor: pointer; color: #334155; font-size: 1.1rem; display: flex; align-items: center; justify-content: center; transition: 0.2s;" onmouseover="this.style.background='#e2e8f0'" onmouseout="this.style.background='#f8fafc'">+</button>
+                                        </div>
+                                    </td>
+                                    <td style="padding: 1rem; font-weight: 800; color: var(--primary); text-align: right;">$<span id="cart_subtotal_<?php echo $item['cart_key']; ?>"><?php echo number_format($item['subtotal'], 2); ?></span></td>
                                     <td style="padding: 1rem; text-align: center;">
                                         <a href="/Gym Manager/pages/cart.php?remove=<?php echo $item['cart_key']; ?>" style="color: #ef4444; font-weight: 700; text-decoration: none; font-size: 0.9rem;" title="<?php echo __('remove_from_cart'); ?>">
                                             <i class="fas fa-trash-alt"></i> <?php echo __('remove'); ?>
@@ -446,11 +452,11 @@ if (isset($_SESSION['user_id'])) {
                     <h3 style="margin-bottom: 2rem; color: var(--text-main); font-weight: 800; font-size: 1.5rem;"><?php echo __('cart_totals'); ?></h3>
                     <div style="display: flex; justify-content: space-between; margin-bottom: 1.2rem; color: var(--text-muted);">
                         <span><?php echo __('subtotal'); ?>:</span>
-                        <span style="font-weight: 600; color: var(--text-main);">$<?php echo number_format($total, 2); ?></span>
+                        <span style="font-weight: 600; color: var(--text-main);">$<span id="cart_subtotal_usd"><?php echo number_format($total, 2); ?></span></span>
                     </div>
                     <div style="display: flex; justify-content: space-between; margin-bottom: 2.5rem; font-weight: 800; color: var(--primary); font-size: 1.4rem; border-top: 2px solid var(--bg-main); padding-top: 1.5rem;">
                         <span><?php echo __('total'); ?>:</span>
-                        <span>$<?php echo number_format($total, 2); ?></span>
+                        <span>$<span id="cart_total_usd"><?php echo number_format($total, 2); ?></span></span>
                     </div>
                     <a href="/Gym Manager/pages/checkout.php" class="btn-auth" style="display: block; text-align: center; text-decoration: none; padding: 1.1rem; border-radius: 14px; font-weight: 800; font-size: 1rem; box-shadow: 0 10px 20px rgba(0, 98, 255, 0.2);"><?php echo __('proceed_checkout'); ?></a>
                 </div>
@@ -459,5 +465,55 @@ if (isset($_SESSION['user_id'])) {
 
     </div>
 </section>
+
+<script>
+function modifyCartQty(cartKey, changeDelta, exactValue) {
+    var payload = { cart_key: cartKey };
+    if (exactValue === 0) {
+        payload.action = 'remove';
+    } else if (changeDelta !== 0) {
+        payload.action = 'change';
+        payload.quantity = changeDelta;
+    } else {
+        payload.action = 'set';
+        payload.quantity = parseInt(exactValue) || 1;
+    }
+
+    fetch('/Gym Manager/api/update_cart.php', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+    })
+    .then(function(r) { return r.json(); })
+    .then(function(data) {
+        if (data.success) {
+            if (data.cart_empty) {
+                window.location.reload();
+                return;
+            }
+            if (data.current_qty <= 0) {
+                window.location.reload();
+            } else {
+                var qtyInput = document.getElementById('cart_qty_val_' + cartKey);
+                if (qtyInput) qtyInput.value = data.current_qty;
+                var subtotalSpan = document.getElementById('cart_subtotal_' + cartKey);
+                if (subtotalSpan) subtotalSpan.innerText = data.item_subtotal_formatted;
+            }
+            var subTotalUsd = document.getElementById('cart_subtotal_usd');
+            if (subTotalUsd) subTotalUsd.innerText = data.total_formatted;
+            var totalUsd = document.getElementById('cart_total_usd');
+            if (totalUsd) totalUsd.innerText = data.total_formatted;
+
+            var cartBadges = document.querySelectorAll('.cart-count-badge, .nav-cart-count');
+            cartBadges.forEach(function(b) { b.innerText = data.cart_count; });
+        } else {
+            alert('❌ ' + (data.message || 'Lỗi cập nhật số lượng'));
+        }
+    })
+    .catch(function(err) {
+        console.error(err);
+    });
+}
+</script>
 
 <?php include __DIR__ . '/../includes/footer.php'; ?>

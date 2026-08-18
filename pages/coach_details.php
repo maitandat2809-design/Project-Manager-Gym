@@ -24,13 +24,35 @@ if (!$coach) {
 
 $message = '';
 $error = '';
+
+// Check if user currently has an active / uncompleted workout session
+$active_session = null;
+if (isset($_SESSION['user_id'])) {
+    $stmt_active = $pdo->prepare("
+        SELECT b.id, b.booking_date, u.name as coach_name 
+        FROM bookings b 
+        JOIN coaches c ON b.coach_id = c.id 
+        JOIN users u ON c.user_id = u.id 
+        WHERE b.user_id = ? 
+          AND b.status NOT IN ('cancelled', 'rejected', 'completed') 
+          AND (b.attendance IS NULL OR b.attendance NOT IN ('present', 'attended', 'absent'))
+          AND (UNIX_TIMESTAMP(b.booking_date) + 3600) > UNIX_TIMESTAMP(NOW())
+        ORDER BY b.booking_date DESC 
+        LIMIT 1
+    ");
+    $stmt_active->execute([$_SESSION['user_id']]);
+    $active_session = $stmt_active->fetch();
+}
+
 if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['book_now']) && isset($_SESSION['user_id'])) {
     $booking_date = $_POST['booking_date'];
     $user_phone = $_POST['user_phone'] ?? '';
     $user_address = $_POST['user_address'] ?? '';
     
-    // Simple validation: date must be in the future, phone must be 10 digits
-    if (!preg_match('/^[0-9]{10}$/', $user_phone)) {
+    // Validation: active ongoing session, date in future, phone format
+    if ($active_session) {
+        $error = __('ongoing_session_conflict');
+    } elseif (!preg_match('/^[0-9]{10}$/', $user_phone)) {
         $error = __('phone_invalid');
     } elseif (strtotime($booking_date) < time()) {
         $error = __('date_future');
@@ -47,18 +69,18 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['book_now']) && isset($
             $error = __('time_conflict_msg');
         } else {
             $stmt = $pdo->prepare("INSERT INTO bookings (user_id, coach_id, booking_date, status, user_phone, user_address) VALUES (?, ?, ?, 'pending', ?, ?)");
-        if ($stmt->execute([$_SESSION['user_id'], $id, $booking_date, $user_phone, $user_address])) {
-            $booking_id = $pdo->lastInsertId();
+            if ($stmt->execute([$_SESSION['user_id'], $id, $booking_date, $user_phone, $user_address])) {
+                $booking_id = $pdo->lastInsertId();
 
-            // Save info back to user profile
-            $stmt_u = $pdo->prepare("UPDATE users SET phone = ?, address = ? WHERE id = ? AND (phone IS NULL OR address IS NULL OR phone != ? OR address != ?)");
-            $stmt_u->execute([$user_phone, $user_address, $_SESSION['user_id'], $user_phone, $user_address]);
+                // Save info back to user profile
+                $stmt_u = $pdo->prepare("UPDATE users SET phone = ?, address = ? WHERE id = ? AND (phone IS NULL OR address IS NULL OR phone != ? OR address != ?)");
+                $stmt_u->execute([$user_phone, $user_address, $_SESSION['user_id'], $user_phone, $user_address]);
 
-            $message = __('booking_success');
+                $message = __('booking_success');
 
-            // Send Email Notifications
-            require_once __DIR__ . '/../includes/booking_mailer.php';
-            sendNewBookingNotificationEmail($pdo, $booking_id);
+                // Send Email Notifications
+                require_once __DIR__ . '/../includes/booking_mailer.php';
+                sendNewBookingNotificationEmail($pdo, $booking_id);
             } else {
                 $error = __('booking_error');
             }
@@ -189,6 +211,21 @@ if (isset($_SESSION['user_id'])) {
             <?php if (!isset($_SESSION['role']) || $_SESSION['role'] !== 'coach'): ?>
             <div style="background: var(--bg-card); padding: 2rem; border-radius: 15px; border: 1px solid var(--border);">
                 <h3 style="margin-bottom: 1rem;"><?php echo __('book_session_title'); ?></h3>
+
+                <?php if ($active_session): ?>
+                    <div style="background: #fff8e6; border: 1.5px solid #fde68a; border-radius: 16px; padding: 1.2rem 1.5rem; margin-bottom: 1.5rem; color: #92400e; box-shadow: 0 4px 12px rgba(217, 119, 6, 0.1);">
+                        <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 6px; font-weight: 800; font-size: 0.95rem; color: #b45309;">
+                            <i class="fas fa-exclamation-triangle" style="font-size: 1.1rem; color: #d97706;"></i>
+                            <?php echo (($_SESSION['lang'] ?? 'vi') === 'en') ? 'Active Workout Session In Progress' : 'Buổi Tập Chưa Hoàn Thành'; ?>
+                        </div>
+                        <p style="margin: 0; font-size: 0.88rem; line-height: 1.5; color: #78350f;">
+                            <?php echo (($_SESSION['lang'] ?? 'vi') === 'en') 
+                                ? "You currently have an uncompleted workout session with Coach <strong>" . htmlspecialchars($active_session['coach_name']) . "</strong> (" . date('d/m/Y H:i', strtotime($active_session['booking_date'])) . "). Please complete your current session before booking another coach."
+                                : "Bạn đang có buổi tập chưa hoàn thành với HLV <strong>" . htmlspecialchars($active_session['coach_name']) . "</strong> (" . date('d/m/Y H:i', strtotime($active_session['booking_date'])) . "). Vui lòng hoàn thành buổi tập hiện tại trước khi đăng ký lịch tập với HLV khác."; ?>
+                        </p>
+                    </div>
+                <?php endif; ?>
+
                 <?php if (!empty($coach['room_name']) || !empty($coach['room_number'])): ?>
                 <div style="display: flex; align-items: center; gap: 0.7rem; margin-bottom: 1.2rem; padding: 0.8rem 1.2rem; background: rgba(0,98,255,0.06); border-radius: 12px; border: 1px solid rgba(0,98,255,0.15);">
                     <span style="font-size: 1.2rem;">🏠</span>
@@ -208,20 +245,25 @@ if (isset($_SESSION['user_id'])) {
                         <label style="color: var(--text-main); margin-bottom: 0.8rem; display: block; font-weight: 600;"><?php echo __('your_phone_label'); ?></label>
                         <input type="text" name="user_phone" required placeholder="090x xxx xxx" pattern="[0-9]{10}" title="<?php echo __('phone_invalid'); ?>"
                                value="<?php echo isset($curr_user['phone']) ? htmlspecialchars($curr_user['phone']) : ''; ?>"
+                               <?php echo $active_session ? 'disabled' : ''; ?>
                                style="width: 100%; padding: 1.1rem; background: #f1f5f9; border: 2px solid transparent; border-radius: 15px; color: var(--text-main); margin-bottom: 1.5rem; outline: none; font-size: 1rem;">
                     </div>
                     <div class="form-group">
                         <label style="color: var(--text-main); margin-bottom: 0.8rem; display: block; font-weight: 600;"><?php echo __('your_address_label'); ?></label>
                         <input type="text" name="user_address" required placeholder="<?php echo __('address_placeholder'); ?>" 
                                value="<?php echo isset($curr_user['address']) ? htmlspecialchars($curr_user['address']) : ''; ?>"
+                               <?php echo $active_session ? 'disabled' : ''; ?>
                                style="width: 100%; padding: 1.1rem; background: #f1f5f9; border: 2px solid transparent; border-radius: 15px; color: var(--text-main); margin-bottom: 1.5rem; outline: none; font-size: 1rem;">
                     </div>
                     <div class="form-group">
                         <label style="color: var(--text-main); margin-bottom: 0.8rem; display: block; font-weight: 600;"><?php echo __('select_date_time_label'); ?></label>
                         <input type="datetime-local" name="booking_date" required 
+                               <?php echo $active_session ? 'disabled' : ''; ?>
                                style="width: 100%; padding: 1.1rem; background: #f1f5f9; border: 2px solid transparent; border-radius: 15px; color: var(--text-main); margin-bottom: 1.5rem; outline: none; font-size: 1rem;">
                     </div>
-                    <button type="submit" name="book_now" class="cta-btn" style="width: 100%; border: none; cursor: pointer;"><?php echo __('send_booking_request'); ?></button>
+                    <button type="submit" name="book_now" class="cta-btn" <?php echo $active_session ? 'disabled style="width: 100%; border: none; opacity: 0.55; cursor: not-allowed; background: #94a3b8;"' : 'style="width: 100%; border: none; cursor: pointer;"'; ?>>
+                        <?php echo __('send_booking_request'); ?>
+                    </button>
                     <a href="/Gym Manager/pages/coaches.php" style="display: flex; align-items: center; justify-content: center; gap: 8px; width: 100%; margin-top: 1rem; padding: 0.95rem 1.5rem; background: #f8fafc; color: #334155; border: 1.5px solid #cbd5e1; border-radius: 12px; font-weight: 700; font-size: 0.95rem; text-decoration: none; transition: all 0.3s ease; box-shadow: 0 2px 6px rgba(0,0,0,0.03);" onmouseover="this.style.background='#e2e8f0'; this.style.borderColor='var(--primary)';" onmouseout="this.style.background='#f8fafc'; this.style.borderColor='#cbd5e1';">
                         <i class="fas fa-arrow-left"></i> <?php echo __('back_to_coaches'); ?>
                     </a>
