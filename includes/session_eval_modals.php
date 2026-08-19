@@ -3,7 +3,7 @@ if (session_status() === PHP_SESSION_NONE) {
     session_start();
 }
 include_once __DIR__ . '/lang.php';
-$curr_lang = $_SESSION['lang'] ?? 'vi';
+$curr_lang = $_SESSION['lang'] ?? 'en';
 ?>
 <!-- User Evaluation Modal & Coach Session Notes Modal -->
 <div id="userSessionEvalModal" class="gymx-custom-modal-overlay" style="display: none; position: fixed; inset: 0; background: rgba(15, 23, 42, 0.75); z-index: 999999; align-items: center; justify-content: center; backdrop-filter: blur(8px);">

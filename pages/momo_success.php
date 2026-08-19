@@ -42,47 +42,46 @@ unset($_SESSION['momo_success']);
 .momo-btn-secondary:hover { background: #e2e8f0; }
 </style>
 
+<?php $is_vi_momo = isset($_SESSION['lang']) && $_SESSION['lang'] === 'vi'; ?>
 <div class="momo-success-wrap">
     <div class="momo-success-card">
 
         <?php if ($isTest): ?>
         <div style="background:#fef3c7;border:1.5px solid #fbbf24;border-radius:12px;padding:10px 16px;margin-bottom:1.5rem;font-size:0.85rem;color:#92400e;font-weight:600;text-align:left;">
             <i class="fas fa-flask" style="margin-right:6px;"></i>
-            <strong>CHẾ ĐỘ TEST:</strong> Giao dịch này được mô phỏng cục bộ (không qua MoMo thật).
-            Khi có credentials thật từ <a href="https://business.momo.vn" target="_blank" style="color:#d97706;">business.momo.vn</a>,
-            đặt <code>MOMO_TEST_MODE = false</code> trong <code>momo_pay_order.php</code>.
+            <strong><?php echo $is_vi_momo ? 'CHẾ ĐỘ TEST:' : 'TEST MODE:'; ?></strong> <?php echo $is_vi_momo ? 'Giao dịch này được mô phỏng cục bộ (không qua MoMo thật).' : 'This transaction is simulated locally (not live MoMo).'; ?>
         </div>
         <?php endif; ?>
 
         <div class="momo-icon">💜</div>
 
         <?php if ($type === 'membership'): ?>
-            <h1>Đăng Ký Thành Công!</h1>
-            <p>Thẻ thành viên <strong style="color:#a21caf"><?php echo htmlspecialchars($success['plan_name'] ?? ''); ?></strong> của bạn đã được kích hoạt ngay lập tức qua Ví MoMo.</p>
+            <h1><?php echo $is_vi_momo ? 'Đăng Ký Thành Công!' : 'Subscription Successful!'; ?></h1>
+            <p><?php echo $is_vi_momo ? 'Thẻ thành viên' : 'Your membership plan'; ?> <strong style="color:#a21caf"><?php echo htmlspecialchars($success['plan_name'] ?? ''); ?></strong> <?php echo $is_vi_momo ? 'của bạn đã được kích hoạt ngay lập tức qua Ví MoMo.' : 'has been activated instantly via MoMo Wallet.'; ?></p>
             <div class="momo-detail-box">
-                <p>💜 <strong>Phương thức:</strong> Ví MoMo</p>
-                <p>💰 <strong>Số tiền:</strong> <?php echo number_format((int)($success['amount'] ?? 0), 0, ',', '.'); ?>đ</p>
-                <p>✅ <strong>Trạng thái:</strong> Đã kích hoạt</p>
-                <p>📋 <strong>Lưu ý:</strong> Vui lòng đến quầy giao dịch để nhận thẻ thành viên vật lý.</p>
+                <p>💜 <strong><?php echo $is_vi_momo ? 'Phương thức:' : 'Payment Method:'; ?></strong> <?php echo $is_vi_momo ? 'Ví MoMo' : 'MoMo Wallet'; ?></p>
+                <p>💰 <strong><?php echo $is_vi_momo ? 'Số tiền:' : 'Amount Paid:'; ?></strong> <?php echo number_format((int)($success['amount'] ?? 0), 0, ',', '.'); ?>đ</p>
+                <p>✅ <strong><?php echo $is_vi_momo ? 'Trạng thái:' : 'Status:'; ?></strong> <?php echo $is_vi_momo ? 'Đã kích hoạt' : 'Activated'; ?></p>
+                <p>📋 <strong><?php echo $is_vi_momo ? 'Lưu ý:' : 'Note:'; ?></strong> <?php echo $is_vi_momo ? 'Vui lòng đến quầy giao dịch để nhận thẻ thành viên vật lý.' : 'Please visit the front desk to receive your physical membership card.'; ?></p>
             </div>
             <a href="/Gym Manager/dashboards/profile.php" class="momo-btn momo-btn-primary">
-                <i class="fas fa-id-card" style="margin-right:8px;"></i>Xem Thẻ Thành Viên
+                <i class="fas fa-id-card" style="margin-right:8px;"></i><?php echo $is_vi_momo ? 'Xem Thẻ Thành Viên' : 'View My Membership'; ?>
             </a>
-            <a href="/Gym Manager/index.php" class="momo-btn momo-btn-secondary">Về Trang Chủ</a>
+            <a href="/Gym Manager/index.php" class="momo-btn momo-btn-secondary"><?php echo $is_vi_momo ? 'Về Trang Chủ' : 'Back to Home'; ?></a>
 
         <?php else: ?>
-            <h1>Thanh Toán Thành Công!</h1>
-            <p>Đơn hàng của bạn đã được thanh toán qua Ví MoMo. Chúng tôi sẽ xử lý và giao hàng sớm nhất có thể.</p>
+            <h1><?php echo $is_vi_momo ? 'Thanh Toán Thành Công!' : 'Payment Successful!'; ?></h1>
+            <p><?php echo $is_vi_momo ? 'Đơn hàng của bạn đã được thanh toán qua Ví MoMo. Chúng tôi sẽ xử lý và giao hàng sớm nhất có thể.' : 'Your order has been paid via MoMo Wallet. We will process and ship it as soon as possible.'; ?></p>
             <div class="momo-detail-box">
-                <p>📦 <strong>Mã đơn hàng:</strong> #<?php echo (int)($success['order_id'] ?? 0); ?></p>
-                <p>💜 <strong>Phương thức:</strong> Ví MoMo</p>
-                <p>✅ <strong>Trạng thái:</strong> Đã xác nhận</p>
-                <p>📧 <strong>Email xác nhận đã được gửi về hộp thư của bạn.</strong></p>
+                <p>📦 <strong><?php echo $is_vi_momo ? 'Mã đơn hàng:' : 'Order ID:'; ?></strong> #<?php echo (int)($success['order_id'] ?? 0); ?></p>
+                <p>💜 <strong><?php echo $is_vi_momo ? 'Phương thức:' : 'Payment Method:'; ?></strong> <?php echo $is_vi_momo ? 'Ví MoMo' : 'MoMo Wallet'; ?></p>
+                <p>✅ <strong><?php echo $is_vi_momo ? 'Trạng thái:' : 'Status:'; ?></strong> <?php echo $is_vi_momo ? 'Đã xác nhận' : 'Confirmed'; ?></p>
+                <p>📧 <strong><?php echo $is_vi_momo ? 'Email xác nhận đã được gửi về hộp thư của bạn.' : 'A confirmation email has been sent to your inbox.'; ?></strong></p>
             </div>
             <a href="/Gym Manager/pages/cart.php#order-tracking" class="momo-btn momo-btn-primary">
-                <i class="fas fa-truck" style="margin-right:8px;"></i>Theo Dõi Đơn Hàng (2-3 ngày)
+                <i class="fas fa-truck" style="margin-right:8px;"></i><?php echo $is_vi_momo ? 'Theo Dõi Đơn Hàng (2-3 ngày)' : 'Track Order (2-3 days)'; ?>
             </a>
-            <a href="/Gym Manager/dashboards/profile.php" class="momo-btn momo-btn-secondary">Lịch Sử Đơn Hàng</a>
+            <a href="/Gym Manager/dashboards/profile.php" class="momo-btn momo-btn-secondary"><?php echo $is_vi_momo ? 'Lịch Sử Đơn Hàng' : 'Order History'; ?></a>
         <?php endif; ?>
     </div>
 </div>

@@ -289,7 +289,7 @@ if ($role == 'coach') {
                 
                 echo '<a href="/Gym Manager/dashboards/profile.php" class="notif-item ' . $is_unread . '">';
                 echo '<h4>' . ($curr_lang === 'en' ? 'Coach ' : 'HLV ') . htmlspecialchars($n['coach_name']) . ($curr_lang === 'en' ? ' replied' : ' đã phản hồi') . '</h4>';
-                echo '<p style="color: var(--text-main); font-weight: 600; margin: 4px 0;">"' . htmlspecialchars($n['coach_message']) . '"</p>';
+                echo '<p style="color: var(--text-main); font-weight: 600; margin: 4px 0;">"' . htmlspecialchars(getLocalizedCoachMsg($n['coach_message'])) . '"</p>';
                 echo '<div style="display: flex; justify-content: space-between; align-items: center; margin-top: 6px;">';
                 echo '<span class="notif-time" style="margin:0;">' . date('d/m/Y H:i', strtotime($n['updated_at'])) . '</span>';
                 echo '<span class="notif-status ' . $status_class . '">' . strtoupper($n['status']) . '</span>';

@@ -230,7 +230,44 @@ try {
     $booking_id = $pdo->lastInsertId();
     require_once __DIR__ . '/../includes/booking_mailer.php';
     sendNewBookingNotificationEmail($pdo, $booking_id);
-    
+
+    // 7. Integrate with Membership System: Create member subscription record
+    $plan_search = '';
+    switch ($package_id) {
+        case 'gym': $plan_search = 'Basic Gym Package'; break;
+        case 'pt': $plan_search = 'Personal Trainer 1:1'; break;
+        case 'fatloss': $plan_search = '8-Week Fat Loss'; break;
+        case 'yoga': $plan_search = 'Yoga & Wellness'; break;
+        case 'bodypump': case 'kickboxing': $plan_search = 'Kickboxing & GroupX'; break;
+        default: $plan_search = 'Basic Gym Package'; break;
+    }
+
+    $stmt_mp = $pdo->prepare("SELECT id, price, duration_days FROM membership_plans WHERE name = ? AND is_active = 1 LIMIT 1");
+    $stmt_mp->execute([$plan_search]);
+    $m_plan = $stmt_mp->fetch();
+
+    if ($m_plan && $user_id) {
+        $stmt_check_sub = $pdo->prepare("SELECT id FROM member_subscriptions WHERE user_id = ? AND status IN ('active', 'pending') LIMIT 1");
+        $stmt_check_sub->execute([$user_id]);
+        if (!$stmt_check_sub->fetch()) {
+            $start_date_db = !empty($start_date) ? date('Y-m-d', strtotime($start_date)) : date('Y-m-d');
+            $end_date_db = date('Y-m-d', strtotime($start_date_db . ' + ' . $m_plan['duration_days'] . ' days'));
+
+            $stmt_ins_sub = $pdo->prepare("
+                INSERT INTO member_subscriptions (user_id, plan_id, start_date, end_date, price_paid, status, payment_method, notes)
+                VALUES (?, ?, ?, ?, ?, 'pending', 'cod', ?)
+            ");
+            $stmt_ins_sub->execute([
+                $user_id,
+                $m_plan['id'],
+                $start_date_db,
+                $end_date_db,
+                $m_plan['price'],
+                "Registered via service module: {$package_name}"
+            ]);
+        }
+    }
+
     echo json_encode([
         'success' => true,
         'message' => translate_key('fs_modal_success_desc', $curr_lang),

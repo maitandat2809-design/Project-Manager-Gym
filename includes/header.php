@@ -75,15 +75,17 @@ if (isset($_SESSION['user_id'])) {
                     <?php endforeach; ?>
                 </ul>
             </li>
+            <?php endif; ?>
+            <?php if(!isset($_SESSION['role']) || $_SESSION['role'] !== 'admin'): ?>
+            <li><a href="/Gym Manager/features/calendar.php"><?php echo __('calendar'); ?></a></li>
+            <?php endif; ?>
+            <?php if(!isset($_SESSION['role']) || $_SESSION['role'] === 'user'): ?>
             <li><a href="/Gym Manager/pages/membership.php"><?php echo __('membership_nav'); ?></a></li>
             <?php endif; ?>
             <?php if(!isset($_SESSION['role']) || ($_SESSION['role'] !== 'manager' && $_SESSION['role'] !== 'admin')): ?>
             <li><a href="/Gym Manager/pages/shop.php"><?php echo __('shop'); ?></a></li>
             <?php endif; ?>
             <li><a href="/Gym Manager/pages/about.php"><?php echo __('about'); ?></a></li>
-            <?php if(!isset($_SESSION['role']) || $_SESSION['role'] !== 'admin'): ?>
-            <li><a href="/Gym Manager/features/calendar.php"><?php echo __('calendar'); ?></a></li>
-            <?php endif; ?>
         </ul>
 
         <!-- Right Side Actions Container -->
@@ -266,6 +268,7 @@ if (isset($_SESSION['user_id'])) {
 
     <?php include_once __DIR__ . '/coach_notification.php'; ?>
     <?php include_once __DIR__ . '/admin_notification.php'; ?>
+    <?php include_once __DIR__ . '/user_membership_notification.php'; ?>
     <?php include_once __DIR__ . '/session_eval_modals.php'; ?>
 
     <script>

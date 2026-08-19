@@ -256,7 +256,7 @@ $c_info = $coach_details->fetch();
                                     <?php endif; ?>
                                     <?php if (!empty($b['coach_message'])): ?>
                                         <div style="margin-top: 6px; font-size: 0.8rem; background: #fff8e6; color: #92400e; border: 1px solid #fde68a; padding: 6px 10px; border-radius: 8px;">
-                                            <i class="fas fa-edit" style="margin-right: 4px; color: #d97706;"></i> <strong><?php echo __('coach_notes_title'); ?>:</strong> <?php echo htmlspecialchars($b['coach_message']); ?>
+                                            <i class="fas fa-edit" style="margin-right: 4px; color: #d97706;"></i> <strong><?php echo __('coach_notes_title'); ?>:</strong> <?php echo htmlspecialchars(getLocalizedCoachMsg($b['coach_message'])); ?>
                                         </div>
                                     <?php endif; ?>
                                 </td>
@@ -621,7 +621,7 @@ $c_info = $coach_details->fetch();
                 }
                 $box_html .= "<div style='font-size: 0.72rem; {$att_color} font-weight: 700; margin-top: 3px;'><i class='fas fa-user-check' style='width: 14px;'></i> {$att_text}</div>";
                 if (!empty($b['coach_message'])) {
-                    $box_html .= "<div style='font-size: 0.72rem; background: #fff8e6; color: #92400e; border: 1px solid #fde68a; padding: 4px 6px; border-radius: 6px; margin-top: 5px;'><i class='fas fa-edit' style='color: #d97706; margin-right: 3px;'></i> <strong>" . __('coach_notes_title') . ":</strong> " . htmlspecialchars($b['coach_message']) . "</div>";
+                    $box_html .= "<div style='font-size: 0.72rem; background: #fff8e6; color: #92400e; border: 1px solid #fde68a; padding: 4px 6px; border-radius: 6px; margin-top: 5px;'><i class='fas fa-edit' style='color: #d97706; margin-right: 3px;'></i> <strong>" . __('coach_notes_title') . ":</strong> " . htmlspecialchars(getLocalizedCoachMsg($b['coach_message'])) . "</div>";
                 }
                 $box_html .= "</div>";
                 

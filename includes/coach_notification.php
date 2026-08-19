@@ -24,7 +24,9 @@ if (isset($_SESSION['user_id']) && $_SESSION['role'] === 'coach') {
         $stmt_b->execute([$coach_id]);
         $new_bookings = $stmt_b->fetchAll();
 
-        if (!empty($new_bookings)): ?>
+        if (!empty($new_bookings)): 
+            $is_vi_cn = isset($_SESSION['lang']) && $_SESSION['lang'] === 'vi';
+            ?>
             <!-- Notification Modal for Coach -->
             <div id="coachNotificationModal" style="position: fixed; inset: 0; background: rgba(0,0,0,0.7); z-index: 9999; display: flex; align-items: center; justify-content: center; backdrop-filter: blur(8px);">
                 <div style="background: white; width: 90%; max-width: 550px; border-radius: 30px; box-shadow: 0 25px 50px -12px rgba(0,0,0,0.5); overflow: hidden; animation: zoomIn 0.4s cubic-bezier(0.34, 1.56, 0.64, 1);">
@@ -32,8 +34,8 @@ if (isset($_SESSION['user_id']) && $_SESSION['role'] === 'coach') {
                         <div style="width: 80px; height: 80px; background: rgba(255,255,255,0.2); border-radius: 50%; display: flex; align-items: center; justify-content: center; margin: 0 auto 1.5rem; border: 2px solid white;">
                             <i class="fas fa-calendar-check" style="font-size: 2.5rem;"></i>
                         </div>
-                        <h2 style="font-size: 1.8rem; font-weight: 800; margin-bottom: 0.5rem;">You Have New Bookings!</h2>
-                        <p style="opacity: 0.9;">Great news! Clients are eager to train with you.</p>
+                        <h2 style="font-size: 1.8rem; font-weight: 800; margin-bottom: 0.5rem;"><?php echo $is_vi_cn ? 'Bạn Có Lịch Đặt Mới!' : 'You Have New Bookings!'; ?></h2>
+                        <p style="opacity: 0.9;"><?php echo $is_vi_cn ? 'Tin tuyệt vời! Học viên đang rất mong muốn tập luyện cùng bạn.' : 'Great news! Clients are eager to train with you.'; ?></p>
                     </div>
                     
                     <div style="padding: 2rem; max-height: 400px; overflow-y: auto;">
@@ -48,7 +50,7 @@ if (isset($_SESSION['user_id']) && $_SESSION['role'] === 'coach') {
                                     </p>
                                 </div>
                                 <div style="text-align: right;">
-                                    <span style="display: inline-block; padding: 4px 10px; background: #dcfce7; color: #166534; border-radius: 10px; font-size: 0.7rem; font-weight: 700; text-transform: uppercase;">New</span>
+                                    <span style="display: inline-block; padding: 4px 10px; background: #dcfce7; color: #166534; border-radius: 10px; font-size: 0.7rem; font-weight: 700; text-transform: uppercase;"><?php echo $is_vi_cn ? 'MỚI' : 'New'; ?></span>
                                 </div>
                             </div>
                         <?php endforeach; ?>
@@ -56,9 +58,9 @@ if (isset($_SESSION['user_id']) && $_SESSION['role'] === 'coach') {
 
                     <div style="padding: 2rem; border-top: 1px solid #f1f5f9; display: flex; gap: 1rem;">
                         <form method="POST" style="flex: 1;">
-                            <button type="submit" name="acknowledge_booking" class="btn-auth" style="margin: 0; width: 100%; border-radius: 15px;">Acknowledge All</button>
+                            <button type="submit" name="acknowledge_booking" class="btn-auth" style="margin: 0; width: 100%; border-radius: 15px;"><?php echo $is_vi_cn ? 'Xác Nhận Tất Cả' : 'Acknowledge All'; ?></button>
                         </form>
-                        <a href="admin.php?page=bookings" class="action-btn" style="flex: 1; display: flex; align-items: center; justify-content: center; background: #f1f5f9; color: var(--text-muted); border-radius: 15px; text-decoration: none; font-weight: 700;">View Dashboard</a>
+                        <a href="admin.php?page=bookings" class="action-btn" style="flex: 1; display: flex; align-items: center; justify-content: center; background: #f1f5f9; color: var(--text-muted); border-radius: 15px; text-decoration: none; font-weight: 700;"><?php echo $is_vi_cn ? 'Xem Lịch Tập' : 'View Dashboard'; ?></a>
                     </div>
                 </div>
             </div>

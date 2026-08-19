@@ -415,6 +415,9 @@ $orders = $stmt->fetchAll();
                 } else if (msgText.includes('trải nghiệm các sản phẩm khác') || msgText.includes('explore and try other products') || msgText.includes('hủy') || msgText.includes('cancelled')) {
                     title = <?php echo json_encode(__('order_notification')); ?>;
                     icon = '🛍️';
+                } else if (msgText.includes('mật khẩu') || msgText.includes('Password') || msgText.includes('password') || msgText.includes('pw_updated_success')) {
+                    title = <?php echo json_encode(($_SESSION['lang'] ?? 'vi') === 'vi' ? 'Đổi Mật Khẩu Thành Công' : 'Password Changed Successfully'); ?>;
+                    icon = '🔑';
                 }
                 showGymXAlert(msgText, title, icon);
             });
@@ -518,19 +521,26 @@ $orders = $stmt->fetchAll();
 
     <!-- Password Change Section -->
     <div style="background: var(--bg-card); padding: 2.5rem; border-radius: 25px; border: 1px solid var(--border); margin-bottom: 4rem; box-shadow: var(--shadow-premium);">
-        <h3 style="margin-bottom: 2rem; color: var(--primary); font-weight: 800;"><?php echo __('security_settings'); ?></h3>
+        <h3 style="margin-bottom: 2rem; color: var(--primary); font-weight: 800; display: flex; align-items: center; gap: 10px;">
+            <i class="fas fa-shield-alt" style="color: var(--primary);"></i> <?php echo __('security_settings'); ?>
+        </h3>
         <form method="POST" class="password-form-grid">
             <div class="form-group" style="margin-bottom: 0;">
                 <label style="font-weight: 600;"><?php echo __('current_password'); ?></label>
-                <input type="password" name="current_password" required placeholder="••••••••" style="background: #f1f5f9;">
+                <input type="password" name="current_password" required placeholder="••••••••" style="background: #f1f5f9; width: 100%;">
             </div>
             <div class="form-group" style="margin-bottom: 0;">
                 <label style="font-weight: 600;"><?php echo __('new_password'); ?></label>
-                <input type="password" name="new_password" required placeholder="••••••••" style="background: #f1f5f9;">
+                <input type="password" name="new_password" required placeholder="••••••••" style="background: #f1f5f9; width: 100%;">
             </div>
             <div class="form-group" style="margin-bottom: 0;">
                 <label style="font-weight: 600;"><?php echo __('confirm_new_password'); ?></label>
-                <input type="password" name="confirm_password" required placeholder="••••••••" style="background: #f1f5f9;">
+                <input type="password" name="confirm_password" required placeholder="••••••••" style="background: #f1f5f9; width: 100%;">
+            </div>
+            <div class="form-group" style="margin-bottom: 0;">
+                <button type="submit" name="update_password" class="cta-btn" style="border: none; cursor: pointer; white-space: nowrap; height: 48px; padding: 0 1.8rem; display: inline-flex; align-items: center; justify-content: center; gap: 8px; font-weight: 800; border-radius: 14px; background: linear-gradient(135deg, #1c2340, #0f172a); color: #c9a84c; border: 1px solid #c9a84c; box-shadow: 0 4px 14px rgba(15,23,42,0.25); transition: all 0.3s;">
+                    <i class="fas fa-key"></i> <?php echo (($_SESSION['lang'] ?? 'vi') === 'vi' ? 'Xác Nhận' : 'Confirm'); ?>
+                </button>
             </div>
         </form>
     </div>
@@ -610,7 +620,7 @@ $orders = $stmt->fetchAll();
 
                                     <?php if (!empty($booking['coach_message'])): ?>
                                         <div style="background: #fff8e6; border: 1px solid #fde68a; padding: 8px 12px; border-radius: 10px; font-size: 0.82rem; color: #92400e;">
-                                            <i class="fas fa-sticky-note" style="color: #d97706; margin-right: 4px;"></i> <strong><?php echo __('coach_notes_title'); ?>:</strong> <?php echo htmlspecialchars($booking['coach_message']); ?>
+                                            <i class="fas fa-sticky-note" style="color: #d97706; margin-right: 4px;"></i> <strong><?php echo __('coach_notes_title'); ?>:</strong> <?php echo htmlspecialchars(getLocalizedCoachMsg($booking['coach_message'])); ?>
                                         </div>
                                     <?php endif; ?>
 
@@ -728,7 +738,7 @@ $orders = $stmt->fetchAll();
 
                                     <?php if (!empty($booking['coach_message'])): ?>
                                         <div style="background: #fff8e6; border: 1px solid #fde68a; padding: 8px 12px; border-radius: 10px; font-size: 0.82rem; color: #92400e;">
-                                            <i class="fas fa-sticky-note" style="color: #d97706; margin-right: 4px;"></i> <strong><?php echo __('coach_notes_title'); ?>:</strong> <?php echo htmlspecialchars($booking['coach_message']); ?>
+                                            <i class="fas fa-sticky-note" style="color: #d97706; margin-right: 4px;"></i> <strong><?php echo __('coach_notes_title'); ?>:</strong> <?php echo htmlspecialchars(getLocalizedCoachMsg($booking['coach_message'])); ?>
                                         </div>
                                     <?php endif; ?>
 

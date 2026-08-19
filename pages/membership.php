@@ -767,6 +767,18 @@ async function cancelAndRefund(subId, planName) {
         showGymXAlert(isEn ? 'Connection error. Please try again.' : 'Lỗi kết nối. Vui lòng thử lại.', isEn ? 'Connection Error' : 'Lỗi Kết Nối', '⚠️');
     }
 }
+
+// Auto open plan modal if plan_id parameter is passed in URL
+document.addEventListener('DOMContentLoaded', function() {
+    const urlParams = new URLSearchParams(window.location.search);
+    const planId = urlParams.get('plan_id');
+    if (planId) {
+        const btn = document.querySelector(`.btn-buy[data-plan-id="${planId}"]`);
+        if (btn) {
+            handleBuyClick(btn);
+        }
+    }
+});
 </script>
 
 <?php include __DIR__ . '/../includes/footer.php'; ?>

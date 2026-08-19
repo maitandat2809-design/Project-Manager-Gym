@@ -217,4 +217,99 @@ if (!function_exists('sendNewBookingNotificationEmail')) {
         }
     }
 }
+
+if (!function_exists('sendMembershipExpirationEmail')) {
+    /**
+     * Send email notification to client when their PT membership sessions run out / expire
+     */
+    function sendMembershipExpirationEmail($pdo, $sub_id) {
+        try {
+            $stmt = $pdo->prepare("
+                SELECT ms.*, u.name as client_name, u.email as client_email, mp.name as plan_name, mp.name_vi as plan_name_vi, mp.pt_sessions
+                FROM member_subscriptions ms
+                JOIN users u ON ms.user_id = u.id
+                JOIN membership_plans mp ON ms.plan_id = mp.id
+                WHERE ms.id = ?
+            ");
+            $stmt->execute([$sub_id]);
+            $sub = $stmt->fetch();
+
+            if (!$sub || empty($sub['client_email'])) {
+                return false;
+            }
+
+            require_once __DIR__ . '/../libs/PHPMailer/src/Exception.php';
+            require_once __DIR__ . '/../libs/PHPMailer/src/PHPMailer.php';
+            require_once __DIR__ . '/../libs/PHPMailer/src/SMTP.php';
+
+            $mail = new PHPMailer(true);
+            $mail->CharSet = 'UTF-8';
+            $mail->isSMTP();
+            $mail->Host       = 'smtp.gmail.com';
+            $mail->SMTPAuth   = true;
+            $mail->Username   = 'lamtuoi155@gmail.com';     
+            $mail->Password   = 'hpst uazz wdsq sbnf';   
+            $mail->SMTPSecure = PHPMailer::ENCRYPTION_STARTTLS;
+            $mail->Port       = 587;
+
+            $mail->setFrom('lamtuoi155@gmail.com', 'Gym Manager System');
+            $mail->addAddress($sub['client_email'], $sub['client_name']);
+
+            $plan_title = !empty($sub['plan_name_vi']) ? $sub['plan_name_vi'] : $sub['plan_name'];
+            $pt_total = (int)($sub['pt_sessions_total'] > 0 ? $sub['pt_sessions_total'] : $sub['pt_sessions']);
+            $pt_used = (int)$sub['pt_sessions_used'];
+
+            $mail->isHTML(true);
+            $mail->Subject = "⚠️ [Gym Manager] Thông Báo Hết Hạn Gói PT (" . $pt_used . "/" . $pt_total . " Buổi Tập)";
+
+            $mail_body = "
+            <div style='font-family: Arial, sans-serif; max-width: 600px; margin: auto; padding: 25px; border: 1px solid #e2e8f0; border-radius: 16px; background-color: #ffffff; color: #1c2340;'>
+                <div style='text-align: center; padding-bottom: 15px; border-bottom: 2px solid #d97706;'>
+                    <h2 style='color: #d97706; margin: 0; font-size: 22px;'>⚠️ Gói Tập PT Của Bạn Đã Hết Hạn</h2>
+                    <p style='color: #64748b; font-size: 14px; margin-top: 4px;'>PT Membership Sessions Expired</p>
+                </div>
+                
+                <p style='color: #334155; font-size: 15px; margin-top: 20px;'>
+                    Xin chào <strong>" . htmlspecialchars($sub['client_name']) . "</strong>,<br>
+                    HLV đã hoàn tất điểm danh tất cả <strong>" . $pt_used . "/" . $pt_total . " buổi tập</strong> thuộc gói <strong>" . htmlspecialchars($plan_title) . "</strong> của bạn.
+                </p>
+
+                <div style='background: #fffbeb; padding: 18px; border-left: 4px solid #d97706; border-radius: 8px; margin: 20px 0;'>
+                    <p style='margin: 6px 0;'><strong>Gói tập:</strong> " . htmlspecialchars($plan_title) . "</p>
+                    <p style='margin: 6px 0;'><strong>Tổng số buổi:</strong> " . $pt_total . " buổi</p>
+                    <p style='margin: 6px 0;'><strong>Đã hoàn thành:</strong> <span style='color: #d97706; font-weight: bold;'>" . $pt_used . " / " . $pt_total . " buổi ✅</span></p>
+                    <p style='margin: 6px 0;'><strong>Số buổi còn lại:</strong> <span style='color: #dc2626; font-weight: bold;'>0 buổi (ĐÃ HẾT HẠN)</span></p>
+                </div>
+
+                <p style='color: #334155; font-size: 14px; font-weight: bold; margin-bottom: 15px; text-align: center;'>
+                    Vui lòng chọn 1 trong 2 lựa chọn bên dưới để tiếp tục duy trì tập luyện cùng HLV:
+                </p>
+
+                <div style='display: flex; gap: 12px; margin: 20px 0; justify-content: center; flex-wrap: wrap;'>
+                    <a href='http://localhost/Gym%20Manager/pages/membership.php' style='background: linear-gradient(135deg, #2563eb, #1d4ed8); color: #ffffff; padding: 12px 20px; border-radius: 10px; text-decoration: none; font-weight: bold; font-size: 14px; display: inline-block;'>
+                        🔄 1. Gia Hạn Gói Tập (Renew)
+                    </a>
+                    <a href='http://localhost/Gym%20Manager/pages/membership.php' style='background: linear-gradient(135deg, #d97706, #b45309); color: #ffffff; padding: 12px 20px; border-radius: 10px; text-decoration: none; font-weight: bold; font-size: 14px; display: inline-block;'>
+                        ✨ 2. Chọn Gói Khác (Choose New)
+                    </a>
+                </div>
+
+                <p style='color: #64748b; font-size: 13px; text-align: center; border-top: 1px solid #f1f5f9; padding-top: 15px; margin-top: 20px;'>
+                    Email này được gửi tự động từ Hệ Thống Gym Manager.
+                </p>
+            </div>";
+
+            $mail->Body = $mail_body;
+            $mail->send();
+
+            // Mark as notified in database
+            $pdo->prepare("UPDATE member_subscriptions SET expiry_notified = 1 WHERE id = ?")->execute([$sub_id]);
+            return true;
+        } catch (Exception $e) {
+            error_log("Membership expiration email error: " . $e->getMessage());
+            return false;
+        }
+    }
+}
 ?>
+

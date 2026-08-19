@@ -53,4 +53,19 @@ if (!function_exists('__')) {
         return $key;
     }
 }
+
+if (!function_exists('getLocalizedCoachMsg')) {
+    function getLocalizedCoachMsg($msg) {
+        if (empty($msg)) return '';
+        $curr_lang = $_SESSION['lang'] ?? 'en';
+        $sub_vi = 'Phân công HLV dạy thế cho buổi tập bị hủy đột xuất';
+        $sub_en = 'Assigned substitute coach for emergency cancelled session';
+        
+        $trimmed = trim($msg);
+        if ($trimmed === $sub_vi || $trimmed === $sub_en) {
+            return ($curr_lang === 'en') ? $sub_en : $sub_vi;
+        }
+        return $msg;
+    }
+}
 ?>

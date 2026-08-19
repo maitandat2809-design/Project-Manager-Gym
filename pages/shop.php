@@ -130,7 +130,7 @@ $products = $stmt->fetchAll();
                 <div class="card-content" style="display: flex; flex-direction: column; flex-grow: 1;">
                     <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 0.5rem; flex-wrap: wrap; gap: 5px;">
                         <div style="display: flex; gap: 5px; flex-wrap: wrap;">
-                            <div class="card-tag"><?php echo ucfirst($product['category'] ?? 'Supplement'); ?></div>
+                            <div class="card-tag"><?php echo ($current_lang === 'vi') ? ($product['category'] === 'supplement' ? __('supplements') : ($product['category'] === 'accessory' ? __('accessories') : ucfirst($product['category']))) : ucfirst($product['category']); ?></div>
                             <?php if($product['sales_count'] >= 5): ?>
                                 <div class="card-tag" style="background: #ef4444; color: white;"><?php echo __('best_seller'); ?></div>
                             <?php endif; ?>
@@ -147,7 +147,7 @@ $products = $stmt->fetchAll();
                                 for($i=1; $i<=5; $i++) echo $i <= $rating ? "★" : "☆";
                                 ?>
                             </div>
-                            <a href="javascript:void(0);" onclick="openReviewModal(<?php echo $product['id']; ?>, '<?php echo htmlspecialchars(addslashes($product['name'])); ?>')" style="color: var(--primary); font-size: 0.8rem; text-decoration: underline; font-weight: 600;">(<?php echo $product['review_count']; ?> reviews)</a>
+                            <a href="javascript:void(0);" onclick="openReviewModal(<?php echo $product['id']; ?>, '<?php echo htmlspecialchars(addslashes(($current_lang === 'vi' && !empty($product['name_vi'])) ? $product['name_vi'] : $product['name'])); ?>')" style="color: var(--primary); font-size: 0.8rem; text-decoration: underline; font-weight: 600;">(<?php echo $product['review_count']; ?> <?php echo __('reviews'); ?>)</a>
                         </div>
                         <span style="font-size: 0.8rem; font-weight: 700; color: <?php echo $product['stock'] > 0 ? '#10b981' : '#ef4444'; ?>;">
                             <?php echo $product['stock'] > 0 ? __('stock_label') . $product['stock'] : __('out_of_stock'); ?>
@@ -166,7 +166,7 @@ $products = $stmt->fetchAll();
                                 </div>
                                 <?php if (!empty($product['has_weight_variants']) && $product['has_weight_variants'] == 1): ?>
                                 <select name="weight" style="padding: 0.8rem; border-radius: 8px; border: 1px solid #e2e8f0; font-weight: 600; width: 100%; outline: none; background: #f8fafc; color: var(--text-main); flex-grow: 1;">
-                                    <option value="500g">500g (Standard)</option>
+                                    <option value="500g">500g (<?php echo ($current_lang === 'vi') ? 'Tiêu chuẩn' : 'Standard'; ?>)</option>
                                     <option value="1kg">1 kg (+ $10)</option>
                                     <option value="2kg">2 kg (+ $25)</option>
                                     <option value="5kg">5 kg (+ $60)</option>

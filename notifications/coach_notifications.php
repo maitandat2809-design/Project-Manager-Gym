@@ -112,7 +112,7 @@ $bookings = $stmt->fetchAll();
                                         <strong style="color: var(--primary); display: block; margin-bottom: 8px;">
                                             <i class="fas fa-reply" style="margin-right: 8px;"></i> Your Response:
                                         </strong>
-                                        <p style="font-size: 1.05rem; line-height: 1.6; color: var(--text-main); font-style: italic;">"<?php echo htmlspecialchars($b['coach_message']); ?>"</p>
+                                        <p style="font-size: 1.05rem; line-height: 1.6; color: var(--text-main); font-style: italic;">"<?php echo htmlspecialchars(getLocalizedCoachMsg($b['coach_message'])); ?>"</p>
                                         <p style="margin-top: 10px; font-size: 0.8rem; color: var(--text-muted); text-align: right;">Replied on <?php echo date('M d, Y', strtotime($b['updated_at'])); ?></p>
                                     </div>
                                 <?php endif; ?>

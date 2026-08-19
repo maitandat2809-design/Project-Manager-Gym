@@ -216,10 +216,10 @@ if (isset($_SESSION['user_id'])) {
                     <div style="background: #fff8e6; border: 1.5px solid #fde68a; border-radius: 16px; padding: 1.2rem 1.5rem; margin-bottom: 1.5rem; color: #92400e; box-shadow: 0 4px 12px rgba(217, 119, 6, 0.1);">
                         <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 6px; font-weight: 800; font-size: 0.95rem; color: #b45309;">
                             <i class="fas fa-exclamation-triangle" style="font-size: 1.1rem; color: #d97706;"></i>
-                            <?php echo (($_SESSION['lang'] ?? 'vi') === 'en') ? 'Active Workout Session In Progress' : 'Buổi Tập Chưa Hoàn Thành'; ?>
+                            <?php echo (($_SESSION['lang'] ?? 'en') === 'en') ? 'Active Workout Session In Progress' : 'Buổi Tập Chưa Hoàn Thành'; ?>
                         </div>
                         <p style="margin: 0; font-size: 0.88rem; line-height: 1.5; color: #78350f;">
-                            <?php echo (($_SESSION['lang'] ?? 'vi') === 'en') 
+                            <?php echo (($_SESSION['lang'] ?? 'en') === 'en') 
                                 ? "You currently have an uncompleted workout session with Coach <strong>" . htmlspecialchars($active_session['coach_name']) . "</strong> (" . date('d/m/Y H:i', strtotime($active_session['booking_date'])) . "). Please complete your current session before booking another coach."
                                 : "Bạn đang có buổi tập chưa hoàn thành với HLV <strong>" . htmlspecialchars($active_session['coach_name']) . "</strong> (" . date('d/m/Y H:i', strtotime($active_session['booking_date'])) . "). Vui lòng hoàn thành buổi tập hiện tại trước khi đăng ký lịch tập với HLV khác."; ?>
                         </p>
