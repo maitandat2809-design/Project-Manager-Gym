@@ -22,7 +22,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action_update_schedul
         
         try {
             // Server-side check: Do not allow editing completed or past sessions!
-            $stmt_chk_b = $pdo->prepare("SELECT booking_date, status, attendance FROM bookings WHERE id = ?");
+            $stmt_chk_b = $pdo->prepare("SELECT user_id, booking_date, status, attendance FROM bookings WHERE id = ?");
             $stmt_chk_b->execute([$booking_id]);
             $existing_b = $stmt_chk_b->fetch();
             if ($existing_b) {
@@ -35,27 +35,75 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action_update_schedul
                     echo "<script>window.location.href='/Gym Manager/features/calendar.php?week_offset={$week_offset}&msg=err_past';</script>";
                     exit;
                 }
+
+                // Check slot conflicts if status is not cancelled
+                if ($new_status !== 'cancelled') {
+                    $requested_time = strtotime($new_booking_date);
+                    $start_buffer = date('Y-m-d H:i:s', $requested_time - 3599);
+                    $end_buffer = date('Y-m-d H:i:s', $requested_time + 3599);
+
+                    // 1. Coach slot conflict
+                    $stmt_c_chk = $pdo->prepare("SELECT id FROM bookings WHERE coach_id = ? AND id != ? AND status != 'cancelled' AND booking_date BETWEEN ? AND ?");
+                    $stmt_c_chk->execute([$new_coach_id, $booking_id, $start_buffer, $end_buffer]);
+                    if ($stmt_c_chk->fetch()) {
+                        echo "<script>window.location.href='/Gym Manager/features/calendar.php?week_offset={$week_offset}&msg=err_coach_conflict';</script>";
+                        exit;
+                    }
+
+                    // 2. User slot conflict (cannot book 2 coaches at the same time)
+                    $stmt_u_chk = $pdo->prepare("SELECT id FROM bookings WHERE user_id = ? AND id != ? AND status != 'cancelled' AND booking_date BETWEEN ? AND ?");
+                    $stmt_u_chk->execute([$existing_b['user_id'], $booking_id, $start_buffer, $end_buffer]);
+                    if ($stmt_u_chk->fetch()) {
+                        echo "<script>window.location.href='/Gym Manager/features/calendar.php?week_offset={$week_offset}&msg=err_user_conflict';</script>";
+                        exit;
+                    }
+                }
             }
 
-            $stmt_upd = $pdo->prepare("
-                UPDATE bookings 
-                SET coach_id = ?, 
-                    booking_date = ?, 
-                    status = ?, 
-                    attendance = ?,
-                    coach_message = ?, 
-                    coach_seen = 0, 
-                    user_seen = 0 
-                WHERE id = ?
-            ");
-            $stmt_upd->execute([
-                $new_coach_id,
-                $new_booking_date,
-                $new_status,
-                $new_attendance,
-                $new_coach_message,
-                $booking_id
-            ]);
+            if ($new_status === 'cancelled') {
+                $cancel_note = 'Cancelled by Manager' . (!empty($new_coach_message) ? ': ' . $new_coach_message : '');
+                $stmt_upd = $pdo->prepare("
+                    UPDATE bookings 
+                    SET coach_id = ?, 
+                        booking_date = ?, 
+                        status = ?, 
+                        attendance = ?,
+                        coach_message = ?, 
+                        cancel_reason = ?,
+                        coach_seen = 0, 
+                        user_seen = 0 
+                    WHERE id = ?
+                ");
+                $stmt_upd->execute([
+                    $new_coach_id,
+                    $new_booking_date,
+                    $new_status,
+                    $new_attendance,
+                    $new_coach_message,
+                    $cancel_note,
+                    $booking_id
+                ]);
+            } else {
+                $stmt_upd = $pdo->prepare("
+                    UPDATE bookings 
+                    SET coach_id = ?, 
+                        booking_date = ?, 
+                        status = ?, 
+                        attendance = ?,
+                        coach_message = ?, 
+                        coach_seen = 0, 
+                        user_seen = 0 
+                    WHERE id = ?
+                ");
+                $stmt_upd->execute([
+                    $new_coach_id,
+                    $new_booking_date,
+                    $new_status,
+                    $new_attendance,
+                    $new_coach_message,
+                    $booking_id
+                ]);
+            }
             
             // --- Send Email Notification via PHPMailer to User & Coach ---
             try {
@@ -91,23 +139,39 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action_update_schedul
                         $mail->addCC($coach_info['email'], $coach_info['name']);
                     }
 
-                    $mail->isHTML(true);
-                    $mail->Subject = "⚡ [Gym Manager] Substitute Coach Assignment / Phân Công HLV Dạy Thế";
-                    
-                    $mail_body = "<div style='font-family: Arial, sans-serif; max-width: 600px; margin: auto; padding: 25px; border: 1px solid #e2e8f0; border-radius: 16px; background-color: #ffffff;'>";
-                    $mail_body .= "<h2 style='color: #1c2340; border-bottom: 2px solid #b08d57; padding-bottom: 10px; margin-top: 0;'>⚡ Substitute Coach Assigned / Phân Công HLV Dạy Thế</h2>";
-                    $mail_body .= "<p style='color: #475569; font-size: 15px;'>Notice: The Manager has assigned a substitute coach for your training session / Quản lý đã xếp HLV thế cho buổi tập của bạn.</p>";
-                    $mail_body .= "<div style='background: #f8fafc; padding: 18px; border-left: 4px solid #b08d57; border-radius: 8px; margin: 20px 0;'>";
-                    $mail_body .= "<p style='margin: 6px 0;'><strong>Client / Học viên:</strong> " . htmlspecialchars($student_info['name']) . "</p>";
-                    $mail_body .= "<p style='margin: 6px 0;'><strong>Assigned Coach / HLV Phụ Trách Dạy:</strong> <span style='color: #16a34a; font-weight: bold;'>" . htmlspecialchars($coach_info['name'] ?? 'N/A') . "</span></p>";
-                    $mail_body .= "<p style='margin: 6px 0;'><strong>Date & Time / Thời gian tập:</strong> <span style='color: #2563eb; font-weight: bold;'>" . date('l, d/m/Y - H:i', strtotime($new_booking_date)) . "</span></p>";
-                    $mail_body .= "<p style='margin: 6px 0;'><strong>Status / Trạng thái:</strong> <span style='color: #16a34a; font-weight: bold;'>" . strtoupper($new_status) . "</span></p>";
-                    if (!empty($new_coach_message)) {
-                        $mail_body .= "<p style='margin: 6px 0;'><strong>Manager Note / Ghi chú Quản lý:</strong> " . htmlspecialchars($new_coach_message) . "</p>";
+                    if ($new_status === 'cancelled') {
+                        $mail->Subject = "🚫 [Gym Manager] Training Session Cancelled / Hủy Buổi Tập";
+                        $mail_body = "<div style='font-family: Arial, sans-serif; max-width: 600px; margin: auto; padding: 25px; border: 1px solid #e2e8f0; border-radius: 16px; background-color: #ffffff;'>";
+                        $mail_body .= "<h2 style='color: #dc2626; border-bottom: 2px solid #fca5a5; padding-bottom: 10px; margin-top: 0;'>🚫 Session Cancelled / Buổi Tập Đã Bị Hủy</h2>";
+                        $mail_body .= "<p style='color: #475569; font-size: 15px;'>Notice: This training session has been cancelled by Manager / Quản lý đã hủy buổi tập này.</p>";
+                        $mail_body .= "<div style='background: #fef2f2; padding: 18px; border-left: 4px solid #dc2626; border-radius: 8px; margin: 20px 0;'>";
+                        $mail_body .= "<p style='margin: 6px 0;'><strong>Client / Học viên:</strong> " . htmlspecialchars($student_info['name']) . "</p>";
+                        $mail_body .= "<p style='margin: 6px 0;'><strong>Coach / HLV Phụ Trách:</strong> <span style='color: #1c2340; font-weight: bold;'>" . htmlspecialchars($coach_info['name'] ?? 'N/A') . "</span></p>";
+                        $mail_body .= "<p style='margin: 6px 0;'><strong>Date & Time / Thời gian tập:</strong> <span style='color: #2563eb; font-weight: bold;'>" . date('l, d/m/Y - H:i', strtotime($new_booking_date)) . "</span></p>";
+                        $mail_body .= "<p style='margin: 6px 0;'><strong>Status / Trạng thái:</strong> <span style='color: #dc2626; font-weight: bold;'>CANCELLED</span></p>";
+                        if (!empty($new_coach_message)) {
+                            $mail_body .= "<p style='margin: 6px 0;'><strong>Reason / Ghi chú:</strong> " . htmlspecialchars($new_coach_message) . "</p>";
+                        }
+                        $mail_body .= "</div>";
+                        $mail_body .= "<p style='color: #64748b; font-size: 13px;'>Please log in to Gym Manager system for more details / Vui lòng đăng nhập hệ thống Gym Manager để xem chi tiết.</p>";
+                        $mail_body .= "</div>";
+                    } else {
+                        $mail->Subject = "⚡ [Gym Manager] Substitute Coach Assignment / Phân Công HLV Dạy Thế";
+                        $mail_body = "<div style='font-family: Arial, sans-serif; max-width: 600px; margin: auto; padding: 25px; border: 1px solid #e2e8f0; border-radius: 16px; background-color: #ffffff;'>";
+                        $mail_body .= "<h2 style='color: #1c2340; border-bottom: 2px solid #b08d57; padding-bottom: 10px; margin-top: 0;'>⚡ Substitute Coach Assigned / Phân Công HLV Dạy Thế</h2>";
+                        $mail_body .= "<p style='color: #475569; font-size: 15px;'>Notice: The Manager has assigned a substitute coach for your training session / Quản lý đã xếp HLV thế cho buổi tập của bạn.</p>";
+                        $mail_body .= "<div style='background: #f8fafc; padding: 18px; border-left: 4px solid #b08d57; border-radius: 8px; margin: 20px 0;'>";
+                        $mail_body .= "<p style='margin: 6px 0;'><strong>Client / Học viên:</strong> " . htmlspecialchars($student_info['name']) . "</p>";
+                        $mail_body .= "<p style='margin: 6px 0;'><strong>Assigned Coach / HLV Phụ Trách Dạy:</strong> <span style='color: #16a34a; font-weight: bold;'>" . htmlspecialchars($coach_info['name'] ?? 'N/A') . "</span></p>";
+                        $mail_body .= "<p style='margin: 6px 0;'><strong>Date & Time / Thời gian tập:</strong> <span style='color: #2563eb; font-weight: bold;'>" . date('l, d/m/Y - H:i', strtotime($new_booking_date)) . "</span></p>";
+                        $mail_body .= "<p style='margin: 6px 0;'><strong>Status / Trạng thái:</strong> <span style='color: #16a34a; font-weight: bold;'>" . strtoupper($new_status) . "</span></p>";
+                        if (!empty($new_coach_message)) {
+                            $mail_body .= "<p style='margin: 6px 0;'><strong>Manager Note / Ghi chú Quản lý:</strong> " . htmlspecialchars($new_coach_message) . "</p>";
+                        }
+                        $mail_body .= "</div>";
+                        $mail_body .= "<p style='color: #64748b; font-size: 13px;'>Please log in to Gym Manager system for more details / Vui lòng đăng nhập hệ thống Gym Manager để xem chi tiết.</p>";
+                        $mail_body .= "</div>";
                     }
-                    $mail_body .= "</div>";
-                    $mail_body .= "<p style='color: #64748b; font-size: 13px;'>Please log in to Gym Manager system for more details / Vui lòng đăng nhập hệ thống Gym Manager để xem chi tiết.</p>";
-                    $mail_body .= "</div>";
                     
                     $mail->Body = $mail_body;
                     $mail->send();
@@ -116,10 +180,30 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action_update_schedul
                 error_log("Calendar mail error: " . $mailEx->getMessage());
             }
 
-            echo "<script>window.location.href='/Gym Manager/features/calendar.php?week_offset={$week_offset}&msg=updated';</script>";
+            $redirect_msg = ($new_status === 'cancelled') ? 'cancelled' : 'updated';
+            echo "<script>window.location.href='/Gym Manager/features/calendar.php?week_offset={$week_offset}&msg={$redirect_msg}';</script>";
             exit;
         } catch (Exception $e) {
             error_log("Calendar update error: " . $e->getMessage());
+        }
+    }
+}
+
+// Handler for Coach Updating Session Notes
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action_coach_update_notes'])) {
+    if (isset($_SESSION['role']) && in_array($_SESSION['role'], ['coach', 'manager', 'admin'])) {
+        $booking_id = (int)$_POST['booking_id'];
+        $notes = trim($_POST['coach_notes'] ?? '');
+        $week_offset = isset($_POST['week_offset']) ? (int)$_POST['week_offset'] : 0;
+
+        try {
+            $stmt_upd = $pdo->prepare("UPDATE bookings SET coach_message = ?, user_seen = 0 WHERE id = ?");
+            $stmt_upd->execute([$notes, $booking_id]);
+
+            echo "<script>window.location.href='/Gym Manager/features/calendar.php?week_offset={$week_offset}&msg=note_saved';</script>";
+            exit;
+        } catch (Exception $e) {
+            error_log("Coach update note error: " . $e->getMessage());
         }
     }
 }
@@ -208,6 +292,27 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action_user_reschedul
 
                 if (strtotime($b_check['booking_date']) <= time()) {
                     echo "<script>window.location.href='/Gym Manager/features/calendar.php?week_offset={$week_offset}&msg=err_past';</script>";
+                    exit;
+                }
+
+                // Check slot conflicts for new date
+                $requested_time = strtotime($new_date);
+                $start_buffer = date('Y-m-d H:i:s', $requested_time - 3599);
+                $end_buffer = date('Y-m-d H:i:s', $requested_time + 3599);
+
+                // 1. Coach slot conflict
+                $stmt_c_chk = $pdo->prepare("SELECT id FROM bookings WHERE coach_id = ? AND id != ? AND status != 'cancelled' AND booking_date BETWEEN ? AND ?");
+                $stmt_c_chk->execute([$b_check['coach_id'], $booking_id, $start_buffer, $end_buffer]);
+                if ($stmt_c_chk->fetch()) {
+                    echo "<script>window.location.href='/Gym Manager/features/calendar.php?week_offset={$week_offset}&msg=err_coach_conflict';</script>";
+                    exit;
+                }
+
+                // 2. User slot conflict (cannot book 2 coaches at the same time)
+                $stmt_u_chk = $pdo->prepare("SELECT id FROM bookings WHERE user_id = ? AND id != ? AND status != 'cancelled' AND booking_date BETWEEN ? AND ?");
+                $stmt_u_chk->execute([$b_check['user_id'], $booking_id, $start_buffer, $end_buffer]);
+                if ($stmt_u_chk->fetch()) {
+                    echo "<script>window.location.href='/Gym Manager/features/calendar.php?week_offset={$week_offset}&msg=err_user_conflict';</script>";
                     exit;
                 }
 
@@ -577,6 +682,24 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action_mark_attended'
         <div style="background: #fef2f2; color: #b91c1c; border: 1px solid #fca5a5; padding: 1rem 1.5rem; border-radius: 12px; margin-bottom: 2rem; font-weight: 700; display: flex; align-items: center; gap: 10px; box-shadow: 0 4px 12px rgba(220, 38, 38, 0.1);">
             <i class="fas fa-exclamation-triangle" style="font-size: 1.3rem;"></i>
             <?php echo __('cannot_cancel_past_session'); ?>
+        </div>
+    <?php endif; ?>
+
+    <?php if (isset($_GET['msg']) && $_GET['msg'] === 'err_coach_conflict'): ?>
+        <div style="background: #fef2f2; color: #b91c1c; border: 1px solid #fca5a5; padding: 1rem 1.5rem; border-radius: 12px; margin-bottom: 2rem; font-weight: 700; display: flex; align-items: center; gap: 10px; box-shadow: 0 4px 12px rgba(220, 38, 38, 0.1);">
+            <i class="fas fa-exclamation-triangle" style="font-size: 1.3rem;"></i>
+            <?php echo (($_SESSION['lang'] ?? 'en') === 'vi') 
+                ? '⚠️ Không thể lưu: Huấn luyện viên này đã có lịch dạy vào khung giờ này (trùng trong vòng 60 phút). Vui lòng chọn khung giờ hoặc HLV khác!' 
+                : '⚠️ Cannot save: This coach is already booked for another session at this time (overlapping 60min slot). Please choose a different time or coach!'; ?>
+        </div>
+    <?php endif; ?>
+
+    <?php if (isset($_GET['msg']) && $_GET['msg'] === 'err_user_conflict'): ?>
+        <div style="background: #fef2f2; color: #b91c1c; border: 1px solid #fca5a5; padding: 1rem 1.5rem; border-radius: 12px; margin-bottom: 2rem; font-weight: 700; display: flex; align-items: center; gap: 10px; box-shadow: 0 4px 12px rgba(220, 38, 38, 0.1);">
+            <i class="fas fa-exclamation-triangle" style="font-size: 1.3rem;"></i>
+            <?php echo (($_SESSION['lang'] ?? 'en') === 'vi') 
+                ? '⚠️ Không thể lưu: Học viên đã có lịch tập với HLV khác vào cùng khung giờ này (trùng trong vòng 60 phút). Không thể đăng ký 2 HLV cùng 1 khung giờ!' 
+                : '⚠️ Cannot save: The client already has a session scheduled with another coach at this time (overlapping 60min slot). A client cannot book 2 coaches at the same time slot!'; ?>
         </div>
     <?php endif; ?>
 
@@ -1120,7 +1243,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action_mark_attended'
             LEFT JOIN users u ON b.user_id = u.id
             LEFT JOIN coaches c ON b.coach_id = c.id
             LEFT JOIN users c_u ON c.user_id = c_u.id
-            WHERE b.status = 'cancelled' AND b.booking_date >= NOW() - INTERVAL 2 DAY
+            WHERE b.status = 'cancelled' 
+              AND (b.cancel_reason IS NULL OR (b.cancel_reason NOT LIKE '%Manager%' AND b.cancel_reason NOT LIKE '%Admin%' AND b.cancel_reason NOT LIKE '%Quản lý%'))
+              AND b.booking_date >= NOW() - INTERVAL 2 DAY
             ORDER BY b.booking_date ASC
         ");
         $stmt_cancelled->execute();
@@ -1143,7 +1268,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action_mark_attended'
                 </div>
             </div>
             <span style="background: #ef4444; color: white; padding: 6px 14px; border-radius: 20px; font-weight: 800; font-size: 0.85rem; box-shadow: 0 4px 10px rgba(239,68,68,0.3);">
-                <?php echo count($cancelled_list); ?> <?php echo (($_SESSION['lang'] ?? 'vi') === 'vi' ? 'Buổi Cần Đổi HLV' : 'Pending Substitute'); ?>
+                <?php echo count($cancelled_list); ?> <?php echo (($_SESSION['lang'] ?? 'en') === 'vi' ? 'Buổi Cần Đổi HLV' : 'Pending Substitute'); ?>
             </span>
         </div>
 
@@ -1152,7 +1277,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action_mark_attended'
                 $cb_date = date('d/m/Y - H:i', strtotime($cb['booking_date']));
                 $cb_client = htmlspecialchars($cb['client_name'] ?? __('open_class'));
                 $cb_coach = htmlspecialchars($cb['orig_coach_name'] ?? 'N/A');
-                $cb_reason_text = !empty($cb['cancel_reason']) ? $cb['cancel_reason'] : ((($_SESSION['lang'] ?? 'vi') === 'vi') ? 'Hủy đột xuất / Cần HLV dạy thế' : 'Emergency cancel / Substitute needed');
+                $cb_reason_text = !empty($cb['cancel_reason']) ? $cb['cancel_reason'] : ((($_SESSION['lang'] ?? 'en') === 'vi') ? 'Hủy đột xuất / Cần HLV dạy thế' : 'Emergency cancel / Substitute needed');
                 $cb_reason = htmlspecialchars($cb_reason_text);
                 $cb_client_phone = htmlspecialchars($cb['client_phone'] ?: 'N/A');
             ?>
@@ -1570,12 +1695,25 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action_mark_attended'
 
                 <div style='margin-top: 1.5rem; display: flex; justify-content: flex-end; gap: 10px; align-items: center; flex-wrap: wrap;'>
                     " . ($can_user_edit ? "
-                    <button type='button' onclick=\"document.getElementById('staff-details-modal-{$b['id']}').style.display='none'; openUserRescheduleModal({$b['id']}, '{$b_datetime_local}', '{$b_coach_msg_escaped}', '" . addslashes(htmlspecialchars($b['coach_name'])) . "');\" style='padding: 10px 18px; background: linear-gradient(135deg, #1c2340, #0f172a); color: #c9a84c; border: 1px solid #c9a84c; border-radius: 12px; font-weight: 700; font-size: 0.85rem; cursor: pointer; display: inline-flex; align-items: center; gap: 6px; box-shadow: 0 4px 12px rgba(15, 23, 42, 0.25); transition: all 0.2s;'>
-                        <i class='far fa-clock'></i> " . __('reschedule_session_btn') . "
+                    <button type='button' 
+                            class='btn-edit-schedule-card' 
+                            data-id='{$b_id}' 
+                            data-coach-id='{$c_id}' 
+                            data-date='{$b_date}' 
+                            data-status='{$b_status}' 
+                            data-attendance='{$b_attendance}'
+                            data-class='{$b_class}' 
+                            data-spec='{$b_spec}' 
+                            data-room='{$b_room}' 
+                            data-plan='{$b_plan}' 
+                            data-msg='{$b_msg}' 
+                            data-client='{$b_client}' 
+                            onclick=\"document.getElementById('staff-details-modal-{$b['id']}').style.display='none'; openScheduleEditModal(this);\" style='padding: 10px 18px; background: linear-gradient(135deg, #1c2340, #0f172a); color: #c9a84c; border: 1px solid #c9a84c; border-radius: 12px; font-weight: 700; font-size: 0.85rem; cursor: pointer; display: inline-flex; align-items: center; gap: 6px; box-shadow: 0 4px 12px rgba(15, 23, 42, 0.25); transition: all 0.2s;'>
+                        <i class='fas fa-edit'></i> " . __('edit') . " / " . __('reschedule_session_btn') . "
                     </button>
                     " : "") . "
                     " . ($can_user_cancel ? "
-                    <form method='POST' style='margin: 0;' onsubmit=\"return confirm('" . addslashes(__('confirm_cancel_session_prompt')) . "');\">
+                    <form method='POST' style='margin: 0;' onsubmit=\"return confirmOrderCustom(event, this, '" . addslashes(__('confirm_cancel_session_prompt')) . "', '" . addslashes(__('cancel_session_btn')) . "', '❌');\">
                         <input type='hidden' name='action_user_cancel_booking' value='1'>
                         <input type='hidden' name='booking_id' value='{$b['id']}'>
                         <input type='hidden' name='week_offset' value='{$week_offset}'>
@@ -1710,7 +1848,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action_mark_attended'
 
             $client_membership_box = "";
             $client_card_badge = "";
-            $is_vi_lang = (($_SESSION['lang'] ?? 'vi') === 'vi');
+            $is_vi_lang = (($_SESSION['lang'] ?? 'en') === 'vi');
             if (!empty($b_mem_plan)) {
                 $p_name_safe = htmlspecialchars($b_mem_plan);
                 $is_expired_quota = ($b_pt_rem === 0 || $b_pt_used >= $b_pt_total);
@@ -1890,7 +2028,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action_mark_attended'
 
                         <div style='background: #fffbebf5; border: 1px solid #fde68a; border-radius: 12px; padding: 10px 14px; font-size: 0.8rem; color: #b45309; margin-bottom: 1.25rem; line-height: 1.4;'>
                             <i class='fas fa-exclamation-circle' style='color: #d97706; margin-right: 4px;'></i> 
-                            <strong>" . (($_SESSION['lang'] ?? 'vi') === 'en' ? 'Cancellation Policy:' : 'Quy định hủy lịch:') . "</strong> " . __('cannot_cancel_past_session') . "
+                            <strong>" . (($_SESSION['lang'] ?? 'en') === 'en' ? 'Cancellation Policy:' : 'Quy định hủy lịch:') . "</strong> " . __('cannot_cancel_past_session') . "
                         </div>
 
                         <form method='POST' style='margin: 0;'>
@@ -1921,15 +2059,110 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action_mark_attended'
             $b_datetime_local = date('Y-m-d\TH:i', strtotime($b['booking_date']));
             $b_coach_msg_escaped = addslashes(htmlspecialchars($b['coach_message'] ?? ''));
 
+            $b_id = (int)$b['id'];
+            $c_id = (int)$b['coach_id'];
+            $b_date = date('Y-m-d\TH:i', strtotime($b['booking_date']));
+            $b_status = htmlspecialchars($b['status'] ?? 'confirmed');
+            $b_attendance = htmlspecialchars($b['attendance'] ?? 'pending');
+            $b_class = htmlspecialchars($b['class_name'] ?? '');
+            $b_spec = htmlspecialchars($b['specialty'] ?? '');
+            $b_room = htmlspecialchars($b['room_number'] ?? '');
+            $b_plan = htmlspecialchars($b['training_plan'] ?? '');
+            $b_msg = htmlspecialchars($b['coach_message'] ?? '');
+            $b_client = htmlspecialchars($client_name);
+
             $my_can_edit = (!$is_attended 
                 && !$is_absent 
                 && !$is_cancelled 
-                && strtotime($b['booking_date']) > time() 
-                && empty($b['class_name']) 
-                && isset($_SESSION['user_id']) 
-                && ($b['user_id'] == $_SESSION['user_id'] || in_array($_SESSION['role'] ?? '', ['admin', 'manager'])));
+                && (
+                    (isset($_SESSION['user_id']) && $b['user_id'] == $_SESSION['user_id'] && strtotime($b['booking_date']) > time()) 
+                    || (isset($_SESSION['role']) && in_array($_SESSION['role'], ['admin', 'manager', 'coach']))
+                )
+            );
 
-            $my_can_cancel = ($my_can_edit && empty($b['class_name']));
+            $my_can_cancel = ($my_can_edit && empty($b['class_name']) && isset($_SESSION['user_id']) && $b['user_id'] == $_SESSION['user_id']);
+
+            $my_edit_btn = "";
+            if (isset($_SESSION['role']) && in_array($_SESSION['role'], ['admin', 'manager']) && !$is_attended && !$is_past) {
+                $my_edit_btn = "
+                <button type='button' 
+                        class='btn-edit-schedule-card' 
+                        data-id='{$b_id}' 
+                        data-coach-id='{$c_id}' 
+                        data-date='{$b_date}' 
+                        data-status='{$b_status}' 
+                        data-attendance='{$b_attendance}'
+                        data-class='{$b_class}' 
+                        data-spec='{$b_spec}' 
+                        data-room='{$b_room}' 
+                        data-plan='{$b_plan}' 
+                        data-msg='{$b_msg}' 
+                        data-client='{$b_client}' 
+                        onclick='openScheduleEditModal(this)' 
+                        title='" . __('edit') . "'
+                        style='background: #1c2340; color: #b08d57; border: 1px solid #b08d57; padding: 2px 6px; border-radius: 4px; font-size: 0.7rem; font-weight: 700; cursor: pointer; display: inline-flex; align-items: center; gap: 3px; transition: all 0.2s; margin-left: auto;'>
+                    <i class='fas fa-edit'></i> " . __('edit') . "
+                </button>";
+            } elseif (isset($_SESSION['role']) && $_SESSION['role'] === 'coach') {
+                $my_edit_btn = "
+                <button type='button' 
+                        data-id='{$b_id}'
+                        data-msg='" . htmlspecialchars($b['coach_message'] ?? '', ENT_QUOTES) . "'
+                        data-client='" . htmlspecialchars($client_name, ENT_QUOTES) . "'
+                        onclick='openCoachNoteFromBtn(this)' 
+                        title='" . (isset($_SESSION['lang']) && $_SESSION['lang'] === 'vi' ? 'Ghi Chú Buổi Tập' : 'Session Note') . "'
+                        style='background: linear-gradient(135deg, #1c2340, #0f172a); color: #c9a84c; border: 1px solid #c9a84c; padding: 2px 7px; border-radius: 5px; font-size: 0.7rem; font-weight: 700; cursor: pointer; display: inline-flex; align-items: center; gap: 3px; transition: all 0.2s; margin-left: auto; box-shadow: 0 2px 4px rgba(0,0,0,0.15);'>
+                    <i class='fas fa-comment-dots'></i> " . (isset($_SESSION['lang']) && $_SESSION['lang'] === 'vi' ? 'Ghi Chú' : 'Note') . "
+                </button>";
+            }
+
+            $my_modal_btns = "";
+            if (isset($_SESSION['role']) && in_array($_SESSION['role'], ['admin', 'manager']) && $my_can_edit) {
+                $my_modal_btns .= "
+                <button type='button' 
+                        class='btn-edit-schedule-card' 
+                        data-id='{$b_id}' 
+                        data-coach-id='{$c_id}' 
+                        data-date='{$b_date}' 
+                        data-status='{$b_status}' 
+                        data-attendance='{$b_attendance}'
+                        data-class='{$b_class}' 
+                        data-spec='{$b_spec}' 
+                        data-room='{$b_room}' 
+                        data-plan='{$b_plan}' 
+                        data-msg='{$b_msg}' 
+                        data-client='{$b_client}' 
+                        onclick=\"document.getElementById('details-modal-{$b['id']}').style.display='none'; openScheduleEditModal(this);\" style='padding: 10px 18px; background: linear-gradient(135deg, #1c2340, #0f172a); color: #c9a84c; border: 1px solid #c9a84c; border-radius: 12px; font-weight: 700; font-size: 0.85rem; cursor: pointer; display: inline-flex; align-items: center; gap: 6px; box-shadow: 0 4px 12px rgba(15, 23, 42, 0.25); transition: all 0.2s;'>
+                    <i class='fas fa-edit'></i> " . __('edit') . " / " . __('reschedule_session_btn') . "
+                </button>";
+            } elseif (isset($_SESSION['role']) && $_SESSION['role'] === 'coach') {
+                $my_modal_btns .= "
+                <button type='button' 
+                        data-id='{$b_id}'
+                        data-msg='" . htmlspecialchars($b['coach_message'] ?? '', ENT_QUOTES) . "'
+                        data-client='" . htmlspecialchars($client_name, ENT_QUOTES) . "'
+                        data-modal-close='details-modal-{$b['id']}'
+                        onclick='openCoachNoteFromBtn(this)' 
+                        style='padding: 10px 18px; background: linear-gradient(135deg, #1c2340, #0f172a); color: #c9a84c; border: 1px solid #c9a84c; border-radius: 12px; font-weight: 700; font-size: 0.85rem; cursor: pointer; display: inline-flex; align-items: center; gap: 6px; box-shadow: 0 4px 12px rgba(15, 23, 42, 0.25); transition: all 0.2s;'>
+                    <i class='fas fa-comment-dots'></i> " . (isset($_SESSION['lang']) && $_SESSION['lang'] === 'vi' ? 'Ghi Chú Buổi Tập' : 'Coach Note') . "
+                </button>";
+
+                if ($my_can_edit) {
+                    $my_modal_btns .= "
+                    <button type='button' 
+                            onclick=\"document.getElementById('details-modal-{$b['id']}').style.display='none'; openUserRescheduleModal({$b['id']}, '{$b_datetime_local}', '{$b_coach_msg_escaped}', '" . addslashes(htmlspecialchars($b['coach_name'])) . "');\" 
+                            style='padding: 10px 18px; background: linear-gradient(135deg, #0f172a, #1c2340); color: #38bdf8; border: 1px solid #38bdf8; border-radius: 12px; font-weight: 700; font-size: 0.85rem; cursor: pointer; display: inline-flex; align-items: center; gap: 6px; transition: all 0.2s;'>
+                        <i class='far fa-clock'></i> " . __('reschedule_session_btn') . "
+                    </button>";
+                }
+            } elseif ($my_can_edit) {
+                $my_modal_btns .= "
+                <button type='button' 
+                        onclick=\"document.getElementById('details-modal-{$b['id']}').style.display='none'; openUserRescheduleModal({$b['id']}, '{$b_datetime_local}', '{$b_coach_msg_escaped}', '" . addslashes(htmlspecialchars($b['coach_name'])) . "');\" 
+                        style='padding: 10px 18px; background: linear-gradient(135deg, #1c2340, #0f172a); color: #c9a84c; border: 1px solid #c9a84c; border-radius: 12px; font-weight: 700; font-size: 0.85rem; cursor: pointer; display: inline-flex; align-items: center; gap: 6px; box-shadow: 0 4px 12px rgba(15, 23, 42, 0.25); transition: all 0.2s;'>
+                    <i class='far fa-clock'></i> " . __('reschedule_session_btn') . "
+                </button>";
+            }
 
             $details_modal_html = "
             <div id='details-modal-{$b['id']}' style='display: none; position: fixed; inset: 0; background: rgba(15, 23, 42, 0.65); z-index: 99999; align-items: center; justify-content: center; backdrop-filter: blur(8px); padding: 20px;'>
@@ -2042,13 +2275,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action_mark_attended'
                     </div>
 
                     <div style='margin-top: 1.5rem; display: flex; justify-content: flex-end; gap: 10px; align-items: center; flex-wrap: wrap;'>
-                        " . ($my_can_edit ? "
-                        <button type='button' onclick=\"document.getElementById('details-modal-{$b['id']}').style.display='none'; openUserRescheduleModal({$b['id']}, '{$b_datetime_local}', '{$b_coach_msg_escaped}', '" . addslashes(htmlspecialchars($b['coach_name'])) . "');\" style='padding: 10px 18px; background: linear-gradient(135deg, #1c2340, #0f172a); color: #c9a84c; border: 1px solid #c9a84c; border-radius: 12px; font-weight: 700; font-size: 0.85rem; cursor: pointer; display: inline-flex; align-items: center; gap: 6px; box-shadow: 0 4px 12px rgba(15, 23, 42, 0.25); transition: all 0.2s;'>
-                            <i class='far fa-clock'></i> " . __('reschedule_session_btn') . "
-                        </button>
-                        " : "") . "
+                        {$my_modal_btns}
                         " . ($my_can_cancel ? "
-                        <form method='POST' style='margin: 0;' onsubmit=\"return confirm('" . addslashes(__('confirm_cancel_session_prompt')) . "');\">
+                        <form method='POST' style='margin: 0;' onsubmit=\"return confirmOrderCustom(event, this, '" . addslashes(__('confirm_cancel_session_prompt')) . "', '" . addslashes(__('cancel_session_btn')) . "', '❌');\">
                             <input type='hidden' name='action_user_cancel_booking' value='1'>
                             <input type='hidden' name='booking_id' value='{$b['id']}'>
                             <input type='hidden' name='week_offset' value='{$week_offset}'>
@@ -2073,6 +2302,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action_mark_attended'
             <div class='booking-card personal' {$user_card_style}>
                 <div style='font-size:0.75rem; font-weight:700; color:var(--cal-navy); margin-bottom:6px; display:flex; align-items:center; gap:5px;'>
                     <i class='far fa-clock' style='color:var(--cal-gold); font-size:0.7rem;'></i> {$time} – {$end_time}
+                    {$my_edit_btn}
                 </div>
                 <div style='display:flex; align-items:center; gap:6px; flex-wrap:wrap;'>
                     {$user_badge}
@@ -2159,7 +2389,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action_mark_attended'
             <div class="coach-row" data-coach-name="<?php echo strtolower(htmlspecialchars($c['name'])); ?>" data-coach-idx="<?php echo $idx; ?>">
                 <div class="coach-info-cell">
                     <span class="coach-name"><?php echo htmlspecialchars($c['name']); ?></span>
-                    <a href="/Gym Manager/pages/coach_details.php?id=<?php echo $c['id']; ?>" class="btn-book-roster"><?php echo __('book_now_caps'); ?></a>
+                    <a href="/Gym Manager/pages/coach_details.php?id=<?php echo $c['id']; ?>#bookingSection" class="btn-book-roster"><?php echo __('book_now_caps'); ?></a>
                 </div>
                 <?php foreach($days as $dayIdx => $d):
                     $d_str = $d->format('Y-m-d');
@@ -2167,7 +2397,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action_mark_attended'
                 ?>
                 <div class="coach-day-cell" data-day-idx="<?php echo $dayIdx; ?>">
                     <?php if ($has_booking): echo implode('', $roster[$c['id']][$d_str]);
-                    else: ?><span class="slot-available"><?php echo __('available'); ?></span><?php endif; ?>
+                    else: ?><a href="/Gym Manager/pages/coach_details.php?id=<?php echo $c['id']; ?>&date=<?php echo $d_str; ?>#bookingSection" class="slot-available" style="text-decoration:none; cursor:pointer; display:inline-flex; align-items:center; gap:4px;" title="<?php echo __('view_free_slots_btn'); ?>"><?php echo __('available'); ?> <i class="fas fa-arrow-right" style="font-size: 0.65rem;"></i></a><?php endif; ?>
                 </div>
                 <?php endforeach; ?>
             </div>
@@ -2232,7 +2462,7 @@ document.addEventListener("DOMContentLoaded", function() {
             <button type="button" onclick="closeScheduleEditModal()" style="background: transparent; border: none; color: #94a3b8; font-size: 1.5rem; cursor: pointer; transition: color 0.2s;" onmouseover="this.style.color='#fff'" onmouseout="this.style.color='#94a3b8'">&times;</button>
         </div>
         
-        <form method="POST" style="padding: 1.75rem; display: flex; flex-direction: column; gap: 1.1rem;">
+        <form method="POST" id="managerScheduleEditForm" novalidate style="padding: 1.75rem; display: flex; flex-direction: column; gap: 1.1rem;">
             <input type="hidden" name="action_update_schedule" value="1">
             <input type="hidden" name="booking_id" id="modal_booking_id" value="">
             <input type="hidden" name="week_offset" value="<?php echo $week_offset; ?>">
@@ -2292,14 +2522,20 @@ document.addEventListener("DOMContentLoaded", function() {
                 <textarea name="coach_message" id="modal_coach_message" placeholder="<?php echo isset($_SESSION['lang']) && $_SESSION['lang'] === 'vi' ? 'Ghi chú cho học viên hoặc lý do thay HLV...' : 'Notes for student or emergency coach substitute reason...'; ?>" class="filter-input-luxury" style="width: 100%; border-radius: 8px; height: 65px; font-family: inherit; resize: vertical;"></textarea>
             </div>
 
-            <div style="display: flex; justify-content: flex-end; gap: 0.75rem; margin-top: 0.5rem; padding-top: 1rem; border-top: 1px solid var(--cal-border);">
-                <button type="button" onclick="closeScheduleEditModal()" class="btn-nav-week" style="border-radius: 6px;">
-                    <?php echo isset($_SESSION['lang']) && $_SESSION['lang'] === 'vi' ? 'Hủy Bỏ' : 'Cancel'; ?>
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 0.5rem; padding-top: 1rem; border-top: 1px solid var(--cal-border);">
+                <button type="button" onclick="cancelBookingFromModal()" class="btn-nav-week" style="background: #fef2f2; color: #dc2626; border: 1.5px solid #fca5a5; border-radius: 6px; font-weight: 700; display: inline-flex; align-items: center; gap: 6px; transition: all 0.2s;" onmouseover="this.style.background='#fee2e2'" onmouseout="this.style.background='#fef2f2'">
+                    <i class="fas fa-ban"></i>
+                    <?php echo isset($_SESSION['lang']) && $_SESSION['lang'] === 'vi' ? 'Hủy Buổi Tập' : 'Cancel Session'; ?>
                 </button>
-                <button type="submit" class="btn-nav-week" style="background: var(--cal-navy); color: var(--cal-gold); border-color: var(--cal-navy); border-radius: 6px; font-weight: 700;">
-                    <i class="fas fa-save" style="margin-right: 6px;"></i>
-                    <?php echo isset($_SESSION['lang']) && $_SESSION['lang'] === 'vi' ? 'Lưu Thay Đổi' : 'Save Changes'; ?>
-                </button>
+                <div style="display: flex; gap: 0.75rem;">
+                    <button type="button" onclick="closeScheduleEditModal()" class="btn-nav-week" style="border-radius: 6px;">
+                        <?php echo isset($_SESSION['lang']) && $_SESSION['lang'] === 'vi' ? 'Đóng' : 'Close'; ?>
+                    </button>
+                    <button type="submit" class="btn-nav-week" style="background: var(--cal-navy); color: var(--cal-gold); border-color: var(--cal-navy); border-radius: 6px; font-weight: 700;">
+                        <i class="fas fa-save" style="margin-right: 6px;"></i>
+                        <?php echo isset($_SESSION['lang']) && $_SESSION['lang'] === 'vi' ? 'Lưu Thay Đổi' : 'Save Changes'; ?>
+                    </button>
+                </div>
             </div>
         </form>
     </div>
@@ -2335,6 +2571,38 @@ function closeScheduleEditModal() {
     }
 }
 
+function cancelBookingFromModal() {
+    const isVi = (typeof GYMX_LANG !== 'undefined' ? GYMX_LANG : 'vi') === 'vi';
+    const confirmMsg = isVi 
+        ? "Bạn có chắc chắn muốn HỦY buổi tập này không? Thao tác này sẽ chuyển trạng thái sang CANCELLED và gửi email thông báo." 
+        : "Are you sure you want to CANCEL this training session? This will set the status to CANCELLED and send email notices.";
+    const confirmTitle = isVi ? "Hủy Buổi Tập" : "Cancel Session";
+    
+    if (typeof showGymXConfirm === 'function') {
+        showGymXConfirm(confirmMsg, confirmTitle, '🚫').then(confirmed => {
+            if (confirmed) {
+                const statusSelect = document.getElementById('modal_status');
+                if (statusSelect) {
+                    statusSelect.value = 'cancelled';
+                }
+                const form = document.getElementById('managerScheduleEditForm');
+                if (form) {
+                    form.submit();
+                }
+            }
+        });
+    } else {
+        const statusSelect = document.getElementById('modal_status');
+        if (statusSelect) {
+            statusSelect.value = 'cancelled';
+        }
+        const form = document.getElementById('managerScheduleEditForm');
+        if (form) {
+            form.submit();
+        }
+    }
+}
+
 window.addEventListener('click', function(e) {
     const modal = document.getElementById('scheduleEditModal');
     if (e.target === modal) {
@@ -2363,7 +2631,7 @@ window.addEventListener('click', function(e) {
             <button type="button" onclick="closeUserRescheduleModal()" style="background: none; border: none; font-size: 1.2rem; color: #94a3b8; cursor: pointer; padding: 4px;"><i class="fas fa-times"></i></button>
         </div>
 
-        <form method="POST" action="/Gym Manager/features/calendar.php">
+        <form method="POST" action="/Gym Manager/features/calendar.php" id="userRescheduleModalForm" novalidate>
             <input type="hidden" name="action_user_reschedule_booking" value="1">
             <input type="hidden" name="booking_id" id="user_reschedule_booking_id">
             <input type="hidden" name="week_offset" value="<?php echo $week_offset; ?>">
@@ -2429,6 +2697,44 @@ window.addEventListener('click', function(e) {
         closeUserRescheduleModal();
     }
 });
+
+document.addEventListener('DOMContentLoaded', function() {
+    const reschedForm = document.getElementById('userRescheduleModalForm');
+    if (reschedForm) {
+        reschedForm.addEventListener('submit', function(e) {
+            const dateVal = document.getElementById('user_reschedule_new_date');
+            const isVi = (typeof GYMX_LANG !== 'undefined' ? GYMX_LANG : 'vi') === 'vi';
+            if (dateVal && !dateVal.value.trim()) {
+                e.preventDefault();
+                showGymXAlert(
+                    isVi ? 'Vui lòng chọn ngày và giờ tập mới.' : 'Please select a new date and time.',
+                    isVi ? 'Thiếu Ngày Tập Mới' : 'Date & Time Required',
+                    '📅'
+                );
+                dateVal.focus();
+                return false;
+            }
+        });
+    }
+
+    const editForm = document.getElementById('managerScheduleEditForm');
+    if (editForm) {
+        editForm.addEventListener('submit', function(e) {
+            const dateVal = document.getElementById('modal_booking_date');
+            const isVi = (typeof GYMX_LANG !== 'undefined' ? GYMX_LANG : 'vi') === 'vi';
+            if (dateVal && !dateVal.value.trim()) {
+                e.preventDefault();
+                showGymXAlert(
+                    isVi ? 'Vui lòng chọn ngày và giờ tập luyện.' : 'Please select a date and time.',
+                    isVi ? 'Thiếu Ngày Tập' : 'Date & Time Required',
+                    '📅'
+                );
+                dateVal.focus();
+                return false;
+            }
+        });
+    }
+});
 </script>
 
 <!-- Guest Login Prompt Modal -->
@@ -2477,11 +2783,85 @@ function closeGuestLoginPromptModal() {
         modal.style.display = 'none';
     }
 }
+</script>
+
+<!-- COACH NOTE MODAL -->
+<div id="coachNoteModal" style="display: none; position: fixed; inset: 0; background: rgba(15, 23, 42, 0.75); backdrop-filter: blur(8px); z-index: 99999; align-items: center; justify-content: center; padding: 1.5rem;">
+    <div style="background: #ffffff; border-radius: 20px; width: 100%; max-width: 520px; box-shadow: 0 25px 50px rgba(0,0,0,0.3); overflow: hidden; border: 1px solid #e2e8f0; animation: modalPop 0.3s cubic-bezier(0.16, 1, 0.3, 1);">
+        <div style="background: linear-gradient(135deg, #1c2340, #0f172a); color: #fff; padding: 1.25rem 1.75rem; display: flex; justify-content: space-between; align-items: center;">
+            <div>
+                <h3 style="margin: 0; font-size: 1.25rem; color: #c9a84c; font-weight: 800; display: flex; align-items: center; gap: 8px;">
+                    <i class="fas fa-comment-dots"></i>
+                    <?php echo isset($_SESSION['lang']) && $_SESSION['lang'] === 'vi' ? 'Ghi Chú Buổi Tập (Coach Note)' : 'Workout Session Note'; ?>
+                </h3>
+                <span style="font-size: 0.82rem; color: #cbd5e1;" id="coach_note_subtitle"></span>
+            </div>
+            <button type="button" onclick="closeCoachNoteModal()" style="background: transparent; border: none; color: #94a3b8; font-size: 1.4rem; cursor: pointer;">&times;</button>
+        </div>
+        
+        <form method="POST" action="/Gym Manager/features/calendar.php" style="padding: 1.75rem; display: flex; flex-direction: column; gap: 1.1rem;">
+            <input type="hidden" name="action_coach_update_notes" value="1">
+            <input type="hidden" name="booking_id" id="coach_note_booking_id">
+            <input type="hidden" name="week_offset" value="<?php echo $week_offset; ?>">
+            
+            <div>
+                <label style="display: block; font-size: 0.82rem; font-weight: 700; color: #1a2744; margin-bottom: 8px; text-transform: uppercase; letter-spacing: 0.4px;">
+                    <i class="fas fa-pencil-alt" style="color: #c9a84c; margin-right: 4px;"></i>
+                    <?php echo isset($_SESSION['lang']) && $_SESSION['lang'] === 'vi' ? 'Nội dung ghi chú cho học viên:' : 'Note contents for student:'; ?>
+                </label>
+                <textarea name="coach_notes" id="coach_note_input" placeholder="<?php echo isset($_SESSION['lang']) && $_SESSION['lang'] === 'vi' ? 'Nhập ghi chú hoặc dặn dò cho học viên về buổi tập này...' : 'Enter workout notes or instructions for the student...'; ?>" class="filter-input-luxury" style="width: 100%; border-radius: 12px; height: 110px; font-family: inherit; resize: vertical; padding: 0.85rem; border: 1.5px solid #cbd5e1; outline: none; font-size: 0.92rem; color: #0f172a;"></textarea>
+            </div>
+
+            <div style="display: flex; justify-content: flex-end; gap: 0.75rem; margin-top: 0.5rem; padding-top: 1rem; border-top: 1px solid #f1f5f9;">
+                <button type="button" onclick="closeCoachNoteModal()" style="padding: 10px 18px; background: #f1f5f9; color: #475569; border: 1px solid #cbd5e1; border-radius: 10px; font-weight: 700; font-size: 0.85rem; cursor: pointer;">
+                    <?php echo isset($_SESSION['lang']) && $_SESSION['lang'] === 'vi' ? 'Hủy Bỏ' : 'Cancel'; ?>
+                </button>
+                <button type="submit" style="padding: 10px 22px; background: linear-gradient(135deg, #1c2340, #0f172a); color: #c9a84c; border: 1px solid #c9a84c; border-radius: 10px; font-weight: 800; font-size: 0.85rem; cursor: pointer; display: inline-flex; align-items: center; gap: 6px; box-shadow: 0 4px 14px rgba(15, 23, 42, 0.3);">
+                    <i class="fas fa-save"></i>
+                    <?php echo isset($_SESSION['lang']) && $_SESSION['lang'] === 'vi' ? 'Lưu Ghi Chú' : 'Save Note'; ?>
+                </button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<script>
+function openCoachNoteFromBtn(btn) {
+    const modalCloseId = btn.getAttribute('data-modal-close');
+    if (modalCloseId) {
+        const m = document.getElementById(modalCloseId);
+        if (m) m.style.display = 'none';
+    }
+    const bookingId = btn.getAttribute('data-id');
+    const noteText = btn.getAttribute('data-msg') || '';
+    const clientName = btn.getAttribute('data-client') || '';
+    openCoachNoteModal(bookingId, noteText, clientName);
+}
+
+function openCoachNoteModal(bookingId, noteText, clientName) {
+    document.getElementById('coach_note_booking_id').value = bookingId;
+    document.getElementById('coach_note_input').value = noteText || '';
+    const sub = document.getElementById('coach_note_subtitle');
+    if (sub) {
+        sub.innerText = 'Booking #' + bookingId + (clientName ? ' - Client: ' + clientName : '');
+    }
+    const modal = document.getElementById('coachNoteModal');
+    if (modal) {
+        modal.style.display = 'flex';
+    }
+}
+
+function closeCoachNoteModal() {
+    const modal = document.getElementById('coachNoteModal');
+    if (modal) {
+        modal.style.display = 'none';
+    }
+}
 
 window.addEventListener('click', function(e) {
-    const modal = document.getElementById('guestLoginPromptModal');
+    const modal = document.getElementById('coachNoteModal');
     if (e.target === modal) {
-        closeGuestLoginPromptModal();
+        closeCoachNoteModal();
     }
 });
 </script>

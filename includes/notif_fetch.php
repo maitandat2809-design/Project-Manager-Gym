@@ -11,7 +11,7 @@ if (!isset($_SESSION['user_id'])) {
 
 $role = $_SESSION['role'];
 $user_id = $_SESSION['user_id'];
-$curr_lang = $_SESSION['lang'] ?? 'vi';
+$curr_lang = $_SESSION['lang'] ?? 'en';
 
 if ($role == 'coach') {
     // 1. Unseen ratings/reviews from users

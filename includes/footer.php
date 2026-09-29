@@ -108,7 +108,7 @@
         const langMini = document.querySelector('.lang-selector-mini');
         if(langMini) {
             langMini.addEventListener('click', () => {
-                alert('Language switching is available in the top menu.');
+                showGymXAlert(GYMX_LANG === 'vi' ? 'Chuyển đổi ngôn ngữ có sẵn ở menu phía trên.' : 'Language switching is available in the top menu.', null, '🌐');
             });
         }
     </script>
@@ -184,8 +184,9 @@
 
         document.querySelectorAll('a[href]').forEach(link => {
             const href = link.getAttribute('href');
-            if (!href || href.startsWith('#') || href.startsWith('javascript') || href.startsWith('mailto') || href.startsWith('tel') || link.target === '_blank') return;
+            if (!href || href.startsWith('#') || href.startsWith('javascript') || href.startsWith('mailto') || href.startsWith('tel') || link.target === '_blank' || link.hasAttribute('onclick')) return;
             link.addEventListener('click', function(e) {
+                if (e.defaultPrevented) return;
                 e.preventDefault();
                 const dest = this.href;
                 progressBar.style.width = '70%';
@@ -518,7 +519,7 @@
 
 <script>
 let gymxModalResolver = null;
-const GYMX_LANG = <?php echo json_encode($_SESSION['lang'] ?? 'vi'); ?>;
+const GYMX_LANG = <?php echo json_encode($_SESSION['lang'] ?? 'en'); ?>;
 
 function showGymXAlert(message, title = null, icon = '⚠️') {
     if (!title) title = GYMX_LANG === 'vi' ? 'Thông Báo' : 'Notification';
@@ -569,32 +570,45 @@ document.getElementById('gymx-custom-modal').addEventListener('click', function(
     if (e.target === this) closeGymXModal(false);
 });
 
-async function confirmOrderCustom(event, form, message, title = null, icon = '❓') {
-    if (event) event.preventDefault();
-    const submitter = event ? event.submitter : null;
-    const confirmed = await showGymXConfirm(message, title, icon);
-    if (confirmed) {
-        if (submitter && submitter.name && !form.querySelector(`input[name="${submitter.name}"]`)) {
-            const hidden = document.createElement('input');
-            hidden.type = 'hidden';
-            hidden.name = submitter.name;
-            hidden.value = submitter.value || '1';
-            form.appendChild(hidden);
-        }
-        form.submit();
+function confirmOrderCustom(event, form, message, title = null, icon = '❓') {
+    if (event) {
+        if (typeof event.preventDefault === 'function') event.preventDefault();
+        if (typeof event.stopPropagation === 'function') event.stopPropagation();
     }
+    const submitter = (event && event.submitter) ? event.submitter : null;
+    showGymXConfirm(message, title, icon).then(confirmed => {
+        if (confirmed && form) {
+            if (submitter && submitter.name && !form.querySelector(`input[name="${submitter.name}"]`)) {
+                const hidden = document.createElement('input');
+                hidden.type = 'hidden';
+                hidden.name = submitter.name;
+                hidden.value = submitter.value || '1';
+                form.appendChild(hidden);
+            }
+            form.submit();
+        }
+    });
     return false;
 }
 
-async function confirmLinkCustom(event, link, message, title = null, icon = '❓') {
-    if (event) event.preventDefault();
-    const href = link.getAttribute('href');
-    const confirmed = await showGymXConfirm(message, title, icon);
-    if (confirmed && href) {
-        window.location.href = href;
+function confirmLinkCustom(event, link, message, title = null, icon = '❓') {
+    if (event) {
+        if (typeof event.preventDefault === 'function') event.preventDefault();
+        if (typeof event.stopPropagation === 'function') event.stopPropagation();
     }
+    const href = link ? link.getAttribute('href') : null;
+    showGymXConfirm(message, title, icon).then(confirmed => {
+        if (confirmed && href) {
+            window.location.href = href;
+        }
+    });
     return false;
 }
+
+// Global override of native alert to custom GymX modal
+window.alert = function(msg) {
+    showGymXAlert(msg);
+};
 </script>
 
 </body>

@@ -1,6 +1,14 @@
 <?php
-session_start();
+if (session_status() === PHP_SESSION_NONE) {
+    session_start();
+}
+$saved_lang = $_SESSION['lang'] ?? 'en';
+session_unset();
 session_destroy();
-header("Location: /Gym Manager/auth/login.php");
+
+session_start();
+$_SESSION['lang'] = $saved_lang;
+
+header("Location: /Gym Manager/index.php");
 exit();
 ?>

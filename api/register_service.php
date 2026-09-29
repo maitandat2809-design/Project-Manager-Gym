@@ -6,7 +6,7 @@ header('Content-Type: application/json; charset=utf-8');
 require_once __DIR__ . '/../config/db.php';
 
 // Safe translate function for internal keys
-function translate_key($key, $curr_lang = 'vi') {
+function translate_key($key, $curr_lang = 'en') {
     $lang_file = "languages/{$curr_lang}.php";
     if (file_exists($lang_file)) {
         $translations = include $lang_file;
@@ -17,7 +17,7 @@ function translate_key($key, $curr_lang = 'vi') {
     return $key;
 }
 
-$curr_lang = $_SESSION['lang'] ?? 'vi';
+$curr_lang = $_SESSION['lang'] ?? 'en';
 
 if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
     echo json_encode([

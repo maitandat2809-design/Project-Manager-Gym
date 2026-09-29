@@ -50,8 +50,12 @@ if (isset($_SESSION['user_id'])) {
                     $specialties = [];
                     foreach ($raw_specs as $s) {
                         $norm = trim($s);
+                        $norm = preg_replace('/\s*&\s*kickboxing/i', '', $norm);
+                        $norm = trim($norm);
                         if (strcasecmp($norm, 'gym') === 0) {
                             $norm = 'Gym & Fitness';
+                        } elseif (stripos($norm, 'muay') !== false || strcasecmp($norm, 'kickboxing') === 0) {
+                            $norm = 'Muay Thai';
                         }
                         if (!in_array($norm, $specialties)) {
                             $specialties[] = $norm;
@@ -84,6 +88,14 @@ if (isset($_SESSION['user_id'])) {
             <?php endif; ?>
             <?php if(!isset($_SESSION['role']) || ($_SESSION['role'] !== 'manager' && $_SESSION['role'] !== 'admin')): ?>
             <li><a href="/Gym Manager/pages/shop.php"><?php echo __('shop'); ?></a></li>
+            <?php $cart_count = isset($_SESSION['cart']) ? array_sum($_SESSION['cart']) : 0; ?>
+            <li>
+                <a href="/Gym Manager/pages/cart.php" class="nav-cart-btn">
+                    <i class="fas fa-shopping-bag"></i>
+                    <span><?php echo __('cart'); ?></span>
+                    <span class="nav-badge"><?php echo $cart_count; ?></span>
+                </a>
+            </li>
             <?php endif; ?>
             <li><a href="/Gym Manager/pages/about.php"><?php echo __('about'); ?></a></li>
         </ul>
@@ -173,18 +185,7 @@ if (isset($_SESSION['user_id'])) {
                             </div>
                         </li>
                     <?php endif; ?>
-                    
-                    <?php if(!isset($_SESSION['role']) || ($_SESSION['role'] !== 'manager' && $_SESSION['role'] !== 'admin')): ?>
-                    <?php $cart_count = isset($_SESSION['cart']) ? array_sum($_SESSION['cart']) : 0; ?>
-                    <li>
-                        <a href="/Gym Manager/pages/cart.php" class="nav-cart-btn">
-                            <i class="fas fa-shopping-bag"></i>
-                            <span><?php echo __('cart'); ?></span>
-                            <span class="nav-badge"><?php echo $cart_count; ?></span>
-                        </a>
-                    </li>
-                    <?php endif; ?>
-                    
+
                     <li>
                         <?php
                         $stmt_nav = $pdo->prepare("SELECT avatar FROM users WHERE id = ?");

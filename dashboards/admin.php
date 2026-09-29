@@ -76,86 +76,91 @@ if ($page == 'products' && isset($_POST['update_product'])) {
 }
 
 if ($page == 'coaches' && isset($_POST['add_coach'])) {
-    $name = $_POST['name'];
-    $email = $_POST['email'];
-    $password = password_hash('123456', PASSWORD_DEFAULT);
+    $name = trim($_POST['name']);
+    $email = trim($_POST['email']);
+    $raw_password = !empty($_POST['password']) ? $_POST['password'] : '123456';
+    $password = password_hash($raw_password, PASSWORD_DEFAULT);
     $specialty = $_POST['specialty'];
     $rate = $_POST['rate'];
+    $zalo = trim($_POST['zalo'] ?? '');
     
-    try {
-        $zalo = $_POST['zalo'] ?? null;
-        $gmail = $_POST['gmail'] ?? null;
-        $room_name   = trim($_POST['room_name'] ?? '');
-        $room_number = trim($_POST['room_number'] ?? '');
+    // Check Email Duplicate
+    $check_email = $pdo->prepare("SELECT id FROM users WHERE LOWER(email) = LOWER(?)");
+    $check_email->execute([$email]);
+    
+    // Check Phone / Zalo Duplicate
+    $check_zalo = null;
+    if ($zalo !== '') {
+        $check_zalo_stmt = $pdo->prepare("SELECT c.id FROM coaches c JOIN users u ON c.user_id = u.id WHERE (c.zalo = ? AND c.zalo != '') OR (u.phone = ? AND u.phone != '')");
+        $check_zalo_stmt->execute([$zalo, $zalo]);
+        $check_zalo = $check_zalo_stmt->fetch();
+    }
 
-        // Check room duplicate by room number
-        if ($room_number !== '') {
-            $stmt_check = $pdo->prepare("SELECT COUNT(*) FROM coaches WHERE room_number = ?");
-            $stmt_check->execute([$room_number]);
-            if ($stmt_check->fetchColumn() > 0) {
-                throw new Exception(__('room_already_assigned'));
+    if ($check_email->fetch()) {
+        $message = ($current_lang === 'vi') ? "⚠️ Lỗi: Email '$email' đã tồn tại trong hệ thống!" : "⚠️ Error: Email '$email' already exists!";
+    } elseif ($check_zalo) {
+        $message = ($current_lang === 'vi') ? "⚠️ Lỗi: Số điện thoại/Zalo '$zalo' đã tồn tại trong hệ thống!" : "⚠️ Error: Phone/Zalo number '$zalo' already exists!";
+    } else {
+        try {
+            $pdo->beginTransaction();
+            // 1. Create User
+            $stmt = $pdo->prepare("INSERT INTO users (name, email, password, role) VALUES (?, ?, ?, 'coach')");
+            $stmt->execute([$name, $email, $password]);
+            $user_id = $pdo->lastInsertId();
+            
+            // 2. Create Coach Entry
+            $stmt = $pdo->prepare("INSERT INTO coaches (user_id, specialty, hourly_rate, bio, zalo) VALUES (?, ?, ?, 'Professional fitness instructor', ?)");
+            $stmt->execute([$user_id, $specialty, $rate, $zalo]);
+            
+            $pdo->commit();
+            $message = ($current_lang === 'vi') ? "Thêm HLV thành công!" : "Coach added successfully!";
+        } catch(Exception $e) {
+            if ($pdo->inTransaction()) {
+                $pdo->rollBack();
             }
+            $message = "Error: " . $e->getMessage();
         }
-        
-        $pdo->beginTransaction();
-        // 1. Create User
-        $stmt = $pdo->prepare("INSERT INTO users (name, email, password, role) VALUES (?, ?, ?, 'coach')");
-        $stmt->execute([$name, $email, $password]);
-        $user_id = $pdo->lastInsertId();
-        
-        // 2. Create Coach Entry
-        $stmt = $pdo->prepare("INSERT INTO coaches (user_id, specialty, hourly_rate, bio, zalo, gmail, room_name, room_number) VALUES (?, ?, ?, 'Professional fitness instructor', ?, ?, ?, ?)");
-        $stmt->execute([$user_id, $specialty, $rate, $zalo, $gmail, $room_name ?: null, $room_number ?: null]);
-        
-        $pdo->commit();
-        $message = "Coach added successfully! Default password: 123456";
-    } catch(Exception $e) {
-        if ($pdo->inTransaction()) {
-            $pdo->rollBack();
-        }
-        $message = $e->getMessage();
     }
 }
 
 if ($page == 'coaches' && isset($_POST['update_coach'])) {
     $coach_id = $_POST['coach_id'];
-    $name = $_POST['name'];
+    $name = trim($_POST['name']);
     $specialty = $_POST['specialty'];
     $rate = $_POST['rate'];
+    $zalo = trim($_POST['zalo'] ?? '');
     
-    try {
-        $zalo        = $_POST['zalo']        ?? null;
-        $gmail       = $_POST['gmail']       ?? null;
-        $room_name   = trim($_POST['room_name'] ?? '');
-        $room_number = trim($_POST['room_number'] ?? '');
-        
-        // Check room duplicate by room number
-        if ($room_number !== '') {
-            $stmt_check = $pdo->prepare("SELECT COUNT(*) FROM coaches WHERE room_number = ? AND id != ?");
-            $stmt_check->execute([$room_number, $coach_id]);
-            if ($stmt_check->fetchColumn() > 0) {
-                throw new Exception(__('room_already_assigned'));
-            }
-        }
+    $stmt = $pdo->prepare("SELECT user_id FROM coaches WHERE id = ?");
+    $stmt->execute([$coach_id]);
+    $uid = $stmt->fetchColumn();
 
-        $pdo->beginTransaction();
-        $stmt = $pdo->prepare("SELECT user_id FROM coaches WHERE id = ?");
-        $stmt->execute([$coach_id]);
-        $uid = $stmt->fetchColumn();
-        
-        $stmt = $pdo->prepare("UPDATE users SET name = ? WHERE id = ?");
-        $stmt->execute([$name, $uid]);
-        
-        $stmt = $pdo->prepare("UPDATE coaches SET specialty = ?, hourly_rate = ?, zalo = ?, gmail = ?, room_name = ?, room_number = ? WHERE id = ?");
-        $stmt->execute([$specialty, $rate, $zalo, $gmail, $room_name ?: null, $room_number ?: null, $coach_id]);
-        
-        $pdo->commit();
-        $message = "Coach updated successfully!";
-    } catch(Exception $e) {
-        if ($pdo->inTransaction()) {
-            $pdo->rollBack();
+    // Check Phone / Zalo Duplicate for other accounts
+    $check_zalo = null;
+    if ($zalo !== '') {
+        $check_zalo_stmt = $pdo->prepare("SELECT c.id FROM coaches c JOIN users u ON c.user_id = u.id WHERE ((c.zalo = ? AND c.zalo != '') OR (u.phone = ? AND u.phone != '')) AND c.id != ? AND u.id != ?");
+        $check_zalo_stmt->execute([$zalo, $zalo, $coach_id, $uid]);
+        $check_zalo = $check_zalo_stmt->fetch();
+    }
+
+    if ($check_zalo) {
+        $message = ($current_lang === 'vi') ? "⚠️ Lỗi: Số điện thoại/Zalo '$zalo' đã được sử dụng bởi một tài khoản khác!" : "⚠️ Error: Phone/Zalo number '$zalo' is already used by another account!";
+    } else {
+        try {
+            $pdo->beginTransaction();
+            $stmt = $pdo->prepare("UPDATE users SET name = ? WHERE id = ?");
+            $stmt->execute([$name, $uid]);
+            
+            $stmt = $pdo->prepare("UPDATE coaches SET specialty = ?, hourly_rate = ?, zalo = ? WHERE id = ?");
+            $stmt->execute([$specialty, $rate, $zalo, $coach_id]);
+            
+            $pdo->commit();
+            $message = ($current_lang === 'vi') ? "Cập nhật thông tin HLV thành công!" : "Coach updated successfully!";
+        } catch(Exception $e) {
+            if ($pdo->inTransaction()) {
+                $pdo->rollBack();
+            }
+            $message = "Error: " . $e->getMessage();
         }
-        $message = $e->getMessage();
     }
 }
 
@@ -166,12 +171,10 @@ if (isset($_GET['delete_product'])) {
 
 if (isset($_GET['delete_coach'])) {
     $coach_id = $_GET['delete_coach'];
-    // Find user_id first
     $stmt = $pdo->prepare("SELECT user_id FROM coaches WHERE id = ?");
     $stmt->execute([$coach_id]);
     $uid = $stmt->fetchColumn();
     
-    // Delete user will cascade to coach entry if FK set correctly
     $stmt = $pdo->prepare("DELETE FROM users WHERE id = ?");
     $stmt->execute([$uid]);
     $message = "Coach deleted successfully!";
@@ -184,11 +187,9 @@ if ($page == 'users' && isset($_POST['update_role'])) {
     try {
         $pdo->beginTransaction();
         
-        // Update user role
         $stmt = $pdo->prepare("UPDATE users SET role = ? WHERE id = ?");
         $stmt->execute([$new_role, $uid]);
         
-        // Management of coaches table entry
         if ($new_role == 'coach') {
             $stmt = $pdo->prepare("SELECT id FROM coaches WHERE user_id = ?");
             $stmt->execute([$uid]);
@@ -207,21 +208,35 @@ if ($page == 'users' && isset($_POST['update_role'])) {
 }
 
 if ($page == 'users' && isset($_POST['add_user'])) {
-    $name = $_POST['name'];
-    $email = $_POST['email'];
+    $name = trim($_POST['name']);
+    $email = trim($_POST['email']);
     $password = password_hash($_POST['password'], PASSWORD_DEFAULT);
-    $role = $_POST['role'];
+    $role = $_POST['role'] ?? 'user';
+    $phone = trim($_POST['phone'] ?? '');
 
-    // Check if email exists
-    $check = $pdo->prepare("SELECT id FROM users WHERE email = ?");
-    $check->execute([$email]);
-    if ($check->fetch()) {
-        $message = "Error: Email already exists!";
+    // Check email duplicate
+    $check_e = $pdo->prepare("SELECT id FROM users WHERE LOWER(email) = LOWER(?)");
+    $check_e->execute([$email]);
+
+    // Check phone duplicate
+    $check_p = null;
+    if ($phone !== '') {
+        $check_p_stmt = $pdo->prepare("SELECT id FROM users WHERE phone = ? AND phone != ''");
+        $check_p_stmt->execute([$phone]);
+        $check_p = $check_p_stmt->fetch();
+    }
+
+    if ($check_e->fetch()) {
+        $message = ($current_lang === 'vi') ? "⚠️ Lỗi: Email '$email' đã tồn tại trong hệ thống!" : "⚠️ Error: Email '$email' is already registered!";
+    } elseif ($check_p) {
+        $message = ($current_lang === 'vi') ? "⚠️ Lỗi: Số điện thoại '$phone' đã tồn tại trong hệ thống!" : "⚠️ Error: Phone number '$phone' is already registered!";
     } else {
         try {
             $pdo->beginTransaction();
-            $stmt = $pdo->prepare("INSERT INTO users (name, email, password, role) VALUES (?, ?, ?, ?)");
-            $stmt->execute([$name, $email, $password, $role]);
+            $stmt = $pdo->prepare("INSERT INTO users (name, email, password, role" . ($phone !== '' ? ", phone" : "") . ") VALUES (?, ?, ?, ?" . ($phone !== '' ? ", ?" : "") . ")");
+            $params = [$name, $email, $password, $role];
+            if ($phone !== '') $params[] = $phone;
+            $stmt->execute($params);
             $user_id = $pdo->lastInsertId();
 
             if ($role === 'coach') {
@@ -229,7 +244,7 @@ if ($page == 'users' && isset($_POST['add_user'])) {
                 $stmt->execute([$user_id]);
             }
             $pdo->commit();
-            $message = "User created successfully!";
+            $message = ($current_lang === 'vi') ? "Tạo người dùng thành công!" : "User created successfully!";
         } catch (Exception $e) {
             if ($pdo->inTransaction()) {
                 $pdo->rollBack();
@@ -241,30 +256,52 @@ if ($page == 'users' && isset($_POST['add_user'])) {
 
 if ($page == 'users' && isset($_POST['update_user_details'])) {
     $uid = $_POST['user_id'];
-    $name = $_POST['name'];
-    $email = $_POST['email'];
+    $name = trim($_POST['name']);
+    $email = trim($_POST['email']);
     $role = $_POST['role'];
+    $phone = trim($_POST['phone'] ?? '');
 
-    try {
-        $pdo->beginTransaction();
-        $stmt = $pdo->prepare("UPDATE users SET name = ?, email = ?, role = ? WHERE id = ?");
-        $stmt->execute([$name, $email, $role, $uid]);
+    // Check Email duplicate for another user
+    $check_e = $pdo->prepare("SELECT id FROM users WHERE LOWER(email) = LOWER(?) AND id != ?");
+    $check_e->execute([$email, $uid]);
 
-        if ($role === 'coach') {
-            $check_c = $pdo->prepare("SELECT id FROM coaches WHERE user_id = ?");
-            $check_c->execute([$uid]);
-            if (!$check_c->fetch()) {
-                $stmt = $pdo->prepare("INSERT INTO coaches (user_id, specialty, hourly_rate, bio) VALUES (?, 'Gym', 20.00, 'Professional fitness instructor')");
-                $stmt->execute([$uid]);
+    // Check Phone duplicate for another user
+    $check_p = null;
+    if ($phone !== '') {
+        $check_p_stmt = $pdo->prepare("SELECT id FROM users WHERE phone = ? AND phone != '' AND id != ?");
+        $check_p_stmt->execute([$phone, $uid]);
+        $check_p = $check_p_stmt->fetch();
+    }
+
+    if ($check_e->fetch()) {
+        $message = ($current_lang === 'vi') ? "⚠️ Lỗi: Email '$email' đã được sử dụng bởi một tài khoản khác!" : "⚠️ Error: Email '$email' is already registered to another account!";
+    } elseif ($check_p) {
+        $message = ($current_lang === 'vi') ? "⚠️ Lỗi: Số điện thoại '$phone' đã được sử dụng bởi một tài khoản khác!" : "⚠️ Error: Phone number '$phone' is already registered to another account!";
+    } else {
+        try {
+            $pdo->beginTransaction();
+            $stmt = $pdo->prepare("UPDATE users SET name = ?, email = ?, role = ?" . ($phone !== '' ? ", phone = ?" : "") . " WHERE id = ?");
+            $params = [$name, $email, $role];
+            if ($phone !== '') $params[] = $phone;
+            $params[] = $uid;
+            $stmt->execute($params);
+
+            if ($role === 'coach') {
+                $check_c = $pdo->prepare("SELECT id FROM coaches WHERE user_id = ?");
+                $check_c->execute([$uid]);
+                if (!$check_c->fetch()) {
+                    $stmt = $pdo->prepare("INSERT INTO coaches (user_id, specialty, hourly_rate, bio) VALUES (?, 'Gym', 20.00, 'Professional fitness instructor')");
+                    $stmt->execute([$uid]);
+                }
             }
+            $pdo->commit();
+            $message = ($current_lang === 'vi') ? "Cập nhật thông tin người dùng thành công!" : "User updated successfully!";
+        } catch (Exception $e) {
+            if ($pdo->inTransaction()) {
+                $pdo->rollBack();
+            }
+            $message = "Error: " . $e->getMessage();
         }
-        $pdo->commit();
-        $message = "User updated successfully!";
-    } catch (Exception $e) {
-        if ($pdo->inTransaction()) {
-            $pdo->rollBack();
-        }
-        $message = "Error: " . $e->getMessage();
     }
 }
 
@@ -280,36 +317,72 @@ if (isset($_GET['delete_user'])) {
 }
 
 if ($page == 'managers' && isset($_POST['add_manager'])) {
-    $name = $_POST['name'];
-    $email = $_POST['email'];
+    $name = trim($_POST['name']);
+    $email = trim($_POST['email']);
     $password_raw = !empty($_POST['password']) ? $_POST['password'] : '123456';
     $password = password_hash($password_raw, PASSWORD_DEFAULT);
+    $phone = trim($_POST['phone'] ?? '');
     
-    $check = $pdo->prepare("SELECT id FROM users WHERE email = ?");
-    $check->execute([$email]);
-    if ($check->fetch()) {
-        $message = "Error: Email already exists!";
+    $check_e = $pdo->prepare("SELECT id FROM users WHERE LOWER(email) = LOWER(?)");
+    $check_e->execute([$email]);
+
+    $check_p = null;
+    if ($phone !== '') {
+        $check_p_stmt = $pdo->prepare("SELECT id FROM users WHERE phone = ? AND phone != ''");
+        $check_p_stmt->execute([$phone]);
+        $check_p = $check_p_stmt->fetch();
+    }
+
+    if ($check_e->fetch()) {
+        $message = ($current_lang === 'vi') ? "⚠️ Lỗi: Email '$email' đã tồn tại trong hệ thống!" : "⚠️ Error: Email '$email' is already registered!";
+    } elseif ($check_p) {
+        $message = ($current_lang === 'vi') ? "⚠️ Lỗi: Số điện thoại '$phone' đã tồn tại trong hệ thống!" : "⚠️ Error: Phone number '$phone' is already registered!";
     } else {
-        $stmt = $pdo->prepare("INSERT INTO users (name, email, password, role) VALUES (?, ?, ?, 'manager')");
-        $stmt->execute([$name, $email, $password]);
-        $message = "Manager account created successfully! Default password: " . htmlspecialchars($password_raw);
+        $stmt = $pdo->prepare("INSERT INTO users (name, email, password, role" . ($phone !== '' ? ", phone" : "") . ") VALUES (?, ?, ?, 'manager'" . ($phone !== '' ? ", ?" : "") . ")");
+        $params = [$name, $email, $password];
+        if ($phone !== '') $params[] = $phone;
+        $stmt->execute($params);
+        $message = ($current_lang === 'vi') ? "Tạo tài khoản Quản lý thành công!" : "Manager account created successfully!";
     }
 }
 
 if ($page == 'managers' && isset($_POST['update_manager'])) {
     $uid = $_POST['user_id'];
-    $name = $_POST['name'];
-    $email = $_POST['email'];
-    
-    if (!empty($_POST['password'])) {
-        $password = password_hash($_POST['password'], PASSWORD_DEFAULT);
-        $stmt = $pdo->prepare("UPDATE users SET name = ?, email = ?, password = ? WHERE id = ? AND role = 'manager'");
-        $stmt->execute([$name, $email, $password, $uid]);
-    } else {
-        $stmt = $pdo->prepare("UPDATE users SET name = ?, email = ? WHERE id = ? AND role = 'manager'");
-        $stmt->execute([$name, $email, $uid]);
+    $name = trim($_POST['name']);
+    $email = trim($_POST['email']);
+    $phone = trim($_POST['phone'] ?? '');
+
+    $check_e = $pdo->prepare("SELECT id FROM users WHERE LOWER(email) = LOWER(?) AND id != ?");
+    $check_e->execute([$email, $uid]);
+
+    $check_p = null;
+    if ($phone !== '') {
+        $check_p_stmt = $pdo->prepare("SELECT id FROM users WHERE phone = ? AND phone != '' AND id != ?");
+        $check_p_stmt->execute([$phone, $uid]);
+        $check_p = $check_p_stmt->fetch();
     }
-    $message = "Manager updated successfully!";
+
+    if ($check_e->fetch()) {
+        $message = ($current_lang === 'vi') ? "⚠️ Lỗi: Email '$email' đã được sử dụng bởi một tài khoản khác!" : "⚠️ Error: Email '$email' is already registered to another account!";
+    } elseif ($check_p) {
+        $message = ($current_lang === 'vi') ? "⚠️ Lỗi: Số điện thoại '$phone' đã được sử dụng bởi một tài khoản khác!" : "⚠️ Error: Phone number '$phone' is already registered to another account!";
+    } else {
+        if (!empty($_POST['password'])) {
+            $password = password_hash($_POST['password'], PASSWORD_DEFAULT);
+            $stmt = $pdo->prepare("UPDATE users SET name = ?, email = ?, password = ?" . ($phone !== '' ? ", phone = ?" : "") . " WHERE id = ? AND role = 'manager'");
+            $params = [$name, $email, $password];
+            if ($phone !== '') $params[] = $phone;
+            $params[] = $uid;
+            $stmt->execute($params);
+        } else {
+            $stmt = $pdo->prepare("UPDATE users SET name = ?, email = ?" . ($phone !== '' ? ", phone = ?" : "") . " WHERE id = ? AND role = 'manager'");
+            $params = [$name, $email];
+            if ($phone !== '') $params[] = $phone;
+            $params[] = $uid;
+            $stmt->execute($params);
+        }
+        $message = ($current_lang === 'vi') ? "Cập nhật tài khoản Quản lý thành công!" : "Manager updated successfully!";
+    }
 }
 
 if (isset($_GET['delete_manager'])) {
@@ -331,60 +404,82 @@ if ($page == 'bookings' && isset($_POST['add_booking'])) {
     $status = $_POST['status'] ?? 'pending';
     
     try {
-        $stmt = $pdo->prepare("INSERT INTO bookings (user_id, coach_id, booking_date, status, coach_seen, user_seen) VALUES (?, ?, ?, ?, 0, 0)");
-        $stmt->execute([$user_id, $coach_id, $booking_date, $status]);
-        $message = "Booking created successfully!";
+        $requested_time = strtotime($booking_date);
+        $start_buffer = date('Y-m-d H:i:s', $requested_time - 3599);
+        $end_buffer = date('Y-m-d H:i:s', $requested_time + 3599);
+
+        // 1. Coach slot conflict
+        $stmt_c_chk = $pdo->prepare("SELECT id FROM bookings WHERE coach_id = ? AND status != 'cancelled' AND booking_date BETWEEN ? AND ?");
+        $stmt_c_chk->execute([$coach_id, $start_buffer, $end_buffer]);
         
-        // Optional: PHPMailer to both User and Coach
-        try {
-            $stmt_u = $pdo->prepare("SELECT name, email FROM users WHERE id = ?");
-            $stmt_u->execute([$user_id]);
-            $usr = $stmt_u->fetch();
+        // 2. User slot conflict
+        $stmt_u_chk = $pdo->prepare("SELECT id FROM bookings WHERE user_id = ? AND status != 'cancelled' AND booking_date BETWEEN ? AND ?");
+        $stmt_u_chk->execute([$user_id, $start_buffer, $end_buffer]);
 
-            $stmt_c = $pdo->prepare("SELECT u.name, u.email FROM coaches c JOIN users u ON c.user_id = u.id WHERE c.id = ?");
-            $stmt_c->execute([$coach_id]);
-            $cch = $stmt_c->fetch();
+        if ($stmt_c_chk->fetch()) {
+            $message = ($current_lang === 'vi')
+                ? "⚠️ Lỗi: HLV này đã có lịch dạy vào khung giờ này (trùng trong vòng 60 phút). Vui lòng chọn thời gian hoặc HLV khác!"
+                : "⚠️ Error: This coach is already booked for another session at this time (overlapping 60min slot).";
+        } elseif ($stmt_u_chk->fetch()) {
+            $message = ($current_lang === 'vi')
+                ? "⚠️ Lỗi: Học viên đã có lịch tập với HLV khác vào cùng khung giờ này (trùng trong vòng 60 phút). Không thể đăng ký 2 HLV cùng 1 khung giờ!"
+                : "⚠️ Error: The client already has a session scheduled with another coach at this time slot.";
+        } else {
+            $stmt = $pdo->prepare("INSERT INTO bookings (user_id, coach_id, booking_date, status, coach_seen, user_seen) VALUES (?, ?, ?, ?, 0, 0)");
+            $stmt->execute([$user_id, $coach_id, $booking_date, $status]);
+            $message = "Booking created successfully!";
+            
+            // Optional: PHPMailer to both User and Coach
+            try {
+                $stmt_u = $pdo->prepare("SELECT name, email FROM users WHERE id = ?");
+                $stmt_u->execute([$user_id]);
+                $usr = $stmt_u->fetch();
 
-            if ($usr && $usr['email']) {
-                require_once __DIR__ . '/../libs/PHPMailer/src/Exception.php';
-                require_once __DIR__ . '/../libs/PHPMailer/src/PHPMailer.php';
-                require_once __DIR__ . '/../libs/PHPMailer/src/SMTP.php';
+                $stmt_c = $pdo->prepare("SELECT u.name, u.email FROM coaches c JOIN users u ON c.user_id = u.id WHERE c.id = ?");
+                $stmt_c->execute([$coach_id]);
+                $cch = $stmt_c->fetch();
 
-                $mail = new PHPMailer\PHPMailer\PHPMailer(true);
-                $mail->CharSet = 'UTF-8';
-                $mail->isSMTP();
-                $mail->Host       = 'smtp.gmail.com';
-                $mail->SMTPAuth   = true;
-                $mail->Username   = 'lamtuoi155@gmail.com';     
-                $mail->Password   = 'hpst uazz wdsq sbnf';   
-                $mail->SMTPSecure = PHPMailer\PHPMailer\PHPMailer::ENCRYPTION_STARTTLS;
-                $mail->Port       = 587;
+                if ($usr && $usr['email']) {
+                    require_once __DIR__ . '/../libs/PHPMailer/src/Exception.php';
+                    require_once __DIR__ . '/../libs/PHPMailer/src/PHPMailer.php';
+                    require_once __DIR__ . '/../libs/PHPMailer/src/SMTP.php';
 
-                $mail->setFrom('lamtuoi155@gmail.com', 'GymX Admin System');
-                $mail->addAddress($usr['email'], $usr['name']);
-                if ($cch && $cch['email']) {
-                    $mail->addCC($cch['email'], $cch['name']);
+                    $mail = new PHPMailer\PHPMailer\PHPMailer(true);
+                    $mail->CharSet = 'UTF-8';
+                    $mail->isSMTP();
+                    $mail->Host       = 'smtp.gmail.com';
+                    $mail->SMTPAuth   = true;
+                    $mail->Username   = 'lamtuoi155@gmail.com';     
+                    $mail->Password   = 'hpst uazz wdsq sbnf';   
+                    $mail->SMTPSecure = PHPMailer\PHPMailer\PHPMailer::ENCRYPTION_STARTTLS;
+                    $mail->Port       = 587;
+
+                    $mail->setFrom('lamtuoi155@gmail.com', 'GymX Admin System');
+                    $mail->addAddress($usr['email'], $usr['name']);
+                    if ($cch && $cch['email']) {
+                        $mail->addCC($cch['email'], $cch['name']);
+                    }
+
+                    $mail->isHTML(true);
+                    $mail->Subject = "🆕 New GymX Booking Scheduled by Admin";
+                    
+                    $mail_body = "<div style='font-family: Arial, sans-serif; max-width: 600px; margin: auto; padding: 20px; border: 1px solid #e2e8f0; border-radius: 20px;'>";
+                    $mail_body .= "<h2 style='color: #0062ff;'>New Appointment</h2>";
+                    $mail_body .= "<p>An administrator has scheduled a new training session for you.</p>";
+                    $mail_body .= "<div style='background: #f8fafc; padding: 15px; border-radius: 12px; margin: 20px 0;'>";
+                    $mail_body .= "<strong>Client:</strong> " . htmlspecialchars($usr['name']) . "<br>";
+                    $mail_body .= "<strong>Coach:</strong> " . htmlspecialchars($cch['name']) . "<br>";
+                    $mail_body .= "<strong>Time:</strong> " . date('l, d/m/Y - H:i', strtotime($booking_date)) . "<br>";
+                    $mail_body .= "<strong>Status:</strong> " . strtoupper($status) . "<br>";
+                    $mail_body .= "</div>";
+                    $mail_body .= "<p>Please log in to the system to view details.</p></div>";
+                    
+                    $mail->Body = $mail_body;
+                    $mail->send();
                 }
-
-                $mail->isHTML(true);
-                $mail->Subject = "🆕 New GymX Booking Scheduled by Admin";
-                
-                $mail_body = "<div style='font-family: Arial, sans-serif; max-width: 600px; margin: auto; padding: 20px; border: 1px solid #e2e8f0; border-radius: 20px;'>";
-                $mail_body .= "<h2 style='color: #0062ff;'>New Appointment</h2>";
-                $mail_body .= "<p>An administrator has scheduled a new training session for you.</p>";
-                $mail_body .= "<div style='background: #f8fafc; padding: 15px; border-radius: 12px; margin: 20px 0;'>";
-                $mail_body .= "<strong>Client:</strong> " . htmlspecialchars($usr['name']) . "<br>";
-                $mail_body .= "<strong>Coach:</strong> " . htmlspecialchars($cch['name']) . "<br>";
-                $mail_body .= "<strong>Time:</strong> " . date('l, d/m/Y - H:i', strtotime($booking_date)) . "<br>";
-                $mail_body .= "<strong>Status:</strong> " . strtoupper($status) . "<br>";
-                $mail_body .= "</div>";
-                $mail_body .= "<p>Please log in to the system to view details.</p></div>";
-                
-                $mail->Body = $mail_body;
-                $mail->send();
+            } catch (Exception $mailEx) {
+                error_log("Mail error during booking insert: " . $mailEx->getMessage());
             }
-        } catch (Exception $mailEx) {
-            error_log("Mail error during booking insert: " . $mailEx->getMessage());
         }
     } catch (Exception $e) {
         $message = "Error creating booking: " . $e->getMessage();
@@ -400,9 +495,38 @@ if ($page == 'bookings' && isset($_POST['update_booking'])) {
     $coach_message = $_POST['coach_message'] ?? '';
     
     try {
-        $stmt = $pdo->prepare("UPDATE bookings SET user_id = ?, coach_id = ?, booking_date = ?, status = ?, coach_message = ?, coach_seen = 0, user_seen = 0 WHERE id = ?");
-        $stmt->execute([$user_id, $coach_id, $booking_date, $status, $coach_message, $booking_id]);
-        $message = "Booking updated successfully!";
+        $requested_time = strtotime($booking_date);
+        $start_buffer = date('Y-m-d H:i:s', $requested_time - 3599);
+        $end_buffer = date('Y-m-d H:i:s', $requested_time + 3599);
+
+        $has_conflict = false;
+        if ($status !== 'cancelled') {
+            // 1. Coach slot conflict
+            $stmt_c_chk = $pdo->prepare("SELECT id FROM bookings WHERE coach_id = ? AND id != ? AND status != 'cancelled' AND booking_date BETWEEN ? AND ?");
+            $stmt_c_chk->execute([$coach_id, $booking_id, $start_buffer, $end_buffer]);
+            
+            // 2. User slot conflict
+            $stmt_u_chk = $pdo->prepare("SELECT id FROM bookings WHERE user_id = ? AND id != ? AND status != 'cancelled' AND booking_date BETWEEN ? AND ?");
+            $stmt_u_chk->execute([$user_id, $booking_id, $start_buffer, $end_buffer]);
+
+            if ($stmt_c_chk->fetch()) {
+                $has_conflict = true;
+                $message = ($current_lang === 'vi')
+                    ? "⚠️ Lỗi: HLV này đã có lịch dạy vào khung giờ này (trùng trong vòng 60 phút). Vui lòng chọn thời gian hoặc HLV khác!"
+                    : "⚠️ Error: This coach is already booked for another session at this time (overlapping 60min slot).";
+            } elseif ($stmt_u_chk->fetch()) {
+                $has_conflict = true;
+                $message = ($current_lang === 'vi')
+                    ? "⚠️ Lỗi: Học viên đã có lịch tập với HLV khác vào cùng khung giờ này (trùng trong vòng 60 phút). Không thể đăng ký 2 HLV cùng 1 khung giờ!"
+                    : "⚠️ Error: The client already has a session scheduled with another coach at this time slot.";
+            }
+        }
+
+        if (!$has_conflict) {
+            $stmt = $pdo->prepare("UPDATE bookings SET user_id = ?, coach_id = ?, booking_date = ?, status = ?, coach_message = ?, coach_seen = 0, user_seen = 0 WHERE id = ?");
+            $stmt->execute([$user_id, $coach_id, $booking_date, $status, $coach_message, $booking_id]);
+            $message = "Booking updated successfully!";
+        }
         
         // Optional: PHPMailer rescheduling notice
         try {
@@ -564,8 +688,13 @@ if ($page == 'bookings' && isset($_GET['change_status']) && isset($_GET['booking
         </div>
 
         <div class="admin-content" style="min-width: 0;">
-            <?php if($message): ?>
-                <p style="color: #00C851; margin-bottom: 1rem;"><?php echo $message; ?></p>
+            <?php if($message): 
+                $is_err_msg = (strpos($message, 'Error') !== false || strpos($message, 'Lỗi') !== false || strpos($message, '⚠️') !== false);
+            ?>
+                <div style="padding: 1rem 1.5rem; border-radius: 15px; margin-bottom: 1.5rem; font-weight: 600; display: flex; align-items: center; gap: 10px; <?php echo $is_err_msg ? 'background: #fef2f2; color: #dc2626; border: 1px solid #fecaca;' : 'background: #f0fdf4; color: #16a34a; border: 1px solid #bbf7d0;'; ?>">
+                    <i class="<?php echo $is_err_msg ? 'fas fa-exclamation-circle' : 'fas fa-check-circle'; ?>" style="font-size: 1.2rem;"></i>
+                    <span><?php echo htmlspecialchars(str_replace(['Error: ', '⚠️ '], '', $message)); ?></span>
+                </div>
             <?php endif; ?>
 
             <?php if ($page == 'dashboard'): ?>
@@ -822,7 +951,7 @@ if ($page == 'bookings' && isset($_GET['change_status']) && isset($_GET['booking
                                 <td>
                                     <div class="actions-cell-flex">
                                         <a href="/Gym Manager/dashboards/admin.php?page=products&edit_product=<?php echo $p['id']; ?>" class="action-btn btn-edit">Edit</a>
-                                        <a href="/Gym Manager/dashboards/admin.php?page=products&delete_product=<?php echo $p['id']; ?>" class="action-btn btn-delete" onclick="return confirm('Confirm delete this product?')">Delete</a>
+                                        <a href="/Gym Manager/dashboards/admin.php?page=products&delete_product=<?php echo $p['id']; ?>" class="action-btn btn-delete" onclick="return confirmLinkCustom(event, this, '<?php echo $current_lang === 'vi' ? 'Bạn có chắc chắn muốn xóa sản phẩm này?' : 'Confirm delete this product?'; ?>', '<?php echo $current_lang === 'vi' ? 'Xóa Sản Phẩm' : 'Delete Product'; ?>', '🗑️');">Delete</a>
                                     </div>
                                 </td>
                             </tr>
@@ -845,7 +974,7 @@ if ($page == 'bookings' && isset($_GET['change_status']) && isset($_GET['booking
                 <!-- Edit Form -->
                 <form method="POST" style="background: white; padding: 2.5rem; border-radius: 25px; margin: 2rem 0; border: 2px solid var(--primary); box-shadow: var(--shadow-premium);">
                     <input type="hidden" name="coach_id" value="<?php echo $edit_coach['id']; ?>">
-                    <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 1.5rem; margin-bottom: 1.5rem;">
+                    <div style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 1.5rem; margin-bottom: 1.5rem;">
                         <div class="form-group" style="margin-bottom: 0;">
                             <label style="font-weight: 600;">Full Name</label>
                             <input type="text" name="name" value="<?php echo htmlspecialchars($edit_coach['name']); ?>" required style="background: #f1f5f9;">
@@ -862,29 +991,9 @@ if ($page == 'bookings' && isset($_GET['change_status']) && isset($_GET['booking
                             <label style="font-weight: 600;">Rate/h ($)</label>
                             <input type="number" step="0.01" name="rate" value="<?php echo $edit_coach['hourly_rate']; ?>" required style="background: #f1f5f9;">
                         </div>
-                    </div>
-                    <div style="display: grid; grid-template-columns: 1fr 1fr 1fr 1fr; gap: 1.5rem; margin-bottom: 1.5rem;">
                         <div class="form-group" style="margin-bottom: 0;">
                             <label style="font-weight: 600;">Zalo Number/Link</label>
                             <input type="text" name="zalo" value="<?php echo htmlspecialchars($edit_coach['zalo'] ?? ''); ?>" placeholder="09xxxxxxx or link" style="background: #f1f5f9;">
-                        </div>
-                        <div class="form-group" style="margin-bottom: 0;">
-                            <label style="font-weight: 600;">Gmail Address</label>
-                            <input type="email" name="gmail" value="<?php echo htmlspecialchars($edit_coach['gmail'] ?? ''); ?>" placeholder="coach@gmail.com" style="background: #f1f5f9;">
-                        </div>
-                        <div class="form-group" style="margin-bottom: 0;">
-                            <label style="font-weight: 600;">Room Name</label>
-                            <select name="room_name" id="edit_room_name" onchange="updateAdminRoomOptions('edit_room_name', 'edit_room_number')" style="padding: 1.1rem; border-radius: 15px; background: #f1f5f9; border: none; width: 100%; outline: none; font-weight: 600; height: 54px;">
-                                <option value="Gym">Gym</option>
-                                <option value="Muay">Muay</option>
-                                <option value="Yoga">Yoga</option>
-                            </select>
-                        </div>
-                        <div class="form-group" style="margin-bottom: 0;">
-                            <label style="font-weight: 600;">Room Number</label>
-                            <select name="room_number" id="edit_room_number" style="padding: 1.1rem; border-radius: 15px; background: #f1f5f9; border: none; width: 100%; outline: none; font-weight: 600; height: 54px;">
-                                <!-- Will be populated dynamically -->
-                            </select>
                         </div>
                     </div>
                     <div style="display: flex; gap: 0.8rem;">
@@ -894,7 +1003,7 @@ if ($page == 'bookings' && isset($_GET['change_status']) && isset($_GET['booking
                 </form>
                 <?php else: ?>
                 <form method="POST" style="background: white; padding: 2.5rem; border-radius: 25px; margin: 2rem 0; box-shadow: var(--shadow-premium); border: 1px solid var(--border);">
-                    <div style="display: grid; grid-template-columns: 2fr 1fr; gap: 1.5rem; margin-bottom: 1.5rem;">
+                    <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 1.5rem; margin-bottom: 1.5rem;">
                         <div class="form-group" style="margin-bottom: 0;">
                             <label style="font-weight: 600;">Full Name</label>
                             <input type="text" name="name" required placeholder="e.g. John Doe" style="background: #f1f5f9;">
@@ -902,6 +1011,10 @@ if ($page == 'bookings' && isset($_GET['change_status']) && isset($_GET['booking
                         <div class="form-group" style="margin-bottom: 0;">
                             <label style="font-weight: 600;">Email (Account)</label>
                             <input type="email" name="email" required placeholder="john@gymx.com" style="background: #f1f5f9;">
+                        </div>
+                        <div class="form-group" style="margin-bottom: 0;">
+                            <label style="font-weight: 600;">Password</label>
+                            <input type="password" name="password" required placeholder="******" style="background: #f1f5f9;">
                         </div>
                     </div>
                     <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 1.5rem; margin-bottom: 1.5rem;">
@@ -921,24 +1034,6 @@ if ($page == 'bookings' && isset($_GET['change_status']) && isset($_GET['booking
                             <label style="font-weight: 600;">Zalo Number</label>
                             <input type="text" name="zalo" placeholder="09xxxxxxxx" style="background: #f1f5f9;">
                         </div>
-                        <div class="form-group" style="margin-bottom: 0;">
-                            <label style="font-weight: 600;">Contact Gmail</label>
-                            <input type="email" name="gmail" placeholder="coach@gmail.com" style="background: #f1f5f9;">
-                        </div>
-                        <div class="form-group" style="margin-bottom: 0;">
-                            <label style="font-weight: 600;">Room Name</label>
-                            <select name="room_name" id="add_room_name" onchange="updateAdminRoomOptions('add_room_name', 'add_room_number')" style="padding: 1.1rem; border-radius: 15px; background: #f1f5f9; border: none; width: 100%; outline: none; font-weight: 600; height: 54px;">
-                                <option value="Gym">Gym</option>
-                                <option value="Muay">Muay</option>
-                                <option value="Yoga">Yoga</option>
-                            </select>
-                        </div>
-                        <div class="form-group" style="margin-bottom: 0;">
-                            <label style="font-weight: 600;">Room Number</label>
-                            <select name="room_number" id="add_room_number" style="padding: 1.1rem; border-radius: 15px; background: #f1f5f9; border: none; width: 100%; outline: none; font-weight: 600; height: 54px;">
-                                <!-- Will be populated dynamically -->
-                            </select>
-                        </div>
                     </div>
                     <button type="submit" name="add_coach" class="btn-auth" style="margin-top: 0; width: auto; padding: 1.1rem 2.8rem;">Add Coach</button>
                 </form>
@@ -951,8 +1046,6 @@ if ($page == 'bookings' && isset($_GET['change_status']) && isset($_GET['booking
                                 <th>Name</th>
                                 <th><?php echo __("email"); ?></th>
                                 <th>Specialty</th>
-                                <th>Room Name</th>
-                                <th>Room Number</th>
                                 <th>Rate/h</th>
                                 <th><?php echo __("actions"); ?></th>
                             </tr>
@@ -965,13 +1058,11 @@ if ($page == 'bookings' && isset($_GET['change_status']) && isset($_GET['booking
                                 <td><?php echo htmlspecialchars($c['name'] ?? ''); ?></td>
                                 <td><?php echo htmlspecialchars($c['email'] ?? ''); ?></td>
                                 <td><?php echo htmlspecialchars($c['specialty'] ?? ''); ?></td>
-                                <td><?php echo !empty($c['room_name']) ? htmlspecialchars($c['room_name']) : '<span style="color:#aaa;">—</span>'; ?></td>
-                                <td><?php echo !empty($c['room_number']) ? '<strong style="color:var(--primary);">' . htmlspecialchars($c['room_number']) . '</strong>' : '<span style="color:#aaa;">—</span>'; ?></td>
                                 <td>$<?php echo htmlspecialchars($c['hourly_rate'] ?? '0'); ?></td>
                                 <td>
                                     <div class="actions-cell-flex">
                                         <a href="/Gym Manager/dashboards/admin.php?page=coaches&edit_coach=<?php echo $c['id']; ?>" class="action-btn btn-edit" style="font-size: 0.8rem; padding: 5px 10px; display: inline-block;">Edit</a>
-                                        <a href="/Gym Manager/dashboards/admin.php?page=coaches&delete_coach=<?php echo $c['id']; ?>" class="action-btn btn-delete" style="font-size: 0.8rem; padding: 5px 10px; display: inline-block;" onclick="return confirm('Confirm delete this coach?')">Delete</a>
+                                        <a href="/Gym Manager/dashboards/admin.php?page=coaches&delete_coach=<?php echo $c['id']; ?>" class="action-btn btn-delete" style="font-size: 0.8rem; padding: 5px 10px; display: inline-block;" onclick="return confirmLinkCustom(event, this, '<?php echo $current_lang === 'vi' ? 'Xác nhận xóa tài khoản HLV này?' : 'Confirm delete this coach?'; ?>', '<?php echo $current_lang === 'vi' ? 'Xóa HLV' : 'Delete Coach'; ?>', '🗑️');">Delete</a>
                                     </div>
                                 </td>
                             </tr>
@@ -979,58 +1070,6 @@ if ($page == 'bookings' && isset($_GET['change_status']) && isset($_GET['booking
                         </tbody>
                     </table>
                 </div>
-
-                <script>
-                function updateAdminRoomOptions(roomNameId, roomNumberId) {
-                    const nameSelect = document.getElementById(roomNameId);
-                    if (!nameSelect) return;
-                    const roomNameVal = nameSelect.value;
-                    const numberSelect = document.getElementById(roomNumberId);
-                    if (!numberSelect) return;
-                    
-                    numberSelect.innerHTML = '';
-                    
-                    const nameLower = roomNameVal.toLowerCase();
-                    let rooms = [];
-                    if (nameLower.includes('gym')) {
-                        rooms = ['Room 1', 'Room 2', 'Room 3'];
-                    } else if (nameLower.includes('muay')) {
-                        rooms = ['Room 4', 'Room 5', 'Room 6', 'Room 7'];
-                    } else if (nameLower.includes('yoga')) {
-                        rooms = ['Room 8', 'Room 9', 'Room 10'];
-                    } else {
-                        rooms = ['Room 1', 'Room 2', 'Room 3', 'Room 4', 'Room 5', 'Room 6', 'Room 7', 'Room 8', 'Room 9', 'Room 10'];
-                    }
-                    
-                    rooms.forEach(r => {
-                        const opt = document.createElement('option');
-                        opt.value = r;
-                        opt.textContent = r;
-                        numberSelect.appendChild(opt);
-                    });
-                }
-                
-                // Initialize for Add form if present
-                if (document.getElementById('add_room_name')) {
-                    updateAdminRoomOptions('add_room_name', 'add_room_number');
-                }
-                // Initialize for Edit form if present
-                if (document.getElementById('edit_room_name')) {
-                    const savedRoomName = "<?php echo isset($edit_coach) ? htmlspecialchars($edit_coach['room_name'] ?? 'Gym') : 'Gym'; ?>";
-                    const savedRoomNumber = "<?php echo isset($edit_coach) ? htmlspecialchars($edit_coach['room_number'] ?? '') : ''; ?>";
-                    
-                    let cleanName = 'Gym';
-                    if (savedRoomName.toLowerCase().includes('gym')) cleanName = 'Gym';
-                    else if (savedRoomName.toLowerCase().includes('muay')) cleanName = 'Muay';
-                    else if (savedRoomName.toLowerCase().includes('yoga')) cleanName = 'Yoga';
-                    
-                    document.getElementById('edit_room_name').value = cleanName;
-                    updateAdminRoomOptions('edit_room_name', 'edit_room_number');
-                    if (savedRoomNumber) {
-                        document.getElementById('edit_room_number').value = savedRoomNumber;
-                    }
-                }
-                </script>
 
             <?php elseif ($page == 'managers'): 
                 $edit_mgr = null;
@@ -1121,7 +1160,7 @@ if ($page == 'bookings' && isset($_GET['change_status']) && isset($_GET['booking
                                 <td>
                                     <div class="actions-cell-flex">
                                         <a href="/Gym Manager/dashboards/admin.php?page=managers&edit_manager=<?php echo $m['id']; ?>" class="action-btn btn-edit" style="font-size: 0.75rem; padding: 8px 12px;">Edit</a>
-                                        <a href="/Gym Manager/dashboards/admin.php?page=managers&delete_manager=<?php echo $m['id']; ?>" class="action-btn btn-delete" style="font-size: 0.75rem; padding: 8px 12px;" onclick="return confirm('Confirm delete this manager account?')">Delete</a>
+                                        <a href="/Gym Manager/dashboards/admin.php?page=managers&delete_manager=<?php echo $m['id']; ?>" class="action-btn btn-delete" style="font-size: 0.75rem; padding: 8px 12px;" onclick="return confirmLinkCustom(event, this, '<?php echo $current_lang === 'vi' ? 'Xác nhận xóa tài khoản Quản lý này?' : 'Confirm delete this manager account?'; ?>', '<?php echo $current_lang === 'vi' ? 'Xóa Quản Lý' : 'Delete Manager'; ?>', '🗑️');">Delete</a>
                                     </div>
                                 </td>
                             </tr>
@@ -1148,7 +1187,8 @@ if ($page == 'bookings' && isset($_GET['change_status']) && isset($_GET['booking
                 <!-- Add New User Form -->
                 <form method="POST" style="background: white; padding: 2.5rem; border-radius: 25px; margin: 2rem 0; box-shadow: var(--shadow-premium); border: 1px solid var(--border);">
                     <h3 style="margin-bottom: 1.5rem; color: var(--text-main);">Add New User</h3>
-                    <div style="display: grid; grid-template-columns: repeat(4, 1fr) auto; gap: 1.5rem; align-items: flex-end;">
+                    <input type="hidden" name="role" value="user">
+                    <div style="display: grid; grid-template-columns: repeat(3, 1fr) auto; gap: 1.5rem; align-items: flex-end;">
                         <div class="form-group" style="margin-bottom: 0;">
                             <label style="font-weight: 600;">Full Name</label>
                             <input type="text" name="name" required placeholder="User Name" style="background: #f1f5f9;">
@@ -1160,15 +1200,6 @@ if ($page == 'bookings' && isset($_GET['change_status']) && isset($_GET['booking
                         <div class="form-group" style="margin-bottom: 0;">
                             <label style="font-weight: 600;">Password</label>
                             <input type="password" name="password" required placeholder="******" style="background: #f1f5f9;">
-                        </div>
-                        <div class="form-group" style="margin-bottom: 0;">
-                            <label style="font-weight: 600;"><?php echo __("role"); ?></label>
-                            <select name="role" style="padding: 1.1rem; border-radius: 15px; background: #f1f5f9; border: none; width: 100%; outline: none; font-weight: 600;">
-                                <option value="user">User</option>
-                                <option value="coach"><?php echo __("coach"); ?></option>
-                                <option value="manager">Manager</option>
-                                <option value="admin">Admin</option>
-                            </select>
                         </div>
                         <button type="submit" name="add_user" class="btn-auth" style="margin-top: 0; width: auto; padding: 1.1rem 1.8rem;">Add User</button>
                     </div>
@@ -1263,7 +1294,7 @@ if ($page == 'bookings' && isset($_GET['change_status']) && isset($_GET['booking
                                     <div class="actions-cell-flex">
                                         <a href="/Gym Manager/dashboards/admin.php?page=users&edit_user=<?php echo $u['id']; ?>" class="action-btn btn-edit" style="font-size: 0.75rem; padding: 8px 12px;">Edit</a>
                                         <?php if($u['id'] != $_SESSION['user_id']): ?>
-                                            <a href="/Gym Manager/dashboards/admin.php?page=users&delete_user=<?php echo $u['id']; ?>" class="action-btn btn-delete" style="font-size: 0.75rem; padding: 8px 12px;" onclick="return confirm('WARNING: Are you sure you want to delete this user? This action cannot be undone.')">Delete</a>
+                                            <a href="/Gym Manager/dashboards/admin.php?page=users&delete_user=<?php echo $u['id']; ?>" class="action-btn btn-delete" style="font-size: 0.75rem; padding: 8px 12px;" onclick="return confirmLinkCustom(event, this, '<?php echo $current_lang === 'vi' ? 'CẢNH BÁO: Bạn có chắc chắn muốn xóa người dùng này? Thao tác không thể hoàn tác.' : 'WARNING: Are you sure you want to delete this user? This action cannot be undone.'; ?>', '<?php echo $current_lang === 'vi' ? 'Xóa Người Dùng' : 'Delete User'; ?>', '⚠️');">Delete</a>
                                         <?php endif; ?>
                                     </div>
                                 </td>
@@ -1534,11 +1565,11 @@ if ($page == 'bookings' && isset($_GET['change_status']) && isset($_GET['booking
                                                 <a href="/Gym Manager/dashboards/admin.php?page=bookings&change_status=confirmed&booking_id=<?php echo $b['id']; ?>" class="action-btn btn-add" style="font-size: 0.75rem; padding: 6px 10px;" title="Approve booking">
                                                     <i class="fas fa-check"></i> Confirm
                                                 </a>
-                                                <a href="/Gym Manager/dashboards/admin.php?page=bookings&change_status=cancelled&booking_id=<?php echo $b['id']; ?>" class="action-btn btn-delete" style="font-size: 0.75rem; padding: 6px 10px;" title="Cancel booking" onclick="return confirm('Are you sure you want to cancel this booking?')">
+                                                <a href="/Gym Manager/dashboards/admin.php?page=bookings&change_status=cancelled&booking_id=<?php echo $b['id']; ?>" class="action-btn btn-delete" style="font-size: 0.75rem; padding: 6px 10px;" title="Cancel booking" onclick="return confirmLinkCustom(event, this, '<?php echo $current_lang === 'vi' ? 'Bạn có chắc chắn muốn hủy buổi tập này?' : 'Are you sure you want to cancel this booking?'; ?>', '<?php echo $current_lang === 'vi' ? 'Hủy Buổi Tập' : 'Cancel Booking'; ?>', '❌');">
                                                     <i class="fas fa-times"></i> Cancel
                                                 </a>
                                             <?php elseif ($b['status'] == 'confirmed'): ?>
-                                                <a href="/Gym Manager/dashboards/admin.php?page=bookings&change_status=cancelled&booking_id=<?php echo $b['id']; ?>" class="action-btn btn-delete" style="font-size: 0.75rem; padding: 6px 10px;" title="Cancel booking" onclick="return confirm('Are you sure you want to cancel this booking?')">
+                                                <a href="/Gym Manager/dashboards/admin.php?page=bookings&change_status=cancelled&booking_id=<?php echo $b['id']; ?>" class="action-btn btn-delete" style="font-size: 0.75rem; padding: 6px 10px;" title="Cancel booking" onclick="return confirmLinkCustom(event, this, '<?php echo $current_lang === 'vi' ? 'Bạn có chắc chắn muốn hủy buổi tập này?' : 'Are you sure you want to cancel this booking?'; ?>', '<?php echo $current_lang === 'vi' ? 'Hủy Buổi Tập' : 'Cancel Booking'; ?>', '❌');">
                                                     <i class="fas fa-times"></i> Cancel
                                                 </a>
                                             <?php elseif ($b['status'] == 'cancelled'): ?>
@@ -1551,7 +1582,7 @@ if ($page == 'bookings' && isset($_GET['change_status']) && isset($_GET['booking
                                                 <i class="fas fa-edit"></i> Edit
                                             </a>
                                             
-                                            <a href="/Gym Manager/dashboards/admin.php?page=bookings&delete_booking=<?php echo $b['id']; ?>" class="action-btn btn-delete" style="font-size: 0.75rem; padding: 6px 10px; background: #fff1f2; color: #ef4444;" title="Delete permanently" onclick="return confirm('WARNING: Are you sure you want to PERMANENTLY DELETE this booking?')">
+                                            <a href="/Gym Manager/dashboards/admin.php?page=bookings&delete_booking=<?php echo $b['id']; ?>" class="action-btn btn-delete" style="font-size: 0.75rem; padding: 6px 10px; background: #fff1f2; color: #ef4444;" title="Delete permanently" onclick="return confirmLinkCustom(event, this, '<?php echo $current_lang === 'vi' ? 'CẢNH BÁO: Bạn có chắc chắn muốn XÓA VĨNH VIỄN buổi tập này?' : 'WARNING: Are you sure you want to PERMANENTLY DELETE this booking?'; ?>', '<?php echo $current_lang === 'vi' ? 'Xóa Vĩnh Viễn' : 'Delete Permanently'; ?>', '🗑️');">
                                                 <i class="fas fa-trash-alt"></i> Delete
                                             </a>
                                         </div>

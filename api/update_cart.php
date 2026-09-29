@@ -20,16 +20,34 @@ if (empty($cart_key) || !isset($_SESSION['cart'][$cart_key])) {
     exit();
 }
 
+require_once __DIR__ . '/../config/db.php';
+
+$p_id = explode('_', $cart_key)[0];
+$st_prod = $pdo->prepare("SELECT stock FROM products WHERE id = ?");
+$st_prod->execute([$p_id]);
+$prod_data = $st_prod->fetch();
+$stock_limit = $prod_data ? intval($prod_data['stock']) : 99;
+
+$is_vi = (!isset($_SESSION['lang']) || $_SESSION['lang'] === 'vi');
+
 if ($action === 'remove' || ($action === 'set' && $quantity <= 0)) {
     unset($_SESSION['cart'][$cart_key]);
 } elseif ($action === 'change') {
-    $_SESSION['cart'][$cart_key] = max(1, min(99, $_SESSION['cart'][$cart_key] + $quantity));
+    $target_qty = ($_SESSION['cart'][$cart_key] ?? 0) + $quantity;
+    if ($target_qty > $stock_limit) {
+        $msg = $is_vi ? "Rất tiếc! Số lượng hàng trong kho không đủ (chỉ còn {$stock_limit} sản phẩm)." : "Sorry! Stock limit reached (only {$stock_limit} items available).";
+        echo json_encode(['success' => false, 'message' => $msg]);
+        exit();
+    }
+    $_SESSION['cart'][$cart_key] = max(1, min($stock_limit, $target_qty));
 } else {
-    $_SESSION['cart'][$cart_key] = max(1, min(99, $quantity));
+    if ($quantity > $stock_limit) {
+        $msg = $is_vi ? "Rất tiếc! Số lượng hàng trong kho không đủ (chỉ còn {$stock_limit} sản phẩm)." : "Sorry! Stock limit reached (only {$stock_limit} items available).";
+        echo json_encode(['success' => false, 'message' => $msg]);
+        exit();
+    }
+    $_SESSION['cart'][$cart_key] = max(1, min($stock_limit, $quantity));
 }
-
-// Calculate updated totals
-require_once __DIR__ . '/../config/db.php';
 $cart_keys = array_keys($_SESSION['cart'] ?? []);
 $total = 0;
 $item_subtotal = 0;

@@ -60,7 +60,7 @@ if (isset($_SESSION['user_id']) && $_SESSION['role'] === 'coach') {
                         <form method="POST" style="flex: 1;">
                             <button type="submit" name="acknowledge_booking" class="btn-auth" style="margin: 0; width: 100%; border-radius: 15px;"><?php echo $is_vi_cn ? 'Xác Nhận Tất Cả' : 'Acknowledge All'; ?></button>
                         </form>
-                        <a href="admin.php?page=bookings" class="action-btn" style="flex: 1; display: flex; align-items: center; justify-content: center; background: #f1f5f9; color: var(--text-muted); border-radius: 15px; text-decoration: none; font-weight: 700;"><?php echo $is_vi_cn ? 'Xem Lịch Tập' : 'View Dashboard'; ?></a>
+                        <a href="/Gym Manager/dashboards/coach_dashboard.php?tab=schedule" class="action-btn" style="flex: 1; display: flex; align-items: center; justify-content: center; background: #f1f5f9; color: var(--text-muted); border-radius: 15px; text-decoration: none; font-weight: 700;"><?php echo $is_vi_cn ? 'Xem Lịch Tập' : 'View Dashboard'; ?></a>
                     </div>
                 </div>
             </div>

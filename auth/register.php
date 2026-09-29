@@ -140,29 +140,29 @@ input.input-success {
         <p style="color: #00C851; text-align: center; margin-bottom: 1rem; font-weight: 600;"><?php echo $success; ?></p>
     <?php endif; ?>
 
-    <form method="POST" id="registerForm">
+    <form method="POST" id="registerForm" novalidate>
         <div class="form-group">
             <label><?php echo __('full_name'); ?></label>
-            <input type="text" name="name" id="registerName" required placeholder="<?php echo __('promo_name'); ?>" oninvalid="this.setCustomValidity('<?php echo addslashes(__('field_required_name')); ?>')" oninput="this.setCustomValidity('')">
+            <input type="text" name="name" id="registerName" placeholder="<?php echo __('promo_name'); ?>">
             <div id="nameFeedback" class="input-feedback-msg"></div>
         </div>
         <div class="form-group">
             <label><?php echo __('phone_number'); ?></label>
-            <input type="text" name="phone" id="registerPhone" required placeholder="<?php echo __('phone_number'); ?> (e.g. 0912345678)" pattern="[0-9]{10}" title="<?php echo __('phone_invalid'); ?>" oninvalid="if(this.validity.valueMissing){this.setCustomValidity('<?php echo addslashes(__('field_required_phone')); ?>');}else{this.setCustomValidity('<?php echo addslashes(__('phone_invalid')); ?>');}" oninput="this.setCustomValidity('')">
+            <input type="text" name="phone" id="registerPhone" placeholder="<?php echo __('phone_number'); ?> (e.g. 0912345678)">
             <div id="phoneFeedback" class="input-feedback-msg"></div>
         </div>
         <div class="form-group">
             <label><?php echo __('email'); ?></label>
-            <input type="email" name="email" id="registerEmail" required placeholder="example@gmail.com" oninvalid="if(this.validity.valueMissing){this.setCustomValidity('<?php echo addslashes(__('field_required_email')); ?>');}else{this.setCustomValidity('<?php echo addslashes(__('email_invalid_format')); ?>');}" oninput="this.setCustomValidity('')">
+            <input type="email" name="email" id="registerEmail" placeholder="example@gmail.com">
             <div id="emailFeedback" class="input-feedback-msg"></div>
         </div>
         <div class="form-group">
             <label><?php echo __('password'); ?></label>
-            <input type="password" name="password" id="registerPassword" required placeholder="••••••••" minlength="6" oninvalid="if(this.validity.valueMissing){this.setCustomValidity('<?php echo addslashes(__('field_required_password')); ?>');}else{this.setCustomValidity('<?php echo addslashes(__('password_min_length')); ?>');}" oninput="this.setCustomValidity('')">
+            <input type="password" name="password" id="registerPassword" placeholder="••••••••">
             <div id="passwordFeedback" class="input-feedback-msg"></div>
         </div>
         <div class="form-group" style="display: flex; align-items: center; gap: 10px; margin-bottom: 1.5rem; margin-top: 1rem;">
-            <input type="checkbox" name="agreement" required id="user_agreement" style="width: 18px; height: 18px; cursor: pointer;" oninvalid="this.setCustomValidity('<?php echo addslashes(__('agree_terms_error')); ?>')" oninput="this.setCustomValidity('')">
+            <input type="checkbox" name="agreement" id="user_agreement" style="width: 18px; height: 18px; cursor: pointer;">
             <label for="user_agreement" style="font-size: 0.9rem; color: var(--text-main); cursor: pointer; user-select: none;">
                 <?php echo __('agree_to_terms'); ?> <a href="/Gym Manager/pages/terms.php" style="color: var(--primary); text-decoration: underline;"><?php echo __('terms_of_service'); ?></a> <?php echo __('and'); ?> <a href="/Gym Manager/pages/privacy.php" style="color: var(--primary); text-decoration: underline;"><?php echo __('privacy_policy'); ?></a>.
             </label>
@@ -335,31 +335,44 @@ document.addEventListener('DOMContentLoaded', function() {
             const isPassValid = validatePassword();
             const isPhoneEmpty = !phoneInput.value.trim();
             const isEmailEmpty = !emailInput.value.trim();
+            const agreementInput = document.getElementById('user_agreement');
+            const isVi = (typeof GYMX_LANG !== 'undefined' ? GYMX_LANG : 'vi') === 'vi';
 
             if (isPhoneEmpty) checkField('phone', phoneInput, phoneFeedback, MSG_REQ_PHONE);
             if (isEmailEmpty) checkField('email', emailInput, emailFeedback, MSG_REQ_EMAIL);
 
             if (!isNameValid) {
                 e.preventDefault();
+                showGymXAlert(MSG_REQ_NAME, isVi ? 'Thiếu Thông Tin' : 'Name Required', '👤');
                 nameInput.focus();
                 return false;
             }
 
             if (isPhoneEmpty || phoneInput.dataset.duplicate === 'true' || phoneInput.classList.contains('input-error')) {
                 e.preventDefault();
+                showGymXAlert(isVi ? 'Vui lòng kiểm tra lại số điện thoại (10 chữ số).' : 'Please enter a valid 10-digit phone number.', isVi ? 'Lỗi Số Điện Thoại' : 'Invalid Phone', '📱');
                 phoneInput.focus();
                 return false;
             }
 
             if (isEmailEmpty || emailInput.dataset.duplicate === 'true' || emailInput.classList.contains('input-error')) {
                 e.preventDefault();
+                showGymXAlert(isVi ? 'Vui lòng kiểm tra lại địa chỉ email.' : 'Please check your email address.', isVi ? 'Lỗi Email' : 'Invalid Email', '📧');
                 emailInput.focus();
                 return false;
             }
 
             if (!isPassValid) {
                 e.preventDefault();
+                showGymXAlert(MSG_MIN_PASS, isVi ? 'Lỗi Mật Khẩu' : 'Invalid Password', '🔒');
                 passInput.focus();
+                return false;
+            }
+
+            if (agreementInput && !agreementInput.checked) {
+                e.preventDefault();
+                showGymXAlert(isVi ? 'Bạn cần đồng ý với Điều khoản dịch vụ và Chính sách bảo mật.' : 'You must agree to the Terms of Service and Privacy Policy.', isVi ? 'Điều Khoản Dịch Vụ' : 'Terms Agreement', '📜');
+                agreementInput.focus();
                 return false;
             }
         });

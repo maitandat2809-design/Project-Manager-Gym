@@ -8,7 +8,7 @@ $coach_avatars = [
     // Dat Coach (Gym & Fitness) - User ID 7
     7 => 'https://images.unsplash.com/photo-1567013127542-490d757e51fc?q=80&w=1000&auto=format&fit=crop',
     
-    // Hung Muay Thai (Muay Thai & Kickboxing) - User ID 10
+    // Hung Muay Thai (Muay Thai) - User ID 10
     10 => 'https://images.unsplash.com/photo-1549719386-74dfcbf7dbed?q=80&w=1000&auto=format&fit=crop',
     
     // Phuc Gym (Gym & Fitness) - User ID 14

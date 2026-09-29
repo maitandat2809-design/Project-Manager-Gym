@@ -9,8 +9,11 @@ require_once __DIR__ . '/../includes/lang.php';
 
 header('Content-Type: application/json');
 
+$current_lang = $_SESSION['lang'] ?? 'en';
+$is_vi = ($current_lang === 'vi');
+
 if (!isset($_SESSION['user_id'])) {
-    echo json_encode(['success' => false, 'message' => 'Vui lòng đăng nhập để mua thẻ thành viên.']);
+    echo json_encode(['success' => false, 'message' => $is_vi ? 'Vui lòng đăng nhập để mua thẻ thành viên.' : 'Please log in to purchase a membership.']);
     exit();
 }
 
@@ -28,11 +31,11 @@ if ($action === 'cancel_membership' || $action === 'delete_membership') {
         $stmt_c = $pdo->prepare("DELETE FROM member_subscriptions WHERE id = ? AND user_id = ?");
         $stmt_c->execute([$sub_id, $user_id]);
         if ($stmt_c->rowCount() > 0) {
-            echo json_encode(['success' => true, 'message' => ($_SESSION['lang'] ?? 'vi') === 'en' ? 'Previous membership deleted successfully.' : 'Đã xóa thẻ thành viên trước đó thành công.']);
+            echo json_encode(['success' => true, 'message' => $is_vi ? 'Đã xóa thẻ thành viên trước đó thành công.' : 'Previous membership deleted successfully.']);
             exit();
         }
     }
-    echo json_encode(['success' => false, 'message' => ($_SESSION['lang'] ?? 'vi') === 'en' ? 'Failed to delete membership.' : 'Không thể xóa thẻ thành viên.']);
+    echo json_encode(['success' => false, 'message' => $is_vi ? 'Không thể xóa thẻ thành viên.' : 'Failed to delete membership.']);
     exit();
 }
 
@@ -41,7 +44,7 @@ $payment_method = $_POST['payment_method'] ?? 'cod';
 $note           = trim($_POST['note'] ?? '');
 
 if ($plan_id <= 0) {
-    echo json_encode(['success' => false, 'message' => 'Vui lòng chọn gói thành viên hợp lệ.']);
+    echo json_encode(['success' => false, 'message' => $is_vi ? 'Vui lòng chọn gói thành viên hợp lệ.' : 'Please select a valid membership plan.']);
     exit();
 }
 
@@ -51,11 +54,9 @@ $stmt->execute([$plan_id]);
 $plan = $stmt->fetch();
 
 if (!$plan) {
-    echo json_encode(['success' => false, 'message' => 'Gói thành viên không tồn tại.']);
+    echo json_encode(['success' => false, 'message' => $is_vi ? 'Gói thành viên không tồn tại.' : 'Membership plan not found.']);
     exit();
 }
-
-$current_lang = $_SESSION['lang'] ?? 'vi';
 
 // Check if user already has ANY active or pending subscription
 $stmt_check_any = $pdo->prepare("
@@ -183,5 +184,5 @@ try {
 
 } catch (Exception $e) {
     error_log("Membership create error: " . $e->getMessage());
-    echo json_encode(['success' => false, 'message' => 'Đã xảy ra lỗi. Vui lòng thử lại.']);
+    echo json_encode(['success' => false, 'message' => $is_vi ? 'Đã xảy ra lỗi. Vui lòng thử lại.' : 'An error occurred. Please try again.']);
 }

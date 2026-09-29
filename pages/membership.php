@@ -7,7 +7,7 @@ if (isset($_SESSION['role']) && in_array($_SESSION['role'], ['coach', 'manager',
 require_once __DIR__ . '/../config/db.php';
 include_once __DIR__ . '/../includes/header.php';
 
-$current_lang = $_SESSION['lang'] ?? 'vi';
+$current_lang = $_SESSION['lang'] ?? 'en';
 
 // Fetch current user info
 $user_name_qr = '';
@@ -606,8 +606,8 @@ function submitMembership() {
 
     // ── MoMo Payment ─────────────────────────────────────────────
     if (method === 'momo') {
-        btn.innerHTML = '<i class="fas fa-spinner fa-spin" style="margin-right:8px;"></i>Đang kết nối MoMo...';
-        fetch('/gymmanager/api/momo_pay_membership.php', {
+        btn.innerHTML = '<i class="fas fa-spinner fa-spin" style="margin-right:8px;"></i><?php echo $current_lang === "vi" ? "Đang kết nối MoMo..." : "Connecting to MoMo..."; ?>';
+        fetch('/Gym Manager/api/momo_pay_membership.php', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ plan_id: parseInt(selectedPlanId) })
@@ -619,13 +619,13 @@ function submitMembership() {
             } else {
                 btn.disabled = false;
                 btn.innerHTML = '<i class="fas fa-check-circle" style="margin-right:8px;"></i><?php echo $current_lang === "vi" ? "Xác Nhận Đăng Ký" : "Confirm Registration"; ?>';
-                alert('❌ ' + (data.message || 'Lỗi kết nối MoMo'));
+                alert('❌ ' + (data.message || '<?php echo $current_lang === "vi" ? "Lỗi kết nối MoMo" : "MoMo connection error"; ?>'));
             }
         })
         .catch(() => {
             btn.disabled = false;
             btn.innerHTML = '<i class="fas fa-check-circle" style="margin-right:8px;"></i><?php echo $current_lang === "vi" ? "Xác Nhận Đăng Ký" : "Confirm Registration"; ?>';
-            alert('❌ Không thể kết nối đến máy chủ.');
+            alert('❌ <?php echo $current_lang === "vi" ? "Không thể kết nối đến máy chủ." : "Could not connect to server."; ?>');
         });
         return;
     }
@@ -718,9 +718,9 @@ function showPendingView(data) {
             <p style="color:#64748b;font-size:.9rem;margin-bottom:1.4rem;"><?php echo $current_lang === "vi" ? "Thẻ của bạn sẽ được kích hoạt tại quầy giao dịch sau khi xác nhận thông tin." : "Your membership card will be activated at the counter upon verification."; ?></p>
             
             <div style="background:#f8fafc;border:1.5px solid #e2e8f0;border-radius:14px;padding:1.2rem;margin-bottom:1.5rem;text-align:left;">
-                <p style="margin:6px 0;font-size:.9rem;"><strong>💳 Gói đăng ký:</strong> <span style="color:#2563eb;font-weight:800;">${data.plan_name || ''}</span></p>
-                <p style="margin:6px 0;font-size:.9rem;"><strong>💰 Số tiền:</strong> <span style="color:#ef4444;font-weight:800;">${data.price}</span></p>
-                <p style="margin:6px 0;font-size:.9rem;"><strong>💵 Phương thức:</strong> <span style="color:#059669;font-weight:700;"><?php echo $current_lang === "vi" ? "Thanh toán trực tiếp tại quầy" : "Pay at counter"; ?></span></p>
+                <p style="margin:6px 0;font-size:.9rem;"><strong>💳 <?php echo $current_lang === "vi" ? "Gói đăng ký:" : "Registered Package:"; ?></strong> <span style="color:#2563eb;font-weight:800;">${data.plan_name || ''}</span></p>
+                <p style="margin:6px 0;font-size:.9rem;"><strong>💰 <?php echo $current_lang === "vi" ? "Số tiền:" : "Amount:"; ?></strong> <span style="color:#ef4444;font-weight:800;">${data.price}</span></p>
+                <p style="margin:6px 0;font-size:.9rem;"><strong>💵 <?php echo $current_lang === "vi" ? "Phương thức:" : "Payment Method:"; ?></strong> <span style="color:#059669;font-weight:700;"><?php echo $current_lang === "vi" ? "Thanh toán trực tiếp tại quầy" : "Pay at counter"; ?></span></p>
             </div>
             <div style="display:flex;gap:10px;justify-content:center;flex-wrap:wrap;">
                 <button onclick="closeMemberModal(); location.reload();" style="background:linear-gradient(135deg,#2563eb,#1d4ed8);color:#fff;border:none;padding:.85rem 2rem;border-radius:12px;font-weight:700;cursor:pointer;font-size:.95rem;box-shadow:0 4px 15px rgba(37,99,235,0.3);">

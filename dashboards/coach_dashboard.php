@@ -114,19 +114,56 @@ if (isset($_POST['add_class'])) {
     exit();
 }
 
-// Handle Class Details Update
+// Handle Class Details & Schedule Date/Time Update
 if (isset($_POST['update_class_details'])) {
     $booking_id = $_POST['booking_id'];
-    $class_name = $_POST['class_name'];
-    $specialty = $_POST['specialty'];
-    $room_number = $_POST['room_number'];
-    $training_plan = $_POST['training_plan'];
-    $attendance = $_POST['attendance'];
+    $class_name = $_POST['class_name'] ?? '';
+    $specialty = $_POST['specialty'] ?? '';
+    $room_number = $_POST['room_number'] ?? '';
+    $training_plan = $_POST['training_plan'] ?? '';
+    $attendance = $_POST['attendance'] ?? 'pending';
     $coach_message = $_POST['coach_message'] ?? '';
+    $booking_date = $_POST['booking_date'] ?? '';
 
-    $stmt = $pdo->prepare("UPDATE bookings SET class_name = ?, specialty = ?, room_number = ?, training_plan = ?, attendance = ?, coach_message = ? WHERE id = ? AND coach_id = ?");
-    $stmt->execute([$class_name, $specialty, $room_number, $training_plan, $attendance, $coach_message, $booking_id, $coach_id]);
-    header("Location: /Gym Manager/dashboards/coach_dashboard.php?tab=schedule&success=" . urlencode("Cập nhật thông tin lớp học thành công"));
+    if (!empty($booking_date)) {
+        // Check for time conflict with coach's other bookings
+        $chk_stmt = $pdo->prepare("SELECT id FROM bookings WHERE coach_id = ? AND booking_date = ? AND id != ? AND status != 'cancelled'");
+        $chk_stmt->execute([$coach_id, $booking_date, $booking_id]);
+        if ($chk_stmt->fetch()) {
+            header("Location: /Gym Manager/dashboards/coach_dashboard.php?tab=schedule&error=" . urlencode("Khung giờ dạy này bị trùng với một lịch học khác của bạn!"));
+            exit();
+        }
+
+        $stmt = $pdo->prepare("UPDATE bookings SET booking_date = ?, class_name = ?, specialty = ?, room_number = ?, training_plan = ?, attendance = ?, coach_message = ? WHERE id = ? AND coach_id = ?");
+        $stmt->execute([$booking_date, $class_name, $specialty, $room_number, $training_plan, $attendance, $coach_message, $booking_id, $coach_id]);
+    } else {
+        $stmt = $pdo->prepare("UPDATE bookings SET class_name = ?, specialty = ?, room_number = ?, training_plan = ?, attendance = ?, coach_message = ? WHERE id = ? AND coach_id = ?");
+        $stmt->execute([$class_name, $specialty, $room_number, $training_plan, $attendance, $coach_message, $booking_id, $coach_id]);
+    }
+
+    header("Location: /Gym Manager/dashboards/coach_dashboard.php?tab=schedule&success=" . urlencode("Cập nhật thông tin và lịch dạy thành công"));
+    exit();
+}
+
+// Handle Cancel/Delete Class
+if (isset($_POST['delete_class'])) {
+    $booking_id = (int)$_POST['booking_id'];
+
+    $stmt_chk = $pdo->prepare("SELECT user_id FROM bookings WHERE id = ? AND coach_id = ?");
+    $stmt_chk->execute([$booking_id, $coach_id]);
+    $bk_info = $stmt_chk->fetch();
+
+    if ($bk_info) {
+        if (empty($bk_info['user_id'])) {
+            $stmt = $pdo->prepare("DELETE FROM bookings WHERE id = ? AND coach_id = ?");
+            $stmt->execute([$booking_id, $coach_id]);
+            header("Location: /Gym Manager/dashboards/coach_dashboard.php?tab=schedule&success=" . urlencode("Đã xóa lớp học khỏi lịch dạy"));
+        } else {
+            $stmt = $pdo->prepare("UPDATE bookings SET status = 'cancelled' WHERE id = ? AND coach_id = ?");
+            $stmt->execute([$booking_id, $coach_id]);
+            header("Location: /Gym Manager/dashboards/coach_dashboard.php?tab=schedule&success=" . urlencode("Đã hủy buổi dạy thành công"));
+        }
+    }
     exit();
 }
 
@@ -278,6 +315,7 @@ $c_info = $coach_details->fetch();
                                         <?php else: ?>
                                             <button type="button" onclick='openClassModal(<?php echo json_encode([
                                                 "id" => $b["id"],
+                                                "booking_date" => date("Y-m-d\TH:i", strtotime($b["booking_date"])),
                                                 "class_name" => $b["class_name"] ?? "",
                                                 "specialty" => $b["specialty"] ?? "",
                                                 "room_number" => $b["room_number"] ?? "",
@@ -285,7 +323,7 @@ $c_info = $coach_details->fetch();
                                                 "attendance" => $b["attendance"] ?? "pending",
                                                 "coach_message" => $b["coach_message"] ?? ""
                                             ]); ?>)' class="action-btn" style="font-size: 0.85rem; padding: 8px 12px; cursor: pointer; border: none; width: 100%; justify-content: center; background: var(--primary); color: white; border-radius: 8px;">
-                                                <i class="fas fa-edit" style="margin-right: 5px;"></i> Manage Class
+                                                <i class="fas fa-edit" style="margin-right: 5px;"></i> <?php echo __('update_class_title'); ?>
                                             </button>
 
                                         <?php endif; ?>
@@ -308,6 +346,11 @@ $c_info = $coach_details->fetch();
                     <form method="POST">
                         <input type="hidden" name="booking_id" id="modal_booking_id">
                         
+                        <div class="form-group" style="margin-bottom: 15px;">
+                            <label style="font-weight: 600; color: var(--text-main);"><i class="far fa-clock" style="margin-right: 5px; color: var(--primary);"></i> <?php echo __('date'); ?> / Thời Gian Dạy</label>
+                            <input type="datetime-local" name="booking_date" id="modal_booking_date" required style="width: 100%; padding: 10px 15px; border-radius: 10px; border: 1px solid #cbd5e1; outline: none; background: #f8fafc; font-weight: 600;">
+                        </div>
+
                         <div class="form-group" style="margin-bottom: 15px;">
                             <label style="font-weight: 600; color: var(--text-main);"><?php echo __('class_name_label'); ?></label>
                             <input type="text" name="class_name" id="modal_class_name" placeholder="<?php echo __('class_name_placeholder'); ?>" style="width: 100%; padding: 10px 15px; border-radius: 10px; border: 1px solid #cbd5e1; outline: none; background: #f8fafc;">
@@ -348,7 +391,10 @@ $c_info = $coach_details->fetch();
                             </select>
                         </div>
 
-                        <button type="submit" name="update_class_details" class="btn-auth" style="width: 100%; padding: 12px; font-size: 1.1rem; border-radius: 10px;"><?php echo __('save_class_btn'); ?></button>
+                        <div style="display: flex; gap: 10px; margin-top: 15px;">
+                            <button type="submit" name="update_class_details" class="btn-auth" style="flex: 1; padding: 12px; font-size: 1rem; border-radius: 10px;"><i class="fas fa-save" style="margin-right: 5px;"></i> <?php echo __('save_class_btn'); ?></button>
+                            <button type="submit" name="delete_class" onclick="return confirmOrderCustom(event, this.form, '<?php echo $current_lang === 'vi' ? 'Bạn có chắc chắn muốn hủy / xóa buổi dạy này không?' : 'Are you sure you want to cancel / delete this class?'; ?>', '<?php echo $current_lang === 'vi' ? 'Hủy Lịch Dạy' : 'Cancel Class'; ?>', '❌');" class="btn-auth" style="background: #ef4444; flex: 1; padding: 12px; font-size: 1rem; border-radius: 10px; color: white;"><i class="fas fa-trash-alt" style="margin-right: 5px;"></i> Hủy Lịch Dạy</button>
+                        </div>
                     </form>
                 </div>
             </div>
@@ -425,6 +471,7 @@ $c_info = $coach_details->fetch();
 
             function openClassModal(data) {
                 document.getElementById('modal_booking_id').value = data.id;
+                document.getElementById('modal_booking_date').value = data.booking_date || '';
                 document.getElementById('modal_class_name').value = data.class_name;
                 
                 // set specialty select value

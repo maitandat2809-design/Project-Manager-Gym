@@ -395,7 +395,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
                 </div>
             <?php endif; ?>
 
-            <form method="POST" id="checkoutForm">
+            <form method="POST" id="checkoutForm" novalidate>
                 <div style="background: #f8fafc; padding: 2rem; border-radius: 20px; margin-bottom: 2rem; border: 1px solid var(--border);">
                     <h3 style="margin-bottom: 1.5rem; color: var(--text-main); font-weight: 700;"><?php echo __('order_summary'); ?></h3>
                     <div id="checkoutItemsList">
@@ -472,6 +472,9 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
                 </div>
 
                 <button type="button" class="btn-auth" id="btnCheckout" onclick="confirmCheckout()"><?php echo __('complete_order'); ?></button>
+                <a href="/Gym Manager/pages/cart.php" style="display: flex; align-items: center; justify-content: center; gap: 8px; width: 100%; margin-top: 12px; padding: 1.1rem; background: #f1f5f9; color: #475569; border-radius: 14px; font-weight: 800; font-size: 1rem; text-decoration: none; transition: all 0.25s ease; border: 1.5px solid #e2e8f0; box-sizing: border-box;" onmouseover="this.style.background='#e2e8f0'; this.style.color='#0f172a';" onmouseout="this.style.background='#f1f5f9'; this.style.color='#475569';">
+                    <i class="fas fa-arrow-left"></i> <?php echo __('back_to_cart'); ?>
+                </a>
             </form>
         <?php endif; ?>
     </div>
@@ -575,22 +578,49 @@ function confirmCheckout() {
     var phoneInput   = document.querySelector('input[name="phone"]');
     var addressInput = document.querySelector('input[name="address"]');
     var payMethod    = document.querySelector('input[name="payment_method"]:checked').value;
+    var isVi = (typeof GYMX_LANG !== 'undefined' ? GYMX_LANG : 'vi') === 'vi';
 
-    if (!form.checkValidity()) {
-        var invalidInput = form.querySelector(':invalid');
-        if (invalidInput) {
-            invalidInput.scrollIntoView({ behavior: 'smooth', block: 'center' });
-            invalidInput.focus();
-            invalidInput.style.borderColor = '#ef4444';
-            invalidInput.style.boxShadow = '0 0 0 3px rgba(239, 68, 68, 0.2)';
-            setTimeout(function() { invalidInput.style.borderColor = ''; invalidInput.style.boxShadow = ''; }, 2500);
+    var address = addressInput ? addressInput.value.trim() : '';
+    var phone   = phoneInput   ? phoneInput.value.trim()   : '';
+
+    if (!address) {
+        if (addressInput) {
+            addressInput.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            addressInput.focus();
         }
-        form.reportValidity();
+        showGymXAlert(
+            isVi ? 'Vui lòng nhập địa chỉ giao hàng.' : 'Please enter your shipping address.',
+            isVi ? 'Thiếu Địa Chỉ' : 'Address Required',
+            '🏠'
+        );
         return;
     }
 
-    var phone   = phoneInput   ? phoneInput.value.trim()   : '';
-    var address = addressInput ? addressInput.value.trim() : '';
+    if (!phone) {
+        if (phoneInput) {
+            phoneInput.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            phoneInput.focus();
+        }
+        showGymXAlert(
+            isVi ? 'Vui lòng nhập số điện thoại giao hàng.' : 'Please enter your phone number.',
+            isVi ? 'Thiếu Số Điện Thoại' : 'Phone Required',
+            '📱'
+        );
+        return;
+    }
+
+    if (!/^[0-9]{10}$/.test(phone)) {
+        if (phoneInput) {
+            phoneInput.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            phoneInput.focus();
+        }
+        showGymXAlert(
+            isVi ? 'Số điện thoại không hợp lệ (phải bao gồm 10 chữ số).' : 'Invalid phone number (must be 10 digits).',
+            isVi ? 'Số Điện Thoại Không Hợp Lệ' : 'Invalid Phone Number',
+            '⚠️'
+        );
+        return;
+    }
 
     // ── MoMo Flow ──────────────────────────────────────────────
     if (payMethod === 'momo') {
@@ -598,7 +628,7 @@ function confirmCheckout() {
         btn.disabled = true;
         btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Đang kết nối MoMo...';
 
-        fetch('/gymmanager/api/momo_pay_order.php', {
+        fetch('/Gym Manager/api/momo_pay_order.php', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ phone: phone, address: address })

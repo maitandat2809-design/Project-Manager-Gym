@@ -124,16 +124,25 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['update_booking'])) {
             $c_stmt->execute([$booking_id]);
             $coach_id = $c_stmt->fetchColumn();
 
-            // Check for conflicts: Any booking for this coach within 1 hour of the requested time, except this same booking
+            // Calculate 1-hour time window buffers
             $requested_time = strtotime($new_date);
             $start_buffer = date('Y-m-d H:i:s', $requested_time - 3599);
             $end_buffer = date('Y-m-d H:i:s', $requested_time + 3599);
-            
+
+            // 1. Check coach slot conflict (within 1 hour)
             $conflict_stmt = $pdo->prepare("SELECT id FROM bookings WHERE coach_id = ? AND id != ? AND status != 'cancelled' AND booking_date BETWEEN ? AND ?");
             $conflict_stmt->execute([$coach_id, $booking_id, $start_buffer, $end_buffer]);
+
+            // 2. Check user slot conflict (cannot book 2 coaches at the same time slot)
+            $user_conflict_stmt = $pdo->prepare("SELECT id FROM bookings WHERE user_id = ? AND id != ? AND status != 'cancelled' AND booking_date BETWEEN ? AND ?");
+            $user_conflict_stmt->execute([$user_id, $booking_id, $start_buffer, $end_buffer]);
             
             if ($conflict_stmt->fetch()) {
                 $error = __('timeslot_unavailable_err');
+            } elseif ($user_conflict_stmt->fetch()) {
+                $error = (isset($_SESSION['lang']) && $_SESSION['lang'] === 'vi')
+                    ? "⚠️ Bạn đã có lịch tập với HLV khác vào cùng khung giờ này (trùng trong vòng 60 phút). Không thể đăng ký 2 HLV cùng 1 khung giờ!"
+                    : "⚠️ You already have another session scheduled at this time. Cannot book 2 coaches at the same time slot!";
             } else {
                 // Update booking and reset coach_seen so they get a new notification
                 $stmt = $pdo->prepare("UPDATE bookings SET booking_date = ?, coach_seen = 0, status = 'pending' WHERE id = ? AND user_id = ?");
@@ -219,7 +228,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['user_cancel_booking'])
             } elseif (!empty($b_check['class_name'])) {
                 $error = __('cannot_cancel_coach_class');
             } elseif (($b_check['attendance'] ?? '') === 'present' || ($b_check['attendance'] ?? '') === 'absent' || ($b_check['status'] ?? '') === 'completed') {
-                $error = (($_SESSION['lang'] ?? 'vi') === 'en') ? "Session has already been confirmed/attended by Coach and cannot be cancelled." : "Buổi tập đã được HLV xác nhận/điểm danh, không thể hủy buổi tập.";
+                $error = (($_SESSION['lang'] ?? 'en') === 'en') ? "Session has already been confirmed/attended by Coach and cannot be cancelled." : "Buổi tập đã được HLV xác nhận/điểm danh, không thể hủy buổi tập.";
             } elseif (strtotime($b_check['booking_date']) <= time()) {
                 $error = __('cannot_cancel_past_session');
             } else {
@@ -236,20 +245,6 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['user_cancel_booking'])
         $error = "Cancellation error: " . $e->getMessage();
     }
 }
-
-// Handle Product Review
-if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['submit_product_review'])) {
-    $product_id = $_POST['product_id'];
-    $rating = $_POST['rating'];
-    $comment = $_POST['comment'];
-    $stmt = $pdo->prepare("INSERT INTO product_reviews (product_id, user_id, rating, comment) VALUES (?, ?, ?, ?)");
-    if ($stmt->execute([$product_id, $user_id, $rating, $comment])) {
-        $message = __('prod_review_success');
-    } else {
-        $error = __('review_error');
-    }
-}
-
 // Handle Coach Review
 if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['submit_coach_review'])) {
     $coach_id = $_POST['coach_id'];
@@ -416,7 +411,7 @@ $orders = $stmt->fetchAll();
                     title = <?php echo json_encode(__('order_notification')); ?>;
                     icon = '🛍️';
                 } else if (msgText.includes('mật khẩu') || msgText.includes('Password') || msgText.includes('password') || msgText.includes('pw_updated_success')) {
-                    title = <?php echo json_encode(($_SESSION['lang'] ?? 'vi') === 'vi' ? 'Đổi Mật Khẩu Thành Công' : 'Password Changed Successfully'); ?>;
+                    title = <?php echo json_encode(($_SESSION['lang'] ?? 'en') === 'vi' ? 'Đổi Mật Khẩu Thành Công' : 'Password Changed Successfully'); ?>;
                     icon = '🔑';
                 }
                 showGymXAlert(msgText, title, icon);
@@ -437,7 +432,7 @@ $orders = $stmt->fetchAll();
 
     <!-- Profile Edit Section -->
     <div style="background: var(--bg-card); padding: 2rem; border-radius: 15px; border: 1px solid var(--border); margin-bottom: 4rem;">
-        <form method="POST" enctype="multipart/form-data" class="profile-form-grid">
+        <form method="POST" enctype="multipart/form-data" id="profileEditForm" novalidate class="profile-form-grid">
             <div style="text-align: center;">
                 <img src="<?php echo $user['avatar'] ?: 'https://ui-avatars.com/api/?name='.urlencode($user['name']).'&background=0062ff&color=fff&size=200'; ?>" 
                      style="width: 150px; height: 150px; border-radius: 50%; object-fit: cover; border: 3px solid var(--primary); margin-bottom: 0.5rem;">
@@ -467,7 +462,7 @@ $orders = $stmt->fetchAll();
                         <?php if ($pt_total > 0): ?>
                             <span style="background: linear-gradient(135deg, #eff6ff, #dbeafe); color: #1e40af; border: 1.5px solid #93c5fd; padding: 5px 12px; border-radius: 20px; font-weight: 800; font-size: 0.78rem; display: inline-flex; align-items: center; gap: 5px; box-shadow: 0 2px 8px rgba(37,99,235,0.15);">
                                 <i class="fas fa-dumbbell" style="color: #2563eb;"></i> 
-                                <?php echo (($_SESSION['lang'] ?? 'vi') === 'vi' ? "Còn {$pt_rem}/{$pt_total} buổi PT" : "{$pt_rem}/{$pt_total} PT Left"); ?>
+                                <?php echo (($_SESSION['lang'] ?? 'en') === 'vi' ? "Còn {$pt_rem}/{$pt_total} buổi PT" : "{$pt_rem}/{$pt_total} PT Left"); ?>
                             </span>
                         <?php endif; ?>
                     <?php else: ?>
@@ -524,7 +519,7 @@ $orders = $stmt->fetchAll();
         <h3 style="margin-bottom: 2rem; color: var(--primary); font-weight: 800; display: flex; align-items: center; gap: 10px;">
             <i class="fas fa-shield-alt" style="color: var(--primary);"></i> <?php echo __('security_settings'); ?>
         </h3>
-        <form method="POST" class="password-form-grid">
+        <form method="POST" id="profilePasswordForm" novalidate class="password-form-grid">
             <div class="form-group" style="margin-bottom: 0;">
                 <label style="font-weight: 600;"><?php echo __('current_password'); ?></label>
                 <input type="password" name="current_password" required placeholder="••••••••" style="background: #f1f5f9; width: 100%;">
@@ -539,7 +534,7 @@ $orders = $stmt->fetchAll();
             </div>
             <div class="form-group" style="margin-bottom: 0;">
                 <button type="submit" name="update_password" class="cta-btn" style="border: none; cursor: pointer; white-space: nowrap; height: 48px; padding: 0 1.8rem; display: inline-flex; align-items: center; justify-content: center; gap: 8px; font-weight: 800; border-radius: 14px; background: linear-gradient(135deg, #1c2340, #0f172a); color: #c9a84c; border: 1px solid #c9a84c; box-shadow: 0 4px 14px rgba(15,23,42,0.25); transition: all 0.3s;">
-                    <i class="fas fa-key"></i> <?php echo (($_SESSION['lang'] ?? 'vi') === 'vi' ? 'Xác Nhận' : 'Confirm'); ?>
+                    <i class="fas fa-key"></i> <?php echo (($_SESSION['lang'] ?? 'en') === 'vi' ? 'Xác Nhận' : 'Confirm'); ?>
                 </button>
             </div>
         </form>
@@ -790,17 +785,22 @@ $orders = $stmt->fetchAll();
                     <div>
                         <div style="display: flex; align-items: center; gap: 8px;">
                             <h4 style="color: var(--text-main); margin: 0; font-weight: 700; font-size: 1rem;">Order #<?php echo $top_o['id']; ?></h4>
+                            <?php if ($top_o['payment_method'] === 'momo' && !empty($top_o['momo_confirmed'])): ?>
+                                <span style="background: #fdf4ff; color: #a21caf; border: 1px solid #f0abfc; padding: 2px 8px; border-radius: 10px; font-weight: 800; font-size: 0.7rem;">
+                                    💜 <?php echo (isset($current_lang) && $current_lang === 'vi') ? 'MoMo Đã TT' : 'MoMo Paid'; ?>
+                                </span>
+                            <?php endif; ?>
                             <?php if ($top_o['status'] === 'pending'): ?>
                                 <span style="background: #f59e0b; color: #000; padding: 3px 8px; border-radius: 12px; font-weight: 800; font-size: 0.72rem; text-transform: uppercase;">
                                     🚚 <?php echo __('order_status_delivering'); ?>
                                 </span>
                             <?php elseif ($top_o['status'] === 'completed'): ?>
                                 <span style="background: #10b981; color: #fff; padding: 3px 8px; border-radius: 12px; font-weight: 800; font-size: 0.72rem; text-transform: uppercase;">
-                                    ✔ Thành Công
+                                    ✔ <?php echo __('status_completed'); ?>
                                 </span>
                             <?php else: ?>
                                 <span style="background: #ef4444; color: #fff; padding: 3px 8px; border-radius: 12px; font-weight: 800; font-size: 0.72rem; text-transform: uppercase;">
-                                    ✖ Đã Hủy
+                                    ✖ <?php echo __('status_cancelled'); ?>
                                 </span>
                             <?php endif; ?>
                         </div>
@@ -830,17 +830,22 @@ $orders = $stmt->fetchAll();
                                         </div>
                                         <div style="display: flex; align-items: center; gap: 8px;">
                                             <span style="font-weight: 800; color: var(--primary); font-size: 1rem;">$<?php echo number_format($order['total_price'], 2); ?></span>
+                                            <?php if ($order['payment_method'] === 'momo' && !empty($order['momo_confirmed'])): ?>
+                                                <span style="background: #fdf4ff; color: #a21caf; border: 1px solid #f0abfc; padding: 2px 7px; border-radius: 10px; font-weight: 800; font-size: 0.7rem;">
+                                                    💜 <?php echo (isset($current_lang) && $current_lang === 'vi') ? 'MoMo Đã TT' : 'MoMo Paid'; ?>
+                                                </span>
+                                            <?php endif; ?>
                                             <?php if ($order['status'] === 'pending'): ?>
                                                 <span style="background: #f59e0b; color: #000; padding: 3px 8px; border-radius: 10px; font-weight: 800; font-size: 0.7rem; text-transform: uppercase;">
                                                     🚚 <?php echo __('order_status_delivering'); ?>
                                                 </span>
                                             <?php elseif ($order['status'] === 'completed'): ?>
                                                 <span style="background: #10b981; color: #fff; padding: 3px 8px; border-radius: 10px; font-weight: 800; font-size: 0.7rem; text-transform: uppercase;">
-                                                    ✔ Thành Công
+                                                    ✔ <?php echo __('status_completed'); ?>
                                                 </span>
                                             <?php else: ?>
                                                 <span style="background: #ef4444; color: #fff; padding: 3px 8px; border-radius: 10px; font-weight: 800; font-size: 0.7rem; text-transform: uppercase;">
-                                                    ✖ Đã Hủy
+                                                    ✖ <?php echo __('status_cancelled'); ?>
                                                 </span>
                                             <?php endif; ?>
                                         </div>
@@ -866,7 +871,7 @@ $orders = $stmt->fetchAll();
                                         </div>
                                     <?php else: ?>
                                         <div style="display: flex; justify-content: flex-end;">
-                                            <form method="POST" onsubmit="return confirm('Are you sure you want to remove this order from your history?');" style="margin: 0;">
+                                            <form method="POST" onsubmit="return confirmOrderCustom(event, this, '<?php echo $current_lang === 'vi' ? 'Bạn có chắc chắn muốn xóa đơn hàng này khỏi lịch sử?' : 'Are you sure you want to remove this order from your history?'; ?>', '<?php echo $current_lang === 'vi' ? 'Xóa Đơn Hàng' : 'Remove Order'; ?>', '🗑️');" style="margin: 0;">
                                                 <input type="hidden" name="order_id" value="<?php echo $order['id']; ?>">
                                                 <button type="submit" name="delete_order" style="background: none; border: none; color: #ef4444; cursor: pointer; font-size: 0.78rem; font-weight: 700;">
                                                     <i class="fas fa-trash"></i> <?php echo __('remove'); ?>
@@ -927,6 +932,95 @@ $orders = $stmt->fetchAll();
         </div>
     </div>
 </section>
+
+<script>
+document.addEventListener("DOMContentLoaded", function() {
+    const editForm = document.getElementById("profileEditForm");
+    if (editForm) {
+        editForm.addEventListener("submit", function(e) {
+            const nameInput = editForm.querySelector('input[name="name"]');
+            const phoneInput = editForm.querySelector('input[name="phone"]');
+            const isVi = (typeof GYMX_LANG !== 'undefined' ? GYMX_LANG : 'vi') === 'vi';
+
+            if (nameInput && !nameInput.value.trim()) {
+                e.preventDefault();
+                showGymXAlert(
+                    isVi ? 'Vui lòng nhập họ và tên.' : 'Please enter your full name.',
+                    isVi ? 'Thiếu Thông Tin' : 'Name Required',
+                    '👤'
+                );
+                nameInput.focus();
+                return false;
+            }
+
+            if (phoneInput && phoneInput.value.trim() && !/^[0-9]{10}$/.test(phoneInput.value.trim())) {
+                e.preventDefault();
+                showGymXAlert(
+                    isVi ? 'Số điện thoại không hợp lệ (phải bao gồm 10 chữ số).' : 'Invalid phone number (must be 10 digits).',
+                    isVi ? 'Số Điện Thoại Không Hợp Lệ' : 'Invalid Phone Number',
+                    '📱'
+                );
+                phoneInput.focus();
+                return false;
+            }
+        });
+    }
+
+    const passForm = document.getElementById("profilePasswordForm");
+    if (passForm) {
+        passForm.addEventListener("submit", function(e) {
+            const currInput = passForm.querySelector('input[name="current_password"]');
+            const newInput = passForm.querySelector('input[name="new_password"]');
+            const confInput = passForm.querySelector('input[name="confirm_password"]');
+            const isVi = (typeof GYMX_LANG !== 'undefined' ? GYMX_LANG : 'vi') === 'vi';
+
+            if (currInput && !currInput.value) {
+                e.preventDefault();
+                showGymXAlert(
+                    isVi ? 'Vui lòng nhập mật khẩu hiện tại.' : 'Please enter your current password.',
+                    isVi ? 'Thiếu Mật Khẩu' : 'Password Required',
+                    '🔒'
+                );
+                currInput.focus();
+                return false;
+            }
+
+            if (newInput && !newInput.value) {
+                e.preventDefault();
+                showGymXAlert(
+                    isVi ? 'Vui lòng nhập mật khẩu mới.' : 'Please enter your new password.',
+                    isVi ? 'Thiếu Mật Khẩu Mới' : 'New Password Required',
+                    '🔑'
+                );
+                newInput.focus();
+                return false;
+            }
+
+            if (newInput && newInput.value.length < 6) {
+                e.preventDefault();
+                showGymXAlert(
+                    isVi ? 'Mật khẩu mới phải có ít nhất 6 ký tự.' : 'New password must be at least 6 characters long.',
+                    isVi ? 'Mật Khẩu Quá Ngắn' : 'Password Too Short',
+                    '⚠️'
+                );
+                newInput.focus();
+                return false;
+            }
+
+            if (confInput && newInput && confInput.value !== newInput.value) {
+                e.preventDefault();
+                showGymXAlert(
+                    isVi ? 'Mật khẩu xác nhận không trùng khớp với mật khẩu mới.' : 'Confirmation password does not match new password.',
+                    isVi ? 'Mật Khẩu Không Khớp' : 'Passwords Do Not Match',
+                    '❌'
+                );
+                confInput.focus();
+                return false;
+            }
+        });
+    }
+});
+</script>
 
 <?php include_once __DIR__ . '/../includes/footer.php'; ?>
 

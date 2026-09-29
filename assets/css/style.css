@@ -2984,6 +2984,10 @@ nav {
     border-radius: 10px !important;
 }
 
+.nav-links a.nav-cart-btn::after {
+    display: none !important;
+}
+
 /* Nav Profile Pill */
 .profile-pill {
     display: inline-flex !important;

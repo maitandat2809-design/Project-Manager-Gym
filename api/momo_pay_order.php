@@ -1,19 +1,14 @@
 <?php
 // ============================================================
-// Initiate MoMo Payment for Shop Orders
+// Initiate MoMo QR Payment for Shop Orders
+// Creates order record, stores pending info in session,
+// redirects to QR payment page (momo_qr.php)
 // ============================================================
 
 if (session_status() === PHP_SESSION_NONE) { session_start(); }
 require_once __DIR__ . '/../config/db.php';
-require_once __DIR__ . '/../includes/momo_helper.php';
 
 header('Content-Type: application/json');
-
-// ────────────────────────────────────────────────────────────
-// TEST MODE: Set to true for local testing without real MoMo
-// Set to false when you have real credentials from business.momo.vn
-// ────────────────────────────────────────────────────────────
-define('MOMO_TEST_MODE', true);
 
 if (!isset($_SESSION['user_id'])) {
     echo json_encode(['success' => false, 'message' => 'Not logged in']);
@@ -69,10 +64,10 @@ foreach ($ids as $cart_key) {
     $checkout_items[] = ['id' => $p['id'], 'price' => $price, 'qty' => $qty, 'variant' => $weight];
 }
 
-// MoMo requires minimum 1000 VND
+// MoMo minimum 1000 VND
 if ($total_vnd < 1000) $total_vnd = 1000;
 
-// --- Create order record (status = pending until IPN confirms) ---
+// --- Create order record (status = pending until QR confirmed) ---
 try {
     $pdo->beginTransaction();
     $stmt = $pdo->prepare("INSERT INTO orders (user_id, total_price, status, phone, address, payment_method, admin_seen) VALUES (?, ?, 'pending', ?, ?, 'momo', 0)");
@@ -90,51 +85,20 @@ try {
     exit;
 }
 
-// --- Build extraData ---
-$extraData = base64_encode(json_encode([
-    'type'    => 'shop_order',
-    'id'      => $order_id,
-    'user_id' => $user_id,
-]));
+// --- Store pending payment info in session ---
+$_SESSION['momo_pending'] = [
+    'type'     => 'shop',
+    'order_id' => $order_id,
+    'amount'   => $total_vnd,
+    'items'    => $checkout_items,
+    'created'  => time(),
+];
 
-$orderId   = 'SHOP_' . $order_id . '_' . time();
-$orderInfo = "Gym Manager - Don hang #$order_id";
+// Clear cart after order creation
+unset($_SESSION['cart']);
 
-// ── TEST MODE: skip real MoMo, simulate success immediately ────────
-if (defined('MOMO_TEST_MODE') && MOMO_TEST_MODE) {
-    // Mark order as completed directly
-    $pdo->prepare("UPDATE orders SET status='completed', payment_method='momo' WHERE id=?")->execute([$order_id]);
-
-    // Reduce stock
-    $stmt_sales = $pdo->prepare("UPDATE products SET sales_count=sales_count+?, stock=GREATEST(0,stock-?) WHERE id=?");
-    foreach ($checkout_items as $item) {
-        $stmt_sales->execute([$item['qty'], $item['qty'], $item['id']]);
-    }
-
-    // Store success data for the success page
-    unset($_SESSION['cart']);
-    $_SESSION['momo_success'] = [
-        'order_id' => $order_id,
-        'amount'   => $total_vnd,
-    ];
-
-    echo json_encode([
-        'success' => true,
-        'payUrl'  => '/gymmanager/pages/momo_success.php?type=shop&test=1',
-    ]);
-    exit;
-}
-
-// ── PRODUCTION: real MoMo API call ───────────────────────────
-$result = createMoMoPayment($orderId, $total_vnd, $orderInfo, $extraData);
-
-if (isset($result['payUrl']) && !empty($result['payUrl'])) {
-    unset($_SESSION['cart']);
-    echo json_encode(['success' => true, 'payUrl' => $result['payUrl']]);
-} else {
-    // Rollback order on MoMo failure
-    $pdo->prepare("DELETE FROM order_items WHERE order_id=?")->execute([$order_id]);
-    $pdo->prepare("DELETE FROM orders WHERE id=?")->execute([$order_id]);
-    $msg = $result['localMessage'] ?? $result['message'] ?? 'Không thể kết nối MoMo. Thử lại sau.';
-    echo json_encode(['success' => false, 'message' => $msg]);
-}
+// Return QR payment page URL
+echo json_encode([
+    'success' => true,
+    'payUrl'  => '/Gym Manager/pages/momo_qr.php',
+]);

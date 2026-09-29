@@ -1,12 +1,12 @@
 <?php
 // ============================================================
-// Initiate MoMo Payment for Membership Subscriptions
-// Called via AJAX from membership.php when user picks MoMo
+// Initiate MoMo QR Payment for Membership Subscriptions
+// Creates pending subscription, stores info in session,
+// redirects to QR payment page (momo_qr.php)
 // ============================================================
 
 if (session_status() === PHP_SESSION_NONE) { session_start(); }
 require_once __DIR__ . '/../config/db.php';
-require_once __DIR__ . '/../includes/momo_helper.php';
 
 header('Content-Type: application/json');
 
@@ -51,6 +51,7 @@ if ($stmt2->fetch()) {
 $start_date = date('Y-m-d');
 $end_date   = date('Y-m-d', strtotime("+{$plan['duration_days']} days"));
 $price_vnd  = (int)$plan['price']; // already in VND
+$amount     = max(1000, $price_vnd);
 
 try {
     $stmt3 = $pdo->prepare("INSERT INTO member_subscriptions (user_id, plan_id, start_date, end_date, price_paid, payment_method, status) VALUES (?,?,?,?,?,'momo','pending')");
@@ -61,47 +62,17 @@ try {
     exit;
 }
 
-// Build extraData
-$extraData = base64_encode(json_encode([
+// --- Store pending payment info in session ---
+$_SESSION['momo_pending'] = [
     'type'      => 'membership',
-    'id'        => $sub_id,
-    'user_id'   => $user_id,
-    'plan_name' => $plan['name'],
-]));
+    'sub_id'    => $sub_id,
+    'plan_name' => $plan['name_vi'] ?? $plan['name'],
+    'amount'    => $amount,
+    'created'   => time(),
+];
 
-$orderId   = 'MEM_' . $sub_id . '_' . time();
-$orderInfo = "Gym Manager - Goi thanh vien {$plan['name']}";
-$amount    = max(1000, $price_vnd);
-
-// ── TEST MODE: skip real MoMo, simulate success immediately ────────
-if (!defined('MOMO_TEST_MODE')) define('MOMO_TEST_MODE', true);
-
-if (MOMO_TEST_MODE) {
-    // Activate subscription directly
-    $pdo->prepare("UPDATE member_subscriptions SET status='active', payment_confirmed_at=NOW() WHERE id=?")
-        ->execute([$sub_id]);
-
-    $_SESSION['momo_success'] = [
-        'sub_id'    => $sub_id,
-        'plan_name' => $plan['name'],
-        'amount'    => $amount,
-    ];
-
-    echo json_encode([
-        'success' => true,
-        'payUrl'  => '/gymmanager/pages/momo_success.php?type=membership&test=1',
-    ]);
-    exit;
-}
-
-// ── PRODUCTION: real MoMo API call ───────────────────────────
-$result = createMoMoPayment($orderId, $amount, $orderInfo, $extraData);
-
-if (isset($result['payUrl']) && !empty($result['payUrl'])) {
-    echo json_encode(['success' => true, 'payUrl' => $result['payUrl']]);
-} else {
-    // Rollback subscription on failure
-    $pdo->prepare("DELETE FROM member_subscriptions WHERE id=?")->execute([$sub_id]);
-    $msg = $result['localMessage'] ?? $result['message'] ?? 'Không thể kết nối MoMo. Thử lại sau.';
-    echo json_encode(['success' => false, 'message' => $msg]);
-}
+// Return QR payment page URL
+echo json_encode([
+    'success' => true,
+    'payUrl'  => '/Gym Manager/pages/momo_qr.php',
+]);

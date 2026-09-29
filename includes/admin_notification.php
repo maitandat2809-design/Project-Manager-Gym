@@ -70,7 +70,7 @@ if (isset($_SESSION['user_id']) && ($_SESSION['role'] === 'admin' || $_SESSION['
                 <div style="padding: 2rem; max-height: 400px; overflow-y: auto;">
                     <!-- Memberships -->
                     <?php foreach($new_memberships as $nm): 
-                        $plan_display = ($_SESSION['lang'] ?? 'vi') === 'vi' ? ($nm['plan_name_vi'] ?? $nm['plan_name']) : $nm['plan_name'];
+                        $plan_display = ($_SESSION['lang'] ?? 'en') === 'vi' ? ($nm['plan_name_vi'] ?? $nm['plan_name']) : $nm['plan_name'];
                     ?>
                         <div style="display: flex; gap: 1.2rem; align-items: center; padding: 1.2rem; background: #fff7ed; border-radius: 20px; margin-bottom: 1rem; border: 1px solid #ffedd5;">
                             <div style="width: 50px; height: 50px; background: white; border-radius: 12px; display: flex; align-items: center; justify-content: center; font-weight: 800; color: #ea580c;">

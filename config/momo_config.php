@@ -37,9 +37,9 @@ $_momo_host = (isset($_SERVER['HTTPS']) && $_SERVER['HTTPS'] === 'on' ? 'https' 
 define('MOMO_BASE_URL',     'http://localhost');
 
 // Redirect URL — nơi user quay về sau khi quét QR
-define('MOMO_REDIRECT_URL', 'http://localhost/gymmanager/api/momo_return.php');
+define('MOMO_REDIRECT_URL', 'http://localhost/Gym%20Manager/api/momo_return.php');
 
 // IPN URL — MoMo gọi server-to-server (phải là URL public khi production)
 // Dùng ngrok cho môi trường local: ngrok http 80
-// Rồi cập nhật: define('MOMO_IPN_URL', 'https://xxxx.ngrok.io/gymmanager/api/momo_ipn.php');
-define('MOMO_IPN_URL',      'http://localhost/gymmanager/api/momo_ipn.php');
+// Rồi cập nhật: define('MOMO_IPN_URL', 'https://xxxx.ngrok.io/Gym%20Manager/api/momo_ipn.php');
+define('MOMO_IPN_URL',      'http://localhost/Gym%20Manager/api/momo_ipn.php');

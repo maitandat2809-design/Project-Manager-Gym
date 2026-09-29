@@ -16,6 +16,19 @@ if (isset($_GET['add_to_cart']) || isset($_GET['buy_now'])) {
     $weight = isset($_GET['weight']) ? $_GET['weight'] : '';
     $qty = isset($_GET['qty']) ? max(1, intval($_GET['qty'])) : 1;
     
+    // Check product stock in database
+    $stmt_chk = $pdo->prepare("SELECT stock FROM products WHERE id = ?");
+    $stmt_chk->execute([$product_id]);
+    $prod_chk = $stmt_chk->fetch();
+    $max_stock = $prod_chk ? intval($prod_chk['stock']) : 0;
+    
+    if ($max_stock <= 0) {
+        header("Location: /Gym Manager/pages/shop.php");
+        exit();
+    }
+    
+    $qty = min($qty, $max_stock);
+    
     $cart_key = $weight ? $product_id . '_' . $weight : $product_id;
 
     if (!isset($_SESSION['cart'])) {
@@ -23,7 +36,7 @@ if (isset($_GET['add_to_cart']) || isset($_GET['buy_now'])) {
     }
     
     if (isset($_SESSION['cart'][$cart_key])) {
-        $_SESSION['cart'][$cart_key] += $qty;
+        $_SESSION['cart'][$cart_key] = min($max_stock, $_SESSION['cart'][$cart_key] + $qty);
     } else {
         $_SESSION['cart'][$cart_key] = $qty;
     }
@@ -77,6 +90,13 @@ $stmt = $pdo->prepare($query);
 $stmt->execute($params);
 $products = $stmt->fetchAll();
 ?>
+
+<style>
+@keyframes toastSlideUp {
+    from { opacity: 0; transform: translateY(30px) scale(0.92); }
+    to   { opacity: 1; transform: translateY(0) scale(1); }
+}
+</style>
 
 <section>
     <div class="section-title">
@@ -157,12 +177,12 @@ $products = $stmt->fetchAll();
                     <p style="margin-bottom: 1.5rem; flex-grow: 1;"><?php echo ($current_lang === 'vi' && !empty($product['description_vi'])) ? $product['description_vi'] : $product['description']; ?></p>
                     <div class="card-footer" style="margin-top: auto; display: flex; flex-direction: column; gap: 1rem;">
                         <div style="display: flex; justify-content: space-between; align-items: center;">
-                            <span class="price" style="font-size: 1.5rem;">$<?php echo $product['price']; ?></span>
+                            <span class="price" style="font-size: 1.5rem;">$<?php echo $product['price']; ?> <span style="font-size: 0.95rem; color: var(--text-muted); font-weight: 600;">(~<?php echo number_format((int)round($product['price'] * 25000), 0, ',', '.'); ?>đ)</span></span>
                         </div>
-                        <form id="form-prod-<?php echo $product['id']; ?>" action="shop.php" method="GET" style="display: flex; flex-direction: column; gap: 1rem; width: 100%;">
+                        <form id="form-prod-<?php echo $product['id']; ?>" action="shop.php" method="GET" style="display: flex; flex-direction: column; gap: 1rem; width: 100%;" novalidate>
                             <div style="display: flex; gap: 10px; align-items: center;">
                                 <div style="display: flex; flex-direction: column; width: 80px;">
-                                    <input type="number" name="qty" value="1" min="1" max="<?php echo $product['stock'] > 0 ? $product['stock'] : 1; ?>" style="padding: 0.8rem; border-radius: 8px; border: 1px solid #e2e8f0; font-weight: 600; outline: none; background: #f8fafc; color: var(--text-main); text-align: center;">
+                                    <input type="number" name="qty" value="1" min="1" style="padding: 0.8rem; border-radius: 8px; border: 1px solid #e2e8f0; font-weight: 600; outline: none; background: #f8fafc; color: var(--text-main); text-align: center;">
                                 </div>
                                 <?php if (!empty($product['has_weight_variants']) && $product['has_weight_variants'] == 1): ?>
                                 <select name="weight" style="padding: 0.8rem; border-radius: 8px; border: 1px solid #e2e8f0; font-weight: 600; width: 100%; outline: none; background: #f8fafc; color: var(--text-main); flex-grow: 1;">
@@ -174,8 +194,8 @@ $products = $stmt->fetchAll();
                                 <?php endif; ?>
                             </div>
                             <div style="display: flex; gap: 0.8rem; height: 45px;">
-                                <button type="button" onclick="confirmPurchase(<?php echo $product['stock']; ?>, 'form-prod-<?php echo $product['id']; ?>', 'add_to_cart', <?php echo $product['id']; ?>)" class="btn-card" style="flex: 1; display: flex; align-items: center; justify-content: center; background: #f1f5f9; color: var(--text-main); box-shadow: none; border: 1px solid #e2e8f0; font-size: 0.85rem; padding: 0 0.5rem; cursor: pointer; white-space: nowrap; height: 100%;"><?php echo __('add_to_cart'); ?></button>
-                                <button type="button" onclick="confirmPurchase(<?php echo $product['stock']; ?>, 'form-prod-<?php echo $product['id']; ?>', 'buy_now', <?php echo $product['id']; ?>)" class="btn-card" style="flex: 1.2; display: flex; align-items: center; justify-content: center; font-size: 0.85rem; padding: 0 0.5rem; cursor: pointer; border: none; white-space: nowrap; height: 100%;"><?php echo __('buy_now'); ?></button>
+                                <button type="button" onclick="confirmPurchase(<?php echo $product['stock']; ?>, 'form-prod-<?php echo $product['id']; ?>', 'add_to_cart', <?php echo $product['id']; ?>, this)" class="btn-card" style="flex: 1; display: flex; align-items: center; justify-content: center; background: #f1f5f9; color: var(--text-main); box-shadow: none; border: 1px solid #e2e8f0; font-size: 0.85rem; padding: 0 0.5rem; cursor: pointer; white-space: nowrap; height: 100%; transition: all 0.25s;"><?php echo __('add_to_cart'); ?></button>
+                                <button type="button" onclick="confirmPurchase(<?php echo $product['stock']; ?>, 'form-prod-<?php echo $product['id']; ?>', 'buy_now', <?php echo $product['id']; ?>, this)" class="btn-card" style="flex: 1.2; display: flex; align-items: center; justify-content: center; font-size: 0.85rem; padding: 0 0.5rem; cursor: pointer; border: none; white-space: nowrap; height: 100%;"><?php echo __('buy_now'); ?></button>
                             </div>
                         </form>
                     </div>
@@ -225,17 +245,189 @@ let currentFormToSubmit = null;
 let currentActionName = '';
 let currentProductId = '';
 
-function confirmPurchase(stock, formId, actionName, productId) {
+function updateNavCartBadge(count) {
+    const badges = document.querySelectorAll('.nav-cart-btn .nav-badge');
+    badges.forEach(b => {
+        b.textContent = count;
+        b.style.transform = 'scale(1.4)';
+        b.style.transition = 'transform 0.25s cubic-bezier(0.175, 0.885, 0.32, 1.275)';
+        setTimeout(() => {
+            b.style.transform = 'scale(1)';
+        }, 250);
+    });
+}
+
+function showCartToast(productName, isEn) {
+    let existing = document.getElementById('gymx-cart-toast');
+    if (existing) existing.remove();
+
+    const toast = document.createElement('div');
+    toast.id = 'gymx-cart-toast';
+    toast.style.cssText = `
+        position: fixed;
+        bottom: 28px;
+        right: 28px;
+        z-index: 99999;
+        background: #ffffff;
+        border-radius: 20px;
+        padding: 14px 18px;
+        box-shadow: 0 16px 45px rgba(15, 23, 42, 0.22), 0 0 0 1px rgba(0, 0, 0, 0.06);
+        display: flex;
+        align-items: center;
+        gap: 14px;
+        max-width: 400px;
+        font-family: 'Inter', sans-serif;
+        animation: toastSlideUp 0.35s cubic-bezier(0.16, 1, 0.3, 1);
+    `;
+
+    const titleText = isEn ? 'Added to Cart!' : 'Đã thêm vào giỏ hàng!';
+    const viewCartText = isEn ? 'View Cart' : 'Xem Giỏ Hàng';
+
+    toast.innerHTML = `
+        <div style="width: 40px; height: 40px; border-radius: 12px; background: linear-gradient(135deg, #10b981, #059669); color: white; display: flex; align-items: center; justify-content: center; font-size: 1.1rem; flex-shrink: 0; box-shadow: 0 4px 12px rgba(16, 185, 129, 0.3);">
+            <i class="fas fa-check"></i>
+        </div>
+        <div style="flex-grow: 1; min-width: 0;">
+            <div style="font-size: 0.88rem; font-weight: 800; color: #0f172a; line-height: 1.2;">${titleText}</div>
+            <div style="font-size: 0.78rem; font-weight: 600; color: #64748b; margin-top: 3px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">${productName}</div>
+        </div>
+        <a href="/Gym Manager/pages/cart.php" style="background: #0f172a; color: white; padding: 8px 14px; border-radius: 10px; font-size: 0.78rem; font-weight: 700; text-decoration: none; white-space: nowrap; transition: opacity 0.2s;">
+            ${viewCartText} →
+        </a>
+    `;
+
+    document.body.appendChild(toast);
+
+    setTimeout(() => {
+        toast.style.transition = 'opacity 0.4s, transform 0.4s';
+        toast.style.opacity = '0';
+        toast.style.transform = 'translateY(15px)';
+        setTimeout(() => toast.remove(), 400);
+    }, 3200);
+}
+
+function confirmPurchase(stock, formId, actionName, productId, btnElement) {
+    let form = document.getElementById(formId);
+    if (!form) return;
+
+    let isEn = (typeof GYMX_LANG !== 'undefined' ? GYMX_LANG === 'en' : false);
+
     if (stock <= 0) {
-        showCustomModal('<?php echo addslashes(__('out_of_stock_msg')); ?>', '⏳', false);
-    } else {
-        let currentFormToSubmit = document.getElementById(formId);
+        let outMsg = isEn ? 'This product is currently out of stock. Please check back soon!' : 'Sản phẩm này hiện đang hết hàng. Vui lòng quay lại sau!';
+        let title = isEn ? 'Out of Stock' : 'Hết Hàng';
+        if (typeof showGymXAlert === 'function') {
+            showGymXAlert(outMsg, title, '⏳');
+        } else {
+            showCustomModal(outMsg, '⏳', false);
+        }
+        return;
+    }
+
+    let qtyInput = form.querySelector('input[name="qty"]');
+    let qty = parseInt(qtyInput ? qtyInput.value : 1);
+
+    if (isNaN(qty) || qty < 1) {
+        let minMsg = isEn ? 'Minimum order quantity is 1.' : 'Số lượng sản phẩm đặt mua tối thiểu là 1.';
+        let title = isEn ? 'Quantity Warning' : 'Thông Báo Số Lượng';
+        if (typeof showGymXAlert === 'function') {
+            showGymXAlert(minMsg, title, '⚠️');
+        } else {
+            showCustomModal(minMsg, '⚠️', false);
+        }
+        if (qtyInput) qtyInput.value = 1;
+        return;
+    }
+
+    if (qty > stock) {
+        let maxMsg = isEn 
+            ? ('Sorry! Requested quantity (' + qty + ') exceeds available stock (' + stock + ' items).')
+            : ('Rất tiếc! Số lượng bạn chọn (' + qty + ') vượt quá số lượng hàng còn trong kho (' + stock + ' sản phẩm).');
+        let title = isEn ? 'Stock Limit Exceeded' : 'Cảnh Báo Số Lượng Kho';
+        if (typeof showGymXAlert === 'function') {
+            showGymXAlert(maxMsg, title, '⚠️');
+        } else {
+            showCustomModal(maxMsg, '⚠️', false);
+        }
+        if (qtyInput) qtyInput.value = stock;
+        return;
+    }
+
+    // BUY NOW: standard submit to checkout
+    if (actionName === 'buy_now') {
         let input = document.createElement("input");
         input.type = "hidden";
         input.name = actionName;
         input.value = productId;
-        currentFormToSubmit.appendChild(input);
-        currentFormToSubmit.submit();
+        form.appendChild(input);
+        form.submit();
+        return;
+    }
+
+    // ADD TO CART: AJAX without page reload!
+    if (actionName === 'add_to_cart') {
+        let weightSelect = form.querySelector('select[name="weight"]');
+        let weight = weightSelect ? weightSelect.value : '';
+
+        let originalContent = btnElement ? btnElement.innerHTML : '';
+        if (btnElement) {
+            btnElement.disabled = true;
+            btnElement.innerHTML = '<i class="fas fa-spinner fa-spin"></i>';
+        }
+
+        fetch('/Gym Manager/api/add_to_cart.php', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                product_id: productId,
+                qty: qty,
+                weight: weight
+            })
+        })
+        .then(res => res.json())
+        .then(data => {
+            if (data.success) {
+                // Update badge in navbar
+                updateNavCartBadge(data.cart_count);
+
+                // Button success animation
+                if (btnElement) {
+                    btnElement.style.background = '#dcfce7';
+                    btnElement.style.color = '#15803d';
+                    btnElement.style.borderColor = '#86efac';
+                    btnElement.innerHTML = '<i class="fas fa-check"></i> ' + (isEn ? 'Added!' : 'Đã thêm!');
+                    setTimeout(() => {
+                        btnElement.innerHTML = originalContent;
+                        btnElement.style.background = '#f1f5f9';
+                        btnElement.style.color = 'var(--text-main)';
+                        btnElement.style.borderColor = '#e2e8f0';
+                        btnElement.disabled = false;
+                    }, 1400);
+                }
+
+                // Show toast notification
+                showCartToast(data.product_name, isEn);
+            } else {
+                if (btnElement) {
+                    btnElement.innerHTML = originalContent;
+                    btnElement.disabled = false;
+                }
+                alert(data.message || (isEn ? 'Failed to add to cart' : 'Không thể thêm vào giỏ hàng'));
+            }
+        })
+        .catch(err => {
+            console.error(err);
+            if (btnElement) {
+                btnElement.innerHTML = originalContent;
+                btnElement.disabled = false;
+            }
+            // Fallback submit
+            let input = document.createElement("input");
+            input.type = "hidden";
+            input.name = actionName;
+            input.value = productId;
+            form.appendChild(input);
+            form.submit();
+        });
     }
 }
 

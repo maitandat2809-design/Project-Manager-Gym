@@ -10,6 +10,231 @@ if (!isset($_SESSION['user_id']) || $_SESSION['role'] !== 'manager') {
 }
 
 include_once __DIR__ . '/../includes/header.php';
+?>
+<!-- html2canvas & jsPDF for Image and PDF Export -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+<script>
+function openInvoiceModal(id) {
+    const modal = document.getElementById('invoice-modal-' + id);
+    if (modal) modal.style.display = 'flex';
+}
+function closeInvoiceModal(id) {
+    const modal = document.getElementById('invoice-modal-' + id);
+    if (modal) modal.style.display = 'none';
+}
+function downloadInvoicePDF(id) {
+    const card = document.getElementById('invoice-card-' + id);
+    if (!card) return;
+    
+    html2canvas(card, {
+        scale: 2,
+        useCORS: true,
+        backgroundColor: '#ffffff'
+    }).then(canvas => {
+        const { jsPDF } = window.jspdf;
+        const imgData = canvas.toDataURL('image/jpeg', 0.98);
+        const imgWidth = 210;
+        const imgHeight = (canvas.height * imgWidth) / canvas.width;
+        const pdf = new jsPDF('p', 'mm', [imgWidth, imgHeight]);
+        pdf.addImage(imgData, 'JPEG', 0, 0, imgWidth, imgHeight);
+        pdf.save(`Invoice_#${id}_GymManager.pdf`);
+    }).catch(err => {
+        console.error("PDF Invoice export error:", err);
+        if (typeof showGymXAlert === 'function') {
+            showGymXAlert("Could not export invoice PDF.");
+        } else {
+            console.error("Could not export invoice PDF.");
+        }
+    });
+}
+function downloadInvoiceImage(id, format) {
+    const card = document.getElementById('invoice-card-' + id);
+    if (!card) return;
+    
+    html2canvas(card, {
+        scale: 2,
+        useCORS: true,
+        backgroundColor: '#ffffff'
+    }).then(canvas => {
+        const link = document.createElement('a');
+        link.download = `Invoice_#${id}_GymManager.${format}`;
+        link.href = canvas.toDataURL(`image/${format === 'jpg' ? 'jpeg' : 'png'}`, 0.98);
+        link.click();
+    }).catch(err => {
+        console.error("Canvas export error:", err);
+        if (typeof showGymXAlert === 'function') {
+            showGymXAlert("Could not export invoice image.");
+        } else {
+            console.error("Could not export invoice image.");
+        }
+    });
+}
+function captureElementFull(element) {
+    return new Promise((resolve, reject) => {
+        const clone = element.cloneNode(true);
+        
+        clone.style.width = '1450px';
+        clone.style.maxWidth = 'none';
+        clone.style.position = 'absolute';
+        clone.style.left = '-9999px';
+        clone.style.top = '0';
+        clone.style.zIndex = '-9999';
+        clone.style.background = '#ffffff';
+
+        // Copy canvas content (Chart.js)
+        const origCanvases = element.querySelectorAll('canvas');
+        const cloneCanvases = clone.querySelectorAll('canvas');
+        origCanvases.forEach((origCanvas, i) => {
+            if (cloneCanvases[i]) {
+                const destCtx = cloneCanvases[i].getContext('2d');
+                cloneCanvases[i].width = origCanvas.width;
+                cloneCanvases[i].height = origCanvas.height;
+                destCtx.drawImage(origCanvas, 0, 0);
+            }
+        });
+
+        // Make all table containers 100% visible and unconstrained
+        const scrollables = clone.querySelectorAll('.table-responsive, table, div');
+        scrollables.forEach(el => {
+            el.style.overflow = 'visible';
+            el.style.overflowX = 'visible';
+            el.style.maxWidth = 'none';
+        });
+
+        // Hide action buttons in clone for clean report
+        const actionBtns = clone.querySelectorAll('.invoice-export-btn, button');
+        actionBtns.forEach(btn => btn.style.display = 'none');
+
+        document.body.appendChild(clone);
+
+        setTimeout(() => {
+            html2canvas(clone, {
+                scale: 2,
+                useCORS: true,
+                backgroundColor: '#ffffff',
+                width: 1450,
+                windowWidth: 1450
+            }).then(canvas => {
+                document.body.removeChild(clone);
+                resolve(canvas);
+            }).catch(err => {
+                if (document.body.contains(clone)) document.body.removeChild(clone);
+                reject(err);
+            });
+        }, 150);
+    });
+}
+function downloadYearlyReportPDF(year, evt) {
+    const reportArea = document.getElementById('yearly-report-export-area');
+    if (!reportArea) return;
+    
+    let btn = evt ? evt.currentTarget : null;
+    let originalText = btn ? btn.innerHTML : '';
+    if (btn) {
+        btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Generating PDF...';
+        btn.disabled = true;
+    }
+    
+    captureElementFull(reportArea).then(canvas => {
+        const { jsPDF } = window.jspdf;
+        const imgData = canvas.toDataURL('image/jpeg', 0.95);
+        
+        const pdf = new jsPDF({
+            orientation: 'landscape',
+            unit: 'mm',
+            format: 'a4'
+        });
+
+        const imgWidth = 297;
+        const pageHeight = 210;
+        const imgHeight = (canvas.height * imgWidth) / canvas.width;
+        let heightLeft = imgHeight;
+        let position = 0;
+
+        pdf.addImage(imgData, 'JPEG', 0, position, imgWidth, imgHeight);
+        heightLeft -= pageHeight;
+
+        while (heightLeft > 0) {
+            position = heightLeft - imgHeight;
+            pdf.addPage();
+            pdf.addImage(imgData, 'JPEG', 0, position, imgWidth, imgHeight);
+            heightLeft -= pageHeight;
+        }
+
+        pdf.save(`GymManager_Yearly_Report_${year}.pdf`);
+
+        if (btn) {
+            btn.innerHTML = originalText;
+            btn.disabled = false;
+        }
+    }).catch(err => {
+        console.error("Report PDF export error:", err);
+        if (typeof showGymXAlert === 'function') {
+            showGymXAlert("Could not export report PDF.");
+        }
+        if (btn) {
+            btn.innerHTML = originalText;
+            btn.disabled = false;
+        }
+    });
+}
+function downloadMonthlyReportPDF(month, year, evt) {
+    const reportArea = document.getElementById('monthly-report-export-area');
+    if (!reportArea) return;
+    
+    let btn = evt ? evt.currentTarget : null;
+    let originalText = btn ? btn.innerHTML : '';
+    if (btn) {
+        btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Generating PDF...';
+        btn.disabled = true;
+    }
+    
+    captureElementFull(reportArea).then(canvas => {
+        const { jsPDF } = window.jspdf;
+        const imgData = canvas.toDataURL('image/jpeg', 0.95);
+        
+        const pdf = new jsPDF({
+            orientation: 'landscape',
+            unit: 'mm',
+            format: 'a4'
+        });
+
+        const imgWidth = 297;
+        const pageHeight = 210;
+        const imgHeight = (canvas.height * imgWidth) / canvas.width;
+        let heightLeft = imgHeight;
+        let position = 0;
+
+        pdf.addImage(imgData, 'JPEG', 0, position, imgWidth, imgHeight);
+        heightLeft -= pageHeight;
+
+        while (heightLeft > 0) {
+            position = heightLeft - imgHeight;
+            pdf.addPage();
+            pdf.addImage(imgData, 'JPEG', 0, position, imgWidth, imgHeight);
+            heightLeft -= pageHeight;
+        }
+
+        pdf.save(`GymManager_Monthly_Report_${month}_${year}.pdf`);
+
+        if (btn) {
+            btn.innerHTML = originalText;
+            btn.disabled = false;
+        }
+    }).catch(err => {
+        console.error("Report PDF export error:", err);
+        if (typeof showGymXAlert === 'function') {
+            showGymXAlert("Could not export report PDF.");
+        }
+        if (btn) {
+            btn.innerHTML = originalText;
+            btn.disabled = false;
+        }
+    });
+}
+</script>
+<?php
 
 $page = $_GET['page'] ?? 'dashboard';
 if ($page == 'memberships') {
@@ -17,7 +242,7 @@ if ($page == 'memberships') {
     exit();
 }
 $message = '';
-$current_lang = $_SESSION['lang'] ?? 'vi';
+$current_lang = $_SESSION['lang'] ?? 'en';
 
 // Handle Member Subscriptions Actions (Add / Update / Delete)
 if ($page == 'member_subscriptions' && isset($_POST['add_subscription'])) {
@@ -147,9 +372,13 @@ if ($page == 'member_subscriptions' && (isset($_GET['approve_sub']) || isset($_P
                 error_log("Approval email error: " . $mailErr->getMessage());
             }
 
-            $message = "🎉 Đã xác nhận kích hoạt thẻ thành viên #" . $sub_id . " thành công!";
+            $message = ($current_lang === 'en')
+                ? "🎉 Membership card #" . $sub_id . " activated successfully!"
+                : "🎉 Đã xác nhận kích hoạt thẻ thành viên #" . $sub_id . " thành công!";
         } catch (Exception $e) {
-            $message = "Lỗi khi kích hoạt thẻ: " . $e->getMessage();
+            $message = ($current_lang === 'en')
+                ? "Error activating membership card: " . $e->getMessage()
+                : "Lỗi khi kích hoạt thẻ: " . $e->getMessage();
         }
     }
 }
@@ -160,9 +389,13 @@ if ($page == 'member_subscriptions' && (isset($_GET['reject_sub']) || isset($_PO
     try {
         $stmt_rej = $pdo->prepare("UPDATE member_subscriptions SET status = 'cancelled', admin_seen = 1 WHERE id = ?");
         $stmt_rej->execute([$sub_id]);
-        $message = "🔴 Đã từ chối / hủy yêu cầu đăng ký thẻ thành viên #" . $sub_id . "!" . ($reason ? " (Lý do: " . htmlspecialchars($reason) . ")" : "");
+        $message = ($current_lang === 'en')
+            ? "🔴 Rejected / cancelled membership card subscription #" . $sub_id . "!" . ($reason ? " (Reason: " . htmlspecialchars($reason) . ")" : "")
+            : "🔴 Đã từ chối / hủy yêu cầu đăng ký thẻ thành viên #" . $sub_id . "!" . ($reason ? " (Lý do: " . htmlspecialchars($reason) . ")" : "");
     } catch (Exception $e) {
-        $message = "Error cancelling membership: " . $e->getMessage();
+        $message = ($current_lang === 'en')
+            ? "Error cancelling membership: " . $e->getMessage()
+            : "Lỗi khi hủy thẻ thành viên: " . $e->getMessage();
     }
 }
 
@@ -267,32 +500,68 @@ if ($page == 'users' && isset($_POST['update_role'])) {
 }
 
 if ($page == 'users' && isset($_POST['add_user'])) {
-    $name = $_POST['name'];
-    $email = $_POST['email'];
+    $name = trim($_POST['name']);
+    $email = trim($_POST['email']);
     $password = password_hash($_POST['password'], PASSWORD_DEFAULT);
-    $role = $_POST['role'];
+    $role = $_POST['role'] ?? 'user';
+    $phone = trim($_POST['phone'] ?? '');
 
-    // Check if email exists
-    $check = $pdo->prepare("SELECT id FROM users WHERE email = ?");
-    $check->execute([$email]);
-    if ($check->fetch()) {
-        $message = "Error: Email already exists!";
+    // Check email duplicate
+    $check_e = $pdo->prepare("SELECT id FROM users WHERE LOWER(email) = LOWER(?)");
+    $check_e->execute([$email]);
+
+    // Check phone duplicate
+    $check_p = null;
+    if ($phone !== '') {
+        $check_p_stmt = $pdo->prepare("SELECT id FROM users WHERE phone = ? AND phone != ''");
+        $check_p_stmt->execute([$phone]);
+        $check_p = $check_p_stmt->fetch();
+    }
+
+    if ($check_e->fetch()) {
+        $message = ($current_lang === 'vi') ? "⚠️ Lỗi: Email '$email' đã tồn tại trong hệ thống!" : "⚠️ Error: Email '$email' is already registered!";
+    } elseif ($check_p) {
+        $message = ($current_lang === 'vi') ? "⚠️ Lỗi: Số điện thoại '$phone' đã tồn tại trong hệ thống!" : "⚠️ Error: Phone number '$phone' is already registered!";
     } else {
-        $stmt = $pdo->prepare("INSERT INTO users (name, email, password, role) VALUES (?, ?, ?, ?)");
-        $stmt->execute([$name, $email, $password, $role]);
-        $message = "User created successfully!";
+        $stmt = $pdo->prepare("INSERT INTO users (name, email, password, role" . ($phone !== '' ? ", phone" : "") . ") VALUES (?, ?, ?, ?" . ($phone !== '' ? ", ?" : "") . ")");
+        $params = [$name, $email, $password, $role];
+        if ($phone !== '') $params[] = $phone;
+        $stmt->execute($params);
+        $message = ($current_lang === 'vi') ? "Tạo người dùng thành công!" : "User created successfully!";
     }
 }
 
 if ($page == 'users' && isset($_POST['update_user_details'])) {
     $uid = $_POST['user_id'];
-    $name = $_POST['name'];
-    $email = $_POST['email'];
+    $name = trim($_POST['name']);
+    $email = trim($_POST['email']);
     $role = $_POST['role'];
+    $phone = trim($_POST['phone'] ?? '');
 
-    $stmt = $pdo->prepare("UPDATE users SET name = ?, email = ?, role = ? WHERE id = ?");
-    $stmt->execute([$name, $email, $role, $uid]);
-    $message = "User updated successfully!";
+    // Check Email duplicate for another user
+    $check_e = $pdo->prepare("SELECT id FROM users WHERE LOWER(email) = LOWER(?) AND id != ?");
+    $check_e->execute([$email, $uid]);
+
+    // Check Phone duplicate for another user
+    $check_p = null;
+    if ($phone !== '') {
+        $check_p_stmt = $pdo->prepare("SELECT id FROM users WHERE phone = ? AND phone != '' AND id != ?");
+        $check_p_stmt->execute([$phone, $uid]);
+        $check_p = $check_p_stmt->fetch();
+    }
+
+    if ($check_e->fetch()) {
+        $message = ($current_lang === 'vi') ? "⚠️ Lỗi: Email '$email' đã được sử dụng bởi một tài khoản khác!" : "⚠️ Error: Email '$email' is already registered to another account!";
+    } elseif ($check_p) {
+        $message = ($current_lang === 'vi') ? "⚠️ Lỗi: Số điện thoại '$phone' đã được sử dụng bởi một tài khoản khác!" : "⚠️ Error: Phone number '$phone' is already registered to another account!";
+    } else {
+        $stmt = $pdo->prepare("UPDATE users SET name = ?, email = ?, role = ?" . ($phone !== '' ? ", phone = ?" : "") . " WHERE id = ?");
+        $params = [$name, $email, $role];
+        if ($phone !== '') $params[] = $phone;
+        $params[] = $uid;
+        $stmt->execute($params);
+        $message = ($current_lang === 'vi') ? "Cập nhật thông tin người dùng thành công!" : "User updated successfully!";
+    }
 }
 
 if (isset($_GET['delete_user'])) {
@@ -314,60 +583,82 @@ if ($page == 'bookings' && isset($_POST['add_booking'])) {
     $status = $_POST['status'] ?? 'pending';
     
     try {
-        $stmt = $pdo->prepare("INSERT INTO bookings (user_id, coach_id, booking_date, status, coach_seen, user_seen) VALUES (?, ?, ?, ?, 0, 0)");
-        $stmt->execute([$user_id, $coach_id, $booking_date, $status]);
-        $message = "Booking created successfully!";
+        $requested_time = strtotime($booking_date);
+        $start_buffer = date('Y-m-d H:i:s', $requested_time - 3599);
+        $end_buffer = date('Y-m-d H:i:s', $requested_time + 3599);
+
+        // 1. Coach slot conflict
+        $stmt_c_chk = $pdo->prepare("SELECT id FROM bookings WHERE coach_id = ? AND status != 'cancelled' AND booking_date BETWEEN ? AND ?");
+        $stmt_c_chk->execute([$coach_id, $start_buffer, $end_buffer]);
         
-        // Optional: PHPMailer to both User and Coach
-        try {
-            $stmt_u = $pdo->prepare("SELECT name, email FROM users WHERE id = ?");
-            $stmt_u->execute([$user_id]);
-            $usr = $stmt_u->fetch();
+        // 2. User slot conflict
+        $stmt_u_chk = $pdo->prepare("SELECT id FROM bookings WHERE user_id = ? AND status != 'cancelled' AND booking_date BETWEEN ? AND ?");
+        $stmt_u_chk->execute([$user_id, $start_buffer, $end_buffer]);
 
-            $stmt_c = $pdo->prepare("SELECT u.name, u.email FROM coaches c JOIN users u ON c.user_id = u.id WHERE c.id = ?");
-            $stmt_c->execute([$coach_id]);
-            $cch = $stmt_c->fetch();
+        if ($stmt_c_chk->fetch()) {
+            $message = ($current_lang === 'vi')
+                ? "⚠️ Lỗi: HLV này đã có lịch dạy vào khung giờ này (trùng trong vòng 60 phút). Vui lòng chọn thời gian hoặc HLV khác!"
+                : "⚠️ Error: This coach is already booked for another session at this time (overlapping 60min slot).";
+        } elseif ($stmt_u_chk->fetch()) {
+            $message = ($current_lang === 'vi')
+                ? "⚠️ Lỗi: Học viên đã có lịch tập với HLV khác vào cùng khung giờ này (trùng trong vòng 60 phút). Không thể đăng ký 2 HLV cùng 1 khung giờ!"
+                : "⚠️ Error: The client already has a session scheduled with another coach at this time slot.";
+        } else {
+            $stmt = $pdo->prepare("INSERT INTO bookings (user_id, coach_id, booking_date, status, coach_seen, user_seen) VALUES (?, ?, ?, ?, 0, 0)");
+            $stmt->execute([$user_id, $coach_id, $booking_date, $status]);
+            $message = "Booking created successfully!";
+            
+            // Optional: PHPMailer to both User and Coach
+            try {
+                $stmt_u = $pdo->prepare("SELECT name, email FROM users WHERE id = ?");
+                $stmt_u->execute([$user_id]);
+                $usr = $stmt_u->fetch();
 
-            if ($usr && $usr['email']) {
-                require_once __DIR__ . '/../libs/PHPMailer/src/Exception.php';
-                require_once __DIR__ . '/../libs/PHPMailer/src/PHPMailer.php';
-                require_once __DIR__ . '/../libs/PHPMailer/src/SMTP.php';
+                $stmt_c = $pdo->prepare("SELECT u.name, u.email FROM coaches c JOIN users u ON c.user_id = u.id WHERE c.id = ?");
+                $stmt_c->execute([$coach_id]);
+                $cch = $stmt_c->fetch();
 
-                $mail = new PHPMailer\PHPMailer\PHPMailer(true);
-                $mail->CharSet = 'UTF-8';
-                $mail->isSMTP();
-                $mail->Host       = 'smtp.gmail.com';
-                $mail->SMTPAuth   = true;
-                $mail->Username   = 'lamtuoi155@gmail.com';     
-                $mail->Password   = 'hpst uazz wdsq sbnf';   
-                $mail->SMTPSecure = PHPMailer\PHPMailer\PHPMailer::ENCRYPTION_STARTTLS;
-                $mail->Port       = 587;
+                if ($usr && $usr['email']) {
+                    require_once __DIR__ . '/../libs/PHPMailer/src/Exception.php';
+                    require_once __DIR__ . '/../libs/PHPMailer/src/PHPMailer.php';
+                    require_once __DIR__ . '/../libs/PHPMailer/src/SMTP.php';
 
-                $mail->setFrom('lamtuoi155@gmail.com', 'GymX Admin System');
-                $mail->addAddress($usr['email'], $usr['name']);
-                if ($cch && $cch['email']) {
-                    $mail->addCC($cch['email'], $cch['name']);
+                    $mail = new PHPMailer\PHPMailer\PHPMailer(true);
+                    $mail->CharSet = 'UTF-8';
+                    $mail->isSMTP();
+                    $mail->Host       = 'smtp.gmail.com';
+                    $mail->SMTPAuth   = true;
+                    $mail->Username   = 'lamtuoi155@gmail.com';     
+                    $mail->Password   = 'hpst uazz wdsq sbnf';   
+                    $mail->SMTPSecure = PHPMailer\PHPMailer\PHPMailer::ENCRYPTION_STARTTLS;
+                    $mail->Port       = 587;
+
+                    $mail->setFrom('lamtuoi155@gmail.com', 'GymX Admin System');
+                    $mail->addAddress($usr['email'], $usr['name']);
+                    if ($cch && $cch['email']) {
+                        $mail->addCC($cch['email'], $cch['name']);
+                    }
+
+                    $mail->isHTML(true);
+                    $mail->Subject = "🆕 New GymX Booking Scheduled by Admin";
+                    
+                    $mail_body = "<div style='font-family: Arial, sans-serif; max-width: 600px; margin: auto; padding: 20px; border: 1px solid #e2e8f0; border-radius: 20px;'>";
+                    $mail_body .= "<h2 style='color: #0062ff;'>New Appointment</h2>";
+                    $mail_body .= "<p>An administrator has scheduled a new training session for you.</p>";
+                    $mail_body .= "<div style='background: #f8fafc; padding: 15px; border-radius: 12px; margin: 20px 0;'>";
+                    $mail_body .= "<strong>Client:</strong> " . htmlspecialchars($usr['name']) . "<br>";
+                    $mail_body .= "<strong>Coach:</strong> " . htmlspecialchars($cch['name']) . "<br>";
+                    $mail_body .= "<strong>Time:</strong> " . date('l, d/m/Y - H:i', strtotime($booking_date)) . "<br>";
+                    $mail_body .= "<strong>Status:</strong> " . strtoupper($status) . "<br>";
+                    $mail_body .= "</div>";
+                    $mail_body .= "<p>Please log in to the system to view details.</p></div>";
+                    
+                    $mail->Body = $mail_body;
+                    $mail->send();
                 }
-
-                $mail->isHTML(true);
-                $mail->Subject = "🆕 New GymX Booking Scheduled by Admin";
-                
-                $mail_body = "<div style='font-family: Arial, sans-serif; max-width: 600px; margin: auto; padding: 20px; border: 1px solid #e2e8f0; border-radius: 20px;'>";
-                $mail_body .= "<h2 style='color: #0062ff;'>New Appointment</h2>";
-                $mail_body .= "<p>An administrator has scheduled a new training session for you.</p>";
-                $mail_body .= "<div style='background: #f8fafc; padding: 15px; border-radius: 12px; margin: 20px 0;'>";
-                $mail_body .= "<strong>Client:</strong> " . htmlspecialchars($usr['name']) . "<br>";
-                $mail_body .= "<strong>Coach:</strong> " . htmlspecialchars($cch['name']) . "<br>";
-                $mail_body .= "<strong>Time:</strong> " . date('l, d/m/Y - H:i', strtotime($booking_date)) . "<br>";
-                $mail_body .= "<strong>Status:</strong> " . strtoupper($status) . "<br>";
-                $mail_body .= "</div>";
-                $mail_body .= "<p>Please log in to the system to view details.</p></div>";
-                
-                $mail->Body = $mail_body;
-                $mail->send();
+            } catch (Exception $mailEx) {
+                error_log("Mail error during booking insert: " . $mailEx->getMessage());
             }
-        } catch (Exception $mailEx) {
-            error_log("Mail error during booking insert: " . $mailEx->getMessage());
         }
     } catch (Exception $e) {
         $message = "Error creating booking: " . $e->getMessage();
@@ -383,9 +674,38 @@ if ($page == 'bookings' && isset($_POST['update_booking'])) {
     $coach_message = $_POST['coach_message'] ?? '';
     
     try {
-        $stmt = $pdo->prepare("UPDATE bookings SET user_id = ?, coach_id = ?, booking_date = ?, status = ?, coach_message = ?, coach_seen = 0, user_seen = 0 WHERE id = ?");
-        $stmt->execute([$user_id, $coach_id, $booking_date, $status, $coach_message, $booking_id]);
-        $message = "Booking updated successfully!";
+        $requested_time = strtotime($booking_date);
+        $start_buffer = date('Y-m-d H:i:s', $requested_time - 3599);
+        $end_buffer = date('Y-m-d H:i:s', $requested_time + 3599);
+
+        $has_conflict = false;
+        if ($status !== 'cancelled') {
+            // 1. Coach slot conflict
+            $stmt_c_chk = $pdo->prepare("SELECT id FROM bookings WHERE coach_id = ? AND id != ? AND status != 'cancelled' AND booking_date BETWEEN ? AND ?");
+            $stmt_c_chk->execute([$coach_id, $booking_id, $start_buffer, $end_buffer]);
+            
+            // 2. User slot conflict
+            $stmt_u_chk = $pdo->prepare("SELECT id FROM bookings WHERE user_id = ? AND id != ? AND status != 'cancelled' AND booking_date BETWEEN ? AND ?");
+            $stmt_u_chk->execute([$user_id, $booking_id, $start_buffer, $end_buffer]);
+
+            if ($stmt_c_chk->fetch()) {
+                $has_conflict = true;
+                $message = ($current_lang === 'vi')
+                    ? "⚠️ Lỗi: HLV này đã có lịch dạy vào khung giờ này (trùng trong vòng 60 phút). Vui lòng chọn thời gian hoặc HLV khác!"
+                    : "⚠️ Error: This coach is already booked for another session at this time (overlapping 60min slot).";
+            } elseif ($stmt_u_chk->fetch()) {
+                $has_conflict = true;
+                $message = ($current_lang === 'vi')
+                    ? "⚠️ Lỗi: Học viên đã có lịch tập với HLV khác vào cùng khung giờ này (trùng trong vòng 60 phút). Không thể đăng ký 2 HLV cùng 1 khung giờ!"
+                    : "⚠️ Error: The client already has a session scheduled with another coach at this time slot.";
+            }
+        }
+
+        if (!$has_conflict) {
+            $stmt = $pdo->prepare("UPDATE bookings SET user_id = ?, coach_id = ?, booking_date = ?, status = ?, coach_message = ?, coach_seen = 0, user_seen = 0 WHERE id = ?");
+            $stmt->execute([$user_id, $coach_id, $booking_date, $status, $coach_message, $booking_id]);
+            $message = "Booking updated successfully!";
+        }
         
         // Optional: PHPMailer rescheduling notice
         try {
@@ -463,7 +783,11 @@ if ($page == 'bookings' && isset($_GET['change_status']) && isset($_GET['booking
     
     if (in_array($new_status, ['pending', 'confirmed', 'cancelled'])) {
         try {
-            $stmt = $pdo->prepare("UPDATE bookings SET status = ?, coach_seen = 0, user_seen = 0 WHERE id = ?");
+            if ($new_status === 'cancelled') {
+                $stmt = $pdo->prepare("UPDATE bookings SET status = ?, cancel_reason = 'Cancelled by Manager', coach_seen = 0, user_seen = 0 WHERE id = ?");
+            } else {
+                $stmt = $pdo->prepare("UPDATE bookings SET status = ?, coach_seen = 0, user_seen = 0 WHERE id = ?");
+            }
             $stmt->execute([$new_status, $booking_id]);
             $message = "Booking status updated to " . strtoupper($new_status) . " successfully!";
             
@@ -947,7 +1271,7 @@ if ($page == 'equipment' && isset($_GET['delete_equipment'])) {
                                 <td>
                                     <div class="actions-cell-flex">
                                         <a href="/Gym Manager/dashboards/manager.php?page=products&edit_product=<?php echo $p['id']; ?>" class="action-btn btn-edit">Edit</a>
-                                        <a href="/Gym Manager/dashboards/manager.php?page=products&delete_product=<?php echo $p['id']; ?>" class="action-btn btn-delete" onclick="return confirm('Confirm delete this product?')">Delete</a>
+                                        <a href="/Gym Manager/dashboards/manager.php?page=products&delete_product=<?php echo $p['id']; ?>" class="action-btn btn-delete" onclick="return confirmLinkCustom(event, this, '<?php echo $current_lang === 'vi' ? 'Bạn có chắc chắn muốn xóa sản phẩm này?' : 'Confirm delete this product?'; ?>', '<?php echo $current_lang === 'vi' ? 'Xóa Sản Phẩm' : 'Delete Product'; ?>', '🗑️');">Delete</a>
                                     </div>
                                 </td>
                             </tr>
@@ -974,7 +1298,8 @@ if ($page == 'equipment' && isset($_GET['delete_equipment'])) {
                 <!-- Add New User Form -->
                 <form method="POST" style="background: white; padding: 2.5rem; border-radius: 25px; margin: 2rem 0; box-shadow: var(--shadow-premium); border: 1px solid var(--border);">
                     <h3 style="margin-bottom: 1.5rem; color: var(--text-main);">Add New User</h3>
-                    <div style="display: grid; grid-template-columns: repeat(4, 1fr) auto; gap: 1.5rem; align-items: flex-end;">
+                    <input type="hidden" name="role" value="user">
+                    <div style="display: grid; grid-template-columns: repeat(3, 1fr) auto; gap: 1.5rem; align-items: flex-end;">
                         <div class="form-group" style="margin-bottom: 0;">
                             <label style="font-weight: 600;">Full Name</label>
                             <input type="text" name="name" required placeholder="User Name" style="background: #f1f5f9;">
@@ -986,15 +1311,6 @@ if ($page == 'equipment' && isset($_GET['delete_equipment'])) {
                         <div class="form-group" style="margin-bottom: 0;">
                             <label style="font-weight: 600;">Password</label>
                             <input type="password" name="password" required placeholder="******" style="background: #f1f5f9;">
-                        </div>
-                        <div class="form-group" style="margin-bottom: 0;">
-                            <label style="font-weight: 600;"><?php echo __("role"); ?></label>
-                            <select name="role" style="padding: 1.1rem; border-radius: 15px; background: #f1f5f9; border: none; width: 100%; outline: none; font-weight: 600;">
-                                <option value="user">User</option>
-                                <option value="coach"><?php echo __("coach"); ?></option>
-                                <option value="manager">Manager</option>
-                                <option value="admin">Admin</option>
-                            </select>
                         </div>
                         <button type="submit" name="add_user" class="btn-auth" style="margin-top: 0; width: auto; padding: 1.1rem 1.8rem;">Add User</button>
                     </div>
@@ -1072,7 +1388,7 @@ if ($page == 'equipment' && isset($_GET['delete_equipment'])) {
                                     <div class="actions-cell-flex">
                                         <a href="/Gym Manager/dashboards/manager.php?page=users&edit_user=<?php echo $u['id']; ?>" class="action-btn btn-edit" style="font-size: 0.75rem; padding: 8px 12px;">Edit</a>
                                         <?php if($u['id'] != $_SESSION['user_id']): ?>
-                                            <a href="/Gym Manager/dashboards/manager.php?page=users&delete_user=<?php echo $u['id']; ?>" class="action-btn btn-delete" style="font-size: 0.75rem; padding: 8px 12px;" onclick="return confirm('WARNING: Are you sure you want to delete this user? This action cannot be undone.')">Delete</a>
+                                            <a href="/Gym Manager/dashboards/manager.php?page=users&delete_user=<?php echo $u['id']; ?>" class="action-btn btn-delete" style="font-size: 0.75rem; padding: 8px 12px;" onclick="return confirmLinkCustom(event, this, '<?php echo $current_lang === 'vi' ? 'CẢNH BÁO: Bạn có chắc chắn muốn xóa người dùng này? Thao tác không thể hoàn tác.' : 'WARNING: Are you sure you want to delete this user? This action cannot be undone.'; ?>', '<?php echo $current_lang === 'vi' ? 'Xóa Người Dùng' : 'Delete User'; ?>', '⚠️');">Delete</a>
                                         <?php endif; ?>
                                     </div>
                                 </td>
@@ -1166,18 +1482,17 @@ if ($page == 'equipment' && isset($_GET['delete_equipment'])) {
                     <table style="width: 100%; border-collapse: separate; border-spacing: 0 10px;">
                         <thead>
                             <tr style="background: #f8fafc;">
-                                <th style="padding: 1.2rem; border-radius: 15px 0 0 15px; text-align: left;">Order ID</th>
-                                <th style="padding: 1.2rem; text-align: left;">Date</th>
-                                <th style="padding: 1.2rem; text-align: left;">Customer Info</th>
-                                <th style="padding: 1.2rem; text-align: left;">Address / Phone</th>
-                                <th style="padding: 1.2rem; text-align: left;">Total & Method</th>
-                                <th style="padding: 1.2rem; text-align: center;">Status</th>
-                                <th style="padding: 1.2rem; border-radius: 0 15px 15px 0; text-align: center;">Actions</th>
+                                <th style="padding: 1.2rem; border-radius: 15px 0 0 15px; text-align: left;">ORDER ID</th>
+                                <th style="padding: 1.2rem; text-align: left;">DATE</th>
+                                <th style="padding: 1.2rem; text-align: left;">CUSTOMER INFO</th>
+                                <th style="padding: 1.2rem; text-align: left;">ADDRESS / PHONE</th>
+                                <th style="padding: 1.2rem; text-align: left;">TOTAL & METHOD</th>
+                                <th style="padding: 1.2rem; border-radius: 0 15px 15px 0; text-align: center;">DETAILS & ACTIONS</th>
                             </tr>
                         </thead>
                         <tbody>
                             <?php if (empty($mgr_orders)): ?>
-                                <tr><td colspan="7" style="text-align: center; padding: 2.5rem; color: var(--text-muted); font-weight: 600;">No orders found matching criteria.</td></tr>
+                                <tr><td colspan="6" style="text-align: center; padding: 2.5rem; color: var(--text-muted); font-weight: 600;">No orders found matching criteria.</td></tr>
                             <?php else: ?>
                                 <?php foreach ($mgr_orders as $o): 
                                     $stmt_o_items = $pdo->prepare("SELECT oi.*, p.name, p.name_vi FROM order_items oi JOIN products p ON oi.product_id = p.id WHERE oi.order_id = ?");
@@ -1201,42 +1516,152 @@ if ($page == 'equipment' && isset($_GET['delete_equipment'])) {
                                         </td>
                                         <td style="padding: 1.2rem; background: white;">
                                             <div style="font-size: 1.1rem; font-weight: 800; color: #10b981;">$<?php echo number_format($o['total_price'], 2); ?></div>
-                                            <span style="background: #f1f5f9; color: #475569; padding: 2px 8px; border-radius: 10px; font-weight: 700; font-size: 0.75rem; text-transform: uppercase;">
-                                                <?php echo strtoupper($o['payment_method']); ?>
-                                            </span>
-                                        </td>
-                                        <td style="padding: 1.2rem; background: white; text-align: center;">
-                                            <?php if ($o['status'] === 'pending'): ?>
-                                                <span style="background: #ffedd5; color: #c2410c; padding: 5px 12px; border-radius: 20px; font-weight: 800; font-size: 0.75rem; display: inline-block;">
-                                                    🚚 Pending (2-3 days)
-                                                </span>
-                                            <?php elseif ($o['status'] === 'completed'): ?>
-                                                <span style="background: #dcfce7; color: #166534; padding: 5px 12px; border-radius: 20px; font-weight: 800; font-size: 0.75rem; display: inline-block;">
-                                                    ✔ Completed
-                                                </span>
+                                            <?php if ($o['payment_method'] === 'momo'): ?>
+                                                <?php if (!empty($o['momo_confirmed'])): ?>
+                                                    <span style="background: #fdf4ff; color: #a21caf; border: 1px solid #f0abfc; padding: 3px 8px; border-radius: 10px; font-weight: 800; font-size: 0.75rem;">
+                                                        💜 MOMO (Đã TT)
+                                                    </span>
+                                                <?php else: ?>
+                                                    <span style="background: #fff1f2; color: #e11d48; border: 1px solid #fecdd3; padding: 3px 8px; border-radius: 10px; font-weight: 700; font-size: 0.75rem;">
+                                                        💜 MOMO (Chờ TT)
+                                                    </span>
+                                                <?php endif; ?>
                                             <?php else: ?>
-                                                <span style="background: #fee2e2; color: #991b1b; padding: 5px 12px; border-radius: 20px; font-weight: 800; font-size: 0.75rem; display: inline-block;">
-                                                    ✖ Cancelled
+                                                <span style="background: #f1f5f9; color: #475569; padding: 2px 8px; border-radius: 10px; font-weight: 700; font-size: 0.75rem; text-transform: uppercase;">
+                                                    <?php echo strtoupper($o['payment_method']); ?>
                                                 </span>
                                             <?php endif; ?>
                                         </td>
                                         <td style="padding: 1.2rem; background: white; border-radius: 0 15px 15px 0; text-align: center;">
-                                            <div style="display: flex; gap: 6px; justify-content: center; flex-wrap: wrap;">
-                                                <?php if ($o['status'] === 'pending'): ?>
-                                                    <a href="/Gym Manager/dashboards/manager.php?page=orders&change_order_status=completed&order_id=<?php echo $o['id']; ?>" class="action-btn btn-add" style="font-size: 0.75rem; padding: 6px 12px;" onclick="return confirmLinkCustom(event, this, 'Xác nhận đơn hàng #<?php echo $o['id']; ?> đã giao hàng thành công?', 'Xác Nhận Đơn Hàng', '✅');">
-                                                        <i class="fas fa-check"></i> Complete
-                                                    </a>
-                                                    <a href="/Gym Manager/dashboards/manager.php?page=orders&change_order_status=cancelled&order_id=<?php echo $o['id']; ?>" class="action-btn btn-delete" style="font-size: 0.75rem; padding: 6px 12px;" onclick="return confirmLinkCustom(event, this, 'Hủy đơn hàng #<?php echo $o['id']; ?> và tự động hoàn trả hàng vào kho?', 'Hủy Đơn Hàng', '⚠️');">
-                                                        <i class="fas fa-ban"></i> Cancel
-                                                    </a>
-                                                <?php elseif ($o['status'] === 'cancelled'): ?>
-                                                    <a href="/Gym Manager/dashboards/manager.php?page=orders&change_order_status=pending&order_id=<?php echo $o['id']; ?>" class="action-btn btn-edit" style="font-size: 0.75rem; padding: 6px 12px;" onclick="return confirmLinkCustom(event, this, 'Khôi phục đơn hàng #<?php echo $o['id']; ?> về trạng thái Đang xử lý?', 'Khôi Phục Đơn Hàng', '🔄');">
-                                                        <i class="fas fa-redo"></i> Restore
-                                                    </a>
-                                                <?php endif; ?>
-                                                <a href="/Gym Manager/dashboards/manager.php?page=orders&delete_order=<?php echo $o['id']; ?>" class="action-btn btn-delete" style="font-size: 0.75rem; padding: 6px 10px;" onclick="return confirmLinkCustom(event, this, 'Xóa vĩnh viễn dữ liệu đơn hàng #<?php echo $o['id']; ?>?', 'Xóa Đơn Hàng', '🗑️');" title="Delete record">
-                                                    <i class="fas fa-trash"></i>
-                                                </a>
+                                            <button type="button" class="action-btn btn-edit" style="font-size: 0.82rem; padding: 7px 16px; border-radius: 12px; display: inline-flex; align-items: center; gap: 6px; cursor: pointer; font-weight: 700; background: linear-gradient(135deg, #1a2744, #2563eb); color: white; border: none;" onclick="showOrderDetailsModal(<?php echo $o['id']; ?>)">
+                                                <i class="fas fa-eye"></i> <?php echo $current_lang === 'vi' ? 'Xem Chi Tiết' : 'Details'; ?>
+                                            </button>
+
+                                            <!-- Hidden Modal Content for Order #<?php echo $o['id']; ?> -->
+                                            <div id="order-modal-content-<?php echo $o['id']; ?>" style="display:none;">
+                                                <!-- Order Header & Status Badge -->
+                                                <div style="display: flex; justify-content: space-between; align-items: center; padding-bottom: 1rem; margin-bottom: 1.2rem; border-bottom: 1.5px solid #e2e8f0;">
+                                                    <div>
+                                                        <h3 style="margin: 0; color: var(--primary); font-weight: 800; font-size: 1.2rem;">
+                                                            <?php echo $current_lang === 'vi' ? 'Đơn Hàng #' : 'Order #'; ?><?php echo $o['id']; ?>
+                                                        </h3>
+                                                        <span style="font-size: 0.8rem; color: #64748b;">
+                                                            📅 <?php echo date('d/m/Y H:i', strtotime($o['created_at'])); ?>
+                                                        </span>
+                                                    </div>
+                                                    <div>
+                                                        <?php if ($o['status'] === 'pending'): ?>
+                                                            <span style="background: #ffedd5; color: #c2410c; padding: 6px 14px; border-radius: 20px; font-weight: 800; font-size: 0.8rem; display: inline-block; border: 1px solid #fed7aa;">
+                                                                🚚 Pending (Delivering 2-3 days)
+                                                            </span>
+                                                        <?php elseif ($o['status'] === 'completed'): ?>
+                                                            <span style="background: #dcfce7; color: #166534; padding: 6px 14px; border-radius: 20px; font-weight: 800; font-size: 0.8rem; display: inline-block; border: 1px solid #bbf7d0;">
+                                                                ✔ Completed
+                                                            </span>
+                                                        <?php else: ?>
+                                                            <span style="background: #fee2e2; color: #991b1b; padding: 6px 14px; border-radius: 20px; font-weight: 800; font-size: 0.8rem; display: inline-block; border: 1px solid #fca5a5;">
+                                                                ✖ Cancelled
+                                                            </span>
+                                                        <?php endif; ?>
+                                                    </div>
+                                                </div>
+
+                                                <!-- Customer & Shipping Card -->
+                                                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; margin-bottom: 1.5rem; background: #f8fafc; padding: 1.2rem; border-radius: 16px; border: 1px solid #e2e8f0; text-align: left;">
+                                                    <div>
+                                                        <div style="font-size: 0.75rem; text-transform: uppercase; font-weight: 800; color: #64748b; margin-bottom: 4px; letter-spacing: 0.5px;">
+                                                            <?php echo $current_lang === 'vi' ? 'Khách Hàng' : 'Customer Info'; ?>
+                                                        </div>
+                                                        <div style="font-weight: 700; color: var(--primary); font-size: 0.95rem;"><?php echo htmlspecialchars($o['user_name']); ?></div>
+                                                        <div style="font-size: 0.82rem; color: #475569;"><?php echo htmlspecialchars($o['user_email']); ?></div>
+                                                    </div>
+                                                    <div>
+                                                        <div style="font-size: 0.75rem; text-transform: uppercase; font-weight: 800; color: #64748b; margin-bottom: 4px; letter-spacing: 0.5px;">
+                                                            <?php echo $current_lang === 'vi' ? 'Giao Hàng & Thanh Toán' : 'Shipping & Payment'; ?>
+                                                        </div>
+                                                        <div style="font-size: 0.82rem; color: #334155;">📞 <strong><?php echo htmlspecialchars($o['phone'] ?? 'N/A'); ?></strong></div>
+                                                        <div style="font-size: 0.82rem; color: #475569; margin-top: 2px;">📍 <?php echo htmlspecialchars($o['address'] ?? 'N/A'); ?></div>
+                                                        <div style="margin-top: 6px;">
+                                                            <?php if ($o['payment_method'] === 'momo' && !empty($o['momo_confirmed'])): ?>
+                                                                <span style="background: #fdf4ff; color: #a21caf; border: 1px solid #f0abfc; padding: 3px 10px; border-radius: 10px; font-weight: 800; font-size: 0.75rem;">
+                                                                    💜 MOMO (Đã Thanh Toán Online)
+                                                                </span>
+                                                            <?php else: ?>
+                                                                <span style="background: #e0f2fe; color: #0369a1; padding: 3px 10px; border-radius: 10px; font-weight: 800; font-size: 0.75rem; text-transform: uppercase;">
+                                                                    💳 <?php echo strtoupper($o['payment_method']); ?>
+                                                                </span>
+                                                            <?php endif; ?>
+                                                        </div>
+                                                    </div>
+                                                </div>
+
+                                                <!-- Ordered Items Table -->
+                                                <div style="margin-bottom: 1.5rem;">
+                                                    <div style="font-size: 0.88rem; font-weight: 800; color: var(--primary); margin-bottom: 0.8rem; display: flex; align-items: center; gap: 6px; text-align: left;">
+                                                        <i class="fas fa-box-open" style="color: var(--gold);"></i> <?php echo $current_lang === 'vi' ? 'Chi Tiết Sản Phẩm Đã Đặt' : 'Ordered Products Detail'; ?>
+                                                    </div>
+                                                    <table style="width: 100%; border-collapse: collapse; background: #ffffff; border-radius: 12px; overflow: hidden; border: 1px solid #e2e8f0; font-size: 0.85rem;">
+                                                        <thead>
+                                                            <tr style="background: #f1f5f9; color: #475569; font-weight: 700; text-align: left;">
+                                                                <th style="padding: 10px 12px;"><?php echo $current_lang === 'vi' ? 'Sản Phẩm' : 'Product'; ?></th>
+                                                                <th style="padding: 10px 12px; text-align: center;"><?php echo $current_lang === 'vi' ? 'Đơn Giá' : 'Unit Price'; ?></th>
+                                                                <th style="padding: 10px 12px; text-align: center;"><?php echo $current_lang === 'vi' ? 'SL' : 'Qty'; ?></th>
+                                                                <th style="padding: 10px 12px; text-align: right;"><?php echo $current_lang === 'vi' ? 'Thành Tiền' : 'Subtotal'; ?></th>
+                                                            </tr>
+                                                        </thead>
+                                                        <tbody>
+                                                            <?php foreach ($o_items as $item): 
+                                                                $pname = ($current_lang === 'vi' && !empty($item['name_vi'])) ? $item['name_vi'] : $item['name'];
+                                                                $subtotal = $item['price'] * $item['quantity'];
+                                                            ?>
+                                                                <tr style="border-bottom: 1px solid #f1f5f9; text-align: left;">
+                                                                    <td style="padding: 10px 12px; font-weight: 700; color: #1e293b;"><?php echo htmlspecialchars($pname); ?></td>
+                                                                    <td style="padding: 10px 12px; text-align: center; color: #64748b;">$<?php echo number_format($item['price'], 2); ?></td>
+                                                                    <td style="padding: 10px 12px; text-align: center; font-weight: 800; color: var(--primary);">x<?php echo $item['quantity']; ?></td>
+                                                                    <td style="padding: 10px 12px; text-align: right; font-weight: 800; color: #10b981;">$<?php echo number_format($subtotal, 2); ?></td>
+                                                                </tr>
+                                                            <?php endforeach; ?>
+                                                        </tbody>
+                                                        <tfoot>
+                                                            <tr style="background: #fafaf9; font-weight: 800; font-size: 0.95rem;">
+                                                                <td colspan="3" style="padding: 12px; text-align: right; color: var(--primary);"><?php echo $current_lang === 'vi' ? 'TỔNG CỘNG ĐƠN HÀNG:' : 'ORDER TOTAL:'; ?></td>
+                                                                <td style="padding: 12px; text-align: right; color: #10b981; font-size: 1.1rem;">$<?php echo number_format($o['total_price'], 2); ?></td>
+                                                            </tr>
+                                                        </tfoot>
+                                                    </table>
+                                                </div>
+
+                                                <!-- Action Controls inside Modal -->
+                                                <div style="background: #f8fafc; padding: 1.2rem; border-radius: 16px; border: 1px solid #cbd5e1; text-align: left;">
+                                                    <div style="font-size: 0.8rem; font-weight: 800; color: var(--primary); text-transform: uppercase; margin-bottom: 0.8rem; letter-spacing: 0.5px; display: flex; align-items: center; gap: 6px;">
+                                                        <i class="fas fa-cogs" style="color: var(--gold);"></i> <?php echo $current_lang === 'vi' ? 'Thao Tác Quản Lý Đơn Hàng' : 'Order Management Actions'; ?>
+                                                    </div>
+                                                    <div style="display: flex; gap: 10px; flex-wrap: wrap; align-items: center;">
+                                                        <?php if ($o['status'] === 'pending'): ?>
+                                                            <?php if (($o['payment_method'] ?? '') === 'momo' && empty($o['momo_confirmed'])): ?>
+                                                            <!-- MoMo Confirm Button -->
+                                                            <button type="button"
+                                                                onclick="confirmMomoPayment(<?php echo $o['id']; ?>, 'shop')"
+                                                                style="font-size: 0.82rem; padding: 8px 16px; border-radius: 12px; display: inline-flex; align-items: center; gap: 6px; cursor: pointer; font-weight: 800; background: linear-gradient(135deg, #a21caf, #7e22ce); color: white; border: none; box-shadow: 0 4px 14px rgba(162,28,175,0.35);">
+                                                                💜 <?php echo $current_lang === 'vi' ? 'Xác Nhận Đã Nhận Tiền MoMo' : 'Confirm MoMo Received'; ?>
+                                                            </button>
+                                                            <?php endif; ?>
+                                                            <a href="/Gym Manager/dashboards/manager.php?page=orders&change_order_status=completed&order_id=<?php echo $o['id']; ?>" class="action-btn btn-add" style="font-size: 0.82rem; padding: 8px 16px; text-decoration: none;" onclick="return confirmLinkCustom(event, this, '<?php echo $current_lang === 'vi' ? 'Xác nhận đơn hàng #' . $o['id'] . ' đã giao hàng thành công?' : 'Confirm order #' . $o['id'] . ' delivered successfully?'; ?>', '<?php echo $current_lang === 'vi' ? 'Xác Nhận Đơn Hàng' : 'Confirm Order'; ?>', '✅');">
+                                                                <i class="fas fa-check"></i> <?php echo $current_lang === 'vi' ? 'Đã Giao Hàng (Completed)' : 'Mark Completed'; ?>
+                                                            </a>
+                                                            <a href="/Gym Manager/dashboards/manager.php?page=orders&change_order_status=cancelled&order_id=<?php echo $o['id']; ?>" class="action-btn btn-delete" style="font-size: 0.82rem; padding: 8px 16px; text-decoration: none;" onclick="return confirmLinkCustom(event, this, '<?php echo $current_lang === 'vi' ? 'Hủy đơn hàng #' . $o['id'] . ' và tự động hoàn trả hàng vào kho?' : 'Cancel order #' . $o['id'] . ' and return items to stock?'; ?>', '<?php echo $current_lang === 'vi' ? 'Hủy Đơn Hàng' : 'Cancel Order'; ?>', '⚠️');">
+                                                                <i class="fas fa-ban"></i> <?php echo $current_lang === 'vi' ? 'Hủy Đơn & Hoàn Kho' : 'Cancel Order'; ?>
+                                                            </a>
+                                                        <?php elseif ($o['status'] === 'cancelled'): ?>
+                                                            <a href="/Gym Manager/dashboards/manager.php?page=orders&change_order_status=pending&order_id=<?php echo $o['id']; ?>" class="action-btn btn-edit" style="font-size: 0.82rem; padding: 8px 16px; text-decoration: none;" onclick="return confirmLinkCustom(event, this, '<?php echo $current_lang === 'vi' ? 'Khôi phục đơn hàng #' . $o['id'] . ' về trạng thái Đang xử lý?' : 'Restore order #' . $o['id'] . ' to Pending status?'; ?>', '<?php echo $current_lang === 'vi' ? 'Khôi Phục Đơn Hàng' : 'Restore Order'; ?>', '🔄');">
+                                                                <i class="fas fa-redo"></i> <?php echo $current_lang === 'vi' ? 'Khôi Phục Đơn' : 'Restore Order'; ?>
+                                                            </a>
+                                                        <?php endif; ?>
+                                                        <a href="/Gym Manager/dashboards/manager.php?page=orders&delete_order=<?php echo $o['id']; ?>" class="action-btn btn-delete" style="font-size: 0.82rem; padding: 8px 16px; text-decoration: none; margin-left: auto;" onclick="return confirmLinkCustom(event, this, '<?php echo $current_lang === 'vi' ? 'Xóa vĩnh viễn dữ liệu đơn hàng #' . $o['id'] . '?' : 'Permanently delete order #' . $o['id'] . '?'; ?>', '<?php echo $current_lang === 'vi' ? 'Xóa Đơn Hàng' : 'Delete Order'; ?>', '🗑️');">
+                                                            <i class="fas fa-trash"></i> <?php echo $current_lang === 'vi' ? 'Xóa Vĩnh Viễn' : 'Delete Order'; ?>
+                                                        </a>
+                                                    </div>
+                                                </div>
                                             </div>
                                         </td>
                                     </tr>
@@ -1245,6 +1670,70 @@ if ($page == 'equipment' && isset($_GET['delete_equipment'])) {
                         </tbody>
                     </table>
                 </div>
+
+                <!-- Order Details Modal Shell -->
+                <div id="orderDetailsModalShell" style="display: none; position: fixed; inset: 0; background: rgba(15, 23, 42, 0.65); backdrop-filter: blur(8px); z-index: 99999; align-items: center; justify-content: center; padding: 1.5rem;">
+                    <div style="background: #ffffff; width: 100%; max-width: 680px; border-radius: 24px; box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.25); border: 1px solid rgba(255, 255, 255, 0.2); overflow: hidden; animation: euModalPop 0.3s ease forwards;">
+                        <div style="display: flex; justify-content: space-between; align-items: center; padding: 1.2rem 1.6rem; background: linear-gradient(135deg, #1a2744, #2563eb); color: white;">
+                            <div style="font-weight: 800; font-size: 1.1rem; display: flex; align-items: center; gap: 8px;">
+                                <i class="fas fa-receipt" style="color: var(--gold);"></i>
+                                <span id="orderDetailsModalTitle"><?php echo $current_lang === 'vi' ? 'Chi Tiết & Quản Lý Đơn Hàng' : 'Order Details & Actions'; ?></span>
+                            </div>
+                            <button type="button" onclick="closeOrderDetailsModal()" style="background: rgba(255,255,255,0.15); border: none; color: white; width: 32px; height: 32px; border-radius: 50%; cursor: pointer; font-size: 1rem; display: flex; align-items: center; justify-content: center; transition: background 0.2s;" onmouseover="this.style.background='rgba(255,255,255,0.3)'" onmouseout="this.style.background='rgba(255,255,255,0.15)'">
+                                &times;
+                            </button>
+                        </div>
+                        <div id="orderDetailsModalBody" style="padding: 1.6rem; max-height: 80vh; overflow-y: auto;"></div>
+                    </div>
+                </div>
+
+                <script>
+                function showOrderDetailsModal(orderId) {
+                    const src = document.getElementById('order-modal-content-' + orderId);
+                    const body = document.getElementById('orderDetailsModalBody');
+                    const shell = document.getElementById('orderDetailsModalShell');
+                    if (src && body && shell) {
+                        body.innerHTML = src.innerHTML;
+                        shell.style.display = 'flex';
+                    }
+                }
+                function closeOrderDetailsModal() {
+                    const shell = document.getElementById('orderDetailsModalShell');
+                    if (shell) shell.style.display = 'none';
+                }
+                window.addEventListener('click', function(e) {
+                    const shell = document.getElementById('orderDetailsModalShell');
+                    if (e.target === shell) {
+                        closeOrderDetailsModal();
+                    }
+                });
+
+                function confirmMomoPayment(orderId, type) {
+                    const isVi = <?php echo $current_lang === 'vi' ? 'true' : 'false'; ?>;
+                    const msg = isVi 
+                        ? (type === 'shop' ? 'Xác nhận đã nhận tiền MoMo cho đơn hàng #' + orderId + '?' : 'Xác nhận đã nhận tiền MoMo cho gói #' + orderId + '?')
+                        : (type === 'shop' ? 'Confirm MoMo payment received for order #' + orderId + '?' : 'Confirm MoMo payment for plan #' + orderId + '?');
+                    if (!confirm(msg)) return;
+
+                    fetch('/Gym Manager/api/momo_admin_confirm.php', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ order_id: orderId, type: type })
+                    })
+                    .then(r => r.json())
+                    .then(data => {
+                        if (data.success) {
+                            alert(isVi ? '✅ Đã xác nhận thanh toán MoMo thành công! Đơn hàng đã được cập nhật hoàn tất.' : '✅ MoMo payment confirmed successfully!');
+                            window.location.reload();
+                        } else {
+                            alert(isVi ? '❌ Lỗi: ' + (data.message || 'Không thể xác nhận') : '❌ Error: ' + (data.message || 'Failed'));
+                        }
+                    })
+                    .catch(err => {
+                        alert(isVi ? '❌ Lỗi kết nối máy chủ.' : '❌ Server connection error.');
+                    });
+                }
+                </script>
 
             <?php elseif ($page == 'bookings'): 
                 // Fetch stats
@@ -1454,17 +1943,14 @@ if ($page == 'equipment' && isset($_GET['delete_equipment'])) {
                                 <tr style="background: #f8fafc;">
                                     <th style="padding: 1.2rem; border-radius: 15px 0 0 15px;"><?php echo __("client"); ?></th>
                                     <th style="padding: 1.2rem;"><?php echo __("coach"); ?></th>
-                                    <th style="padding: 1.2rem;"><?php echo __("training_room"); ?></th>
                                     <th style="padding: 1.2rem;"><?php echo __("date_time"); ?></th>
-                                    <th style="padding: 1.2rem;"><?php echo __("notes"); ?></th>
-                                    <th style="padding: 1.2rem;"><?php echo __("status"); ?></th>
-                                    <th style="padding: 1.2rem; border-radius: 0 15px 15px 0; text-align: center;"><?php echo __("actions"); ?></th>
+                                    <th style="padding: 1.2rem; border-radius: 0 15px 15px 0; text-align: center;">DETAILS & ACTIONS</th>
                                 </tr>
                             </thead>
                             <tbody>
                                 <?php foreach($bookings as $b): ?>
                                 <tr>
-                                    <td>
+                                    <td style="padding: 1.2rem; background: white; border-radius: 15px 0 0 15px;">
                                         <div style="display: flex; align-items: center; gap: 10px;">
                                             <img src="<?php echo $b['user_avatar'] ?: 'https://ui-avatars.com/api/?name='.urlencode($b['user_name']).'&background=0062ff&color=fff&size=40'; ?>" 
                                                  style="width: 38px; height: 38px; border-radius: 50%; object-fit: cover; border: 1px solid var(--border);">
@@ -1486,23 +1972,13 @@ if ($page == 'equipment' && isset($_GET['delete_equipment'])) {
                                             </div>
                                         </div>
                                     </td>
-                                    <td>
+                                    <td style="padding: 1.2rem; background: white;">
                                         <div>
                                             <strong style="color: var(--text-main);">Coach <?php echo htmlspecialchars($b['coach_name']); ?></strong>
                                             <div style="font-size: 0.8rem; color: var(--primary); font-weight: 600;"><?php echo htmlspecialchars($b['coach_specialty']); ?></div>
                                         </div>
                                     </td>
-                                    <td>
-                                        <?php if (!empty($b['coach_room_number'])): ?>
-                                            <span style="background: var(--primary); color: #fff; padding: 3px 10px; border-radius: 20px; font-size: 0.8rem; font-weight: 700;"><?php echo htmlspecialchars($b['coach_room_number']); ?></span>
-                                            <?php if (!empty($b['coach_room_name'])): ?>
-                                                <div style="font-size: 0.75rem; color: var(--text-muted); margin-top: 3px;"><?php echo htmlspecialchars($b['coach_room_name']); ?></div>
-                                            <?php endif; ?>
-                                        <?php else: ?>
-                                            <span style="color: #aaa; font-size: 0.85rem;">—</span>
-                                        <?php endif; ?>
-                                    </td>
-                                    <td>
+                                    <td style="padding: 1.2rem; background: white;">
                                         <div style="font-weight: 600; color: var(--text-main);">
                                             <i class="far fa-calendar-alt" style="color: var(--primary); margin-right: 5px;"></i>
                                             <?php echo date('d/m/Y H:i', strtotime($b['booking_date'])); ?>
@@ -1511,46 +1987,102 @@ if ($page == 'equipment' && isset($_GET['delete_equipment'])) {
                                             <?php echo date('l', strtotime($b['booking_date'])); ?>
                                         </div>
                                     </td>
-                                    <td>
-                                        <?php if ($b['coach_message']): ?>
-                                            <span style="font-size: 0.85rem; color: var(--text-muted); display: block; max-width: 200px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;" title="<?php echo htmlspecialchars($b['coach_message']); ?>">
-                                                <?php echo htmlspecialchars($b['coach_message']); ?>
-                                            </span>
-                                        <?php else: ?>
-                                            <span style="font-size: 0.85rem; color: var(--text-muted); font-style: italic;">None</span>
-                                        <?php endif; ?>
-                                    </td>
-                                    <td>
-                                        <span class="status-badge status-<?php echo $b['status']; ?>" style="display: inline-block;">
-                                            <?php echo strtoupper($b['status']); ?>
-                                        </span>
-                                    </td>
-                                    <td>
-                                        <div class="actions-cell-flex">
-                                            <?php if ($b['status'] == 'pending'): ?>
-                                                <a href="/Gym Manager/dashboards/manager.php?page=bookings&change_status=confirmed&booking_id=<?php echo $b['id']; ?>" class="action-btn btn-add" style="font-size: 0.75rem; padding: 6px 10px;" title="Approve booking">
-                                                    <i class="fas fa-check"></i> Confirm
-                                                </a>
-                                                <a href="/Gym Manager/dashboards/manager.php?page=bookings&change_status=cancelled&booking_id=<?php echo $b['id']; ?>" class="action-btn btn-delete" style="font-size: 0.75rem; padding: 6px 10px;" title="Cancel booking" onclick="return confirm('Are you sure you want to cancel this booking?')">
-                                                    <i class="fas fa-times"></i> Cancel
-                                                </a>
-                                            <?php elseif ($b['status'] == 'confirmed'): ?>
-                                                <a href="/Gym Manager/dashboards/manager.php?page=bookings&change_status=cancelled&booking_id=<?php echo $b['id']; ?>" class="action-btn btn-delete" style="font-size: 0.75rem; padding: 6px 10px;" title="Cancel booking" onclick="return confirm('Are you sure you want to cancel this booking?')">
-                                                    <i class="fas fa-times"></i> Cancel
-                                                </a>
-                                            <?php elseif ($b['status'] == 'cancelled'): ?>
-                                                <a href="/Gym Manager/dashboards/manager.php?page=bookings&change_status=confirmed&booking_id=<?php echo $b['id']; ?>" class="action-btn btn-add" style="font-size: 0.75rem; padding: 6px 10px;" title="Re-confirm booking">
-                                                    <i class="fas fa-redo"></i> Re-confirm
-                                                </a>
-                                            <?php endif; ?>
-                                            
-                                            <a href="/Gym Manager/dashboards/manager.php?page=bookings&edit_booking=<?php echo $b['id']; ?>" class="action-btn btn-edit" style="font-size: 0.75rem; padding: 6px 10px;" title="Reschedule">
-                                                <i class="fas fa-edit"></i> Edit
-                                            </a>
-                                            
-                                            <a href="/Gym Manager/dashboards/manager.php?page=bookings&delete_booking=<?php echo $b['id']; ?>" class="action-btn btn-delete" style="font-size: 0.75rem; padding: 6px 10px; background: #fff1f2; color: #ef4444;" title="Delete permanently" onclick="return confirm('WARNING: Are you sure you want to PERMANENTLY DELETE this booking?')">
-                                                <i class="fas fa-trash-alt"></i> Delete
-                                            </a>
+                                    <td style="padding: 1.2rem; background: white; border-radius: 0 15px 15px 0; text-align: center;">
+                                        <button type="button" class="action-btn btn-edit" style="font-size: 0.82rem; padding: 7px 16px; border-radius: 12px; display: inline-flex; align-items: center; gap: 6px; cursor: pointer; font-weight: 700; background: linear-gradient(135deg, #1a2744, #2563eb); color: white; border: none;" onclick="showBookingDetailsModal(<?php echo $b['id']; ?>)">
+                                            <i class="fas fa-eye"></i> <?php echo $current_lang === 'vi' ? 'Xem Chi Tiết' : 'Details'; ?>
+                                        </button>
+
+                                        <!-- Hidden Modal Content for Booking #<?php echo $b['id']; ?> -->
+                                        <div id="booking-modal-content-<?php echo $b['id']; ?>" style="display:none;">
+                                            <!-- Booking Header & Status Badge -->
+                                            <div style="display: flex; justify-content: space-between; align-items: center; padding-bottom: 1rem; margin-bottom: 1.2rem; border-bottom: 1.5px solid #e2e8f0;">
+                                                <div>
+                                                    <h3 style="margin: 0; color: var(--primary); font-weight: 800; font-size: 1.2rem;">
+                                                        <?php echo $current_lang === 'vi' ? 'Buổi Tập #' : 'Booking #'; ?><?php echo $b['id']; ?>
+                                                    </h3>
+                                                    <span style="font-size: 0.82rem; color: #64748b; font-weight: 600;">
+                                                        📅 <?php echo date('d/m/Y H:i', strtotime($b['booking_date'])); ?> (<?php echo date('l', strtotime($b['booking_date'])); ?>)
+                                                    </span>
+                                                </div>
+                                                <div>
+                                                    <span class="status-badge status-<?php echo $b['status']; ?>" style="display: inline-block; padding: 6px 14px; font-weight: 800; font-size: 0.8rem; border-radius: 20px;">
+                                                        <?php echo strtoupper($b['status']); ?>
+                                                    </span>
+                                                </div>
+                                            </div>
+
+                                            <!-- Client & Coach Info Cards -->
+                                            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; margin-bottom: 1.2rem; background: #f8fafc; padding: 1.2rem; border-radius: 16px; border: 1px solid #e2e8f0; text-align: left;">
+                                                <div>
+                                                    <div style="font-size: 0.75rem; text-transform: uppercase; font-weight: 800; color: #64748b; margin-bottom: 6px; letter-spacing: 0.5px;">
+                                                        👤 <?php echo $current_lang === 'vi' ? 'Học Viên' : 'Client Info'; ?>
+                                                    </div>
+                                                    <div style="font-weight: 700; color: var(--primary); font-size: 0.95rem;"><?php echo htmlspecialchars($b['user_name']); ?></div>
+                                                    <div style="font-size: 0.82rem; color: #475569;"><?php echo htmlspecialchars($b['user_email']); ?></div>
+                                                    <?php if (!empty($b['user_phone'])): ?>
+                                                        <div style="font-size: 0.82rem; color: #334155; margin-top: 2px;">📞 <?php echo htmlspecialchars($b['user_phone']); ?></div>
+                                                    <?php endif; ?>
+                                                </div>
+                                                <div>
+                                                    <div style="font-size: 0.75rem; text-transform: uppercase; font-weight: 800; color: #64748b; margin-bottom: 6px; letter-spacing: 0.5px;">
+                                                        🏋️ <?php echo $current_lang === 'vi' ? 'Huấn Luyện Viên' : 'Coach Info'; ?>
+                                                    </div>
+                                                    <div style="font-weight: 700; color: var(--primary); font-size: 0.95rem;">Coach <?php echo htmlspecialchars($b['coach_name']); ?></div>
+                                                    <div style="font-size: 0.82rem; color: var(--primary); font-weight: 600;"><?php echo htmlspecialchars($b['coach_specialty']); ?></div>
+                                                    <?php if (!empty($b['coach_room_number'])): ?>
+                                                        <div style="font-size: 0.82rem; color: #475569; margin-top: 2px;">
+                                                            🏛️ <?php echo $current_lang === 'vi' ? 'Phòng' : 'Room'; ?>: <strong><?php echo htmlspecialchars($b['coach_room_number']); ?></strong> <?php echo !empty($b['coach_room_name']) ? '(' . htmlspecialchars($b['coach_room_name']) . ')' : ''; ?>
+                                                        </div>
+                                                    <?php endif; ?>
+                                                </div>
+                                            </div>
+
+                                            <!-- Notes Card -->
+                                            <div style="background: #f1f5f9; padding: 1.2rem; border-radius: 16px; border: 1px solid #cbd5e1; margin-bottom: 1.5rem; text-align: left;">
+                                                <div style="font-size: 0.8rem; font-weight: 800; color: var(--primary); text-transform: uppercase; margin-bottom: 6px; letter-spacing: 0.5px; display: flex; align-items: center; gap: 6px;">
+                                                    <i class="fas fa-sticky-note" style="color: var(--gold);"></i> <?php echo $current_lang === 'vi' ? 'Ghi Chú Buổi Tập' : 'Session Notes'; ?>
+                                                </div>
+                                                <div style="font-size: 0.9rem; color: #334155; font-weight: 600; line-height: 1.4;">
+                                                    <?php if (!empty($b['coach_message'])): ?>
+                                                        <?php echo htmlspecialchars($b['coach_message']); ?>
+                                                    <?php else: ?>
+                                                        <span style="color: #94a3b8; font-style: italic; font-weight: 500;"><?php echo $current_lang === 'vi' ? 'Chưa có ghi chú' : 'None'; ?></span>
+                                                    <?php endif; ?>
+                                                </div>
+                                            </div>
+
+                                            <!-- Action Controls inside Modal -->
+                                            <div style="background: #f8fafc; padding: 1.2rem; border-radius: 16px; border: 1px solid #cbd5e1; text-align: left;">
+                                                <div style="font-size: 0.8rem; font-weight: 800; color: var(--primary); text-transform: uppercase; margin-bottom: 0.8rem; letter-spacing: 0.5px; display: flex; align-items: center; gap: 6px;">
+                                                    <i class="fas fa-cogs" style="color: var(--gold);"></i> <?php echo $current_lang === 'vi' ? 'Thao Tác Quản Lý Buổi Tập' : 'Booking Management Actions'; ?>
+                                                </div>
+                                                <div style="display: flex; gap: 10px; flex-wrap: wrap; align-items: center;">
+                                                    <?php if ($b['status'] == 'pending'): ?>
+                                                        <a href="/Gym Manager/dashboards/manager.php?page=bookings&change_status=confirmed&booking_id=<?php echo $b['id']; ?>" class="action-btn btn-add" style="font-size: 0.82rem; padding: 8px 16px; text-decoration: none;">
+                                                            <i class="fas fa-check"></i> <?php echo $current_lang === 'vi' ? 'Xác Nhận (Confirm)' : 'Confirm'; ?>
+                                                        </a>
+                                                        <a href="/Gym Manager/dashboards/manager.php?page=bookings&change_status=cancelled&booking_id=<?php echo $b['id']; ?>" class="action-btn btn-delete" style="font-size: 0.82rem; padding: 8px 16px; text-decoration: none;" onclick="return confirmLinkCustom(event, this, '<?php echo $current_lang === 'vi' ? 'Bạn có chắc chắn muốn hủy buổi tập này?' : 'Are you sure you want to cancel this booking?'; ?>', '<?php echo $current_lang === 'vi' ? 'Hủy Buổi Tập' : 'Cancel Booking'; ?>', '❌');">
+                                                            <i class="fas fa-times"></i> <?php echo $current_lang === 'vi' ? 'Hủy Buổi Tập' : 'Cancel'; ?>
+                                                        </a>
+                                                    <?php elseif ($b['status'] == 'confirmed'): ?>
+                                                        <a href="/Gym Manager/dashboards/manager.php?page=bookings&change_status=cancelled&booking_id=<?php echo $b['id']; ?>" class="action-btn btn-delete" style="font-size: 0.82rem; padding: 8px 16px; text-decoration: none;" onclick="return confirmLinkCustom(event, this, '<?php echo $current_lang === 'vi' ? 'Bạn có chắc chắn muốn hủy buổi tập này?' : 'Are you sure you want to cancel this booking?'; ?>', '<?php echo $current_lang === 'vi' ? 'Hủy Buổi Tập' : 'Cancel Booking'; ?>', '❌');">
+                                                            <i class="fas fa-times"></i> <?php echo $current_lang === 'vi' ? 'Hủy Buổi Tập' : 'Cancel'; ?>
+                                                        </a>
+                                                    <?php elseif ($b['status'] == 'cancelled'): ?>
+                                                        <a href="/Gym Manager/dashboards/manager.php?page=bookings&change_status=confirmed&booking_id=<?php echo $b['id']; ?>" class="action-btn btn-add" style="font-size: 0.82rem; padding: 8px 16px; text-decoration: none;">
+                                                            <i class="fas fa-redo"></i> <?php echo $current_lang === 'vi' ? 'Xác Nhận Lại' : 'Re-confirm'; ?>
+                                                        </a>
+                                                    <?php endif; ?>
+                                                    
+                                                    <a href="/Gym Manager/dashboards/manager.php?page=bookings&edit_booking=<?php echo $b['id']; ?>" class="action-btn btn-edit" style="font-size: 0.82rem; padding: 8px 16px; text-decoration: none;">
+                                                        <i class="fas fa-edit"></i> <?php echo $current_lang === 'vi' ? 'Đổi Lịch (Edit)' : 'Edit'; ?>
+                                                    </a>
+                                                    
+                                                    <a href="/Gym Manager/dashboards/manager.php?page=bookings&delete_booking=<?php echo $b['id']; ?>" class="action-btn btn-delete" style="font-size: 0.82rem; padding: 8px 16px; background: #fff1f2; color: #ef4444; text-decoration: none; margin-left: auto;" onclick="return confirmLinkCustom(event, this, '<?php echo $current_lang === 'vi' ? 'CẢNH BÁO: Bạn có chắc chắn muốn XÓA VĨNH VIỄN buổi tập này?' : 'WARNING: Are you sure you want to PERMANENTLY DELETE this booking?'; ?>', '<?php echo $current_lang === 'vi' ? 'Xóa Vĩnh Viễn' : 'Delete Permanently'; ?>', '🗑️');">
+                                                        <i class="fas fa-trash-alt"></i> <?php echo $current_lang === 'vi' ? 'Xóa Vĩnh Viễn' : 'Delete'; ?>
+                                                    </a>
+                                                </div>
+                                            </div>
                                         </div>
                                     </td>
                                 </tr>
@@ -1558,6 +2090,44 @@ if ($page == 'equipment' && isset($_GET['delete_equipment'])) {
                             </tbody>
                         </table>
                     </div>
+
+                    <!-- Booking Details Modal Shell -->
+                    <div id="bookingDetailsModalShell" style="display: none; position: fixed; inset: 0; background: rgba(15, 23, 42, 0.65); backdrop-filter: blur(8px); z-index: 99999; align-items: center; justify-content: center; padding: 1.5rem;">
+                        <div style="background: #ffffff; width: 100%; max-width: 640px; border-radius: 24px; box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.25); border: 1px solid rgba(255, 255, 255, 0.2); overflow: hidden; animation: euModalPop 0.3s ease forwards;">
+                            <div style="display: flex; justify-content: space-between; align-items: center; padding: 1.2rem 1.6rem; background: linear-gradient(135deg, #1a2744, #2563eb); color: white;">
+                                <div style="font-weight: 800; font-size: 1.1rem; display: flex; align-items: center; gap: 8px;">
+                                    <i class="fas fa-calendar-check" style="color: var(--gold);"></i>
+                                    <span><?php echo $current_lang === 'vi' ? 'Chi Tiết & Quản Lý Buổi Tập' : 'Booking Details & Actions'; ?></span>
+                                </div>
+                                <button type="button" onclick="closeBookingDetailsModal()" style="background: rgba(255,255,255,0.15); border: none; color: white; width: 32px; height: 32px; border-radius: 50%; cursor: pointer; font-size: 1rem; display: flex; align-items: center; justify-content: center; transition: background 0.2s;" onmouseover="this.style.background='rgba(255,255,255,0.3)'" onmouseout="this.style.background='rgba(255,255,255,0.15)'">
+                                    &times;
+                                </button>
+                            </div>
+                            <div id="bookingDetailsModalBody" style="padding: 1.6rem; max-height: 80vh; overflow-y: auto;"></div>
+                        </div>
+                    </div>
+
+                    <script>
+                    function showBookingDetailsModal(bookingId) {
+                        const src = document.getElementById('booking-modal-content-' + bookingId);
+                        const body = document.getElementById('bookingDetailsModalBody');
+                        const shell = document.getElementById('bookingDetailsModalShell');
+                        if (src && body && shell) {
+                            body.innerHTML = src.innerHTML;
+                            shell.style.display = 'flex';
+                        }
+                    }
+                    function closeBookingDetailsModal() {
+                        const shell = document.getElementById('bookingDetailsModalShell');
+                        if (shell) shell.style.display = 'none';
+                    }
+                    window.addEventListener('click', function(e) {
+                        const shell = document.getElementById('bookingDetailsModalShell');
+                        if (e.target === shell) {
+                            closeBookingDetailsModal();
+                        }
+                    });
+                    </script>
                 <?php endif; ?>
             <?php elseif ($page == 'yearly_report'): 
                 $selected_year = $_GET['year'] ?? date('Y');
@@ -1612,11 +2182,6 @@ if ($page == 'equipment' && isset($_GET['delete_equipment'])) {
                         <button type="button" onclick="downloadYearlyReportPDF('<?php echo $selected_year; ?>', event)" 
                                 style="background: linear-gradient(135deg, #10b981, #059669); color: white; border: none; padding: 0.8rem 1.3rem; border-radius: 12px; font-weight: 700; font-size: 0.9rem; cursor: pointer; display: flex; align-items: center; gap: 8px; box-shadow: 0 4px 12px rgba(16,185,129,0.3); transition: transform 0.2s;">
                             <i class="fas fa-file-pdf"></i> <?php echo $current_lang === 'vi' ? 'Tải Báo Cáo Năm (PDF)' : 'Download Yearly Report (PDF)'; ?>
-                        </button>
-
-                        <button type="button" onclick="downloadYearlyReportImage('<?php echo $selected_year; ?>')" 
-                                style="background: #f1f5f9; color: var(--text-main); border: 1px solid var(--border); padding: 0.8rem 1.1rem; border-radius: 12px; font-weight: 700; font-size: 0.85rem; cursor: pointer; display: flex; align-items: center; gap: 6px; transition: all 0.2s;">
-                            <i class="fas fa-file-image"></i> PNG
                         </button>
 
                         <form method="GET" style="display: flex; align-items: center; gap: 10px; margin: 0;">
@@ -2056,11 +2621,6 @@ if ($page == 'equipment' && isset($_GET['delete_equipment'])) {
                             <i class="fas fa-file-pdf"></i> <?php echo $current_lang === 'vi' ? 'Tải Báo Cáo Tháng (PDF)' : 'Download Monthly Report (PDF)'; ?>
                         </button>
 
-                        <button type="button" onclick="downloadMonthlyReportImage('<?php echo $selected_month; ?>', '<?php echo $selected_year; ?>')" 
-                                style="background: #f1f5f9; color: var(--text-main); border: 1px solid var(--border); padding: 0.8rem 1.1rem; border-radius: 12px; font-weight: 700; font-size: 0.85rem; cursor: pointer; display: flex; align-items: center; gap: 6px; transition: all 0.2s;">
-                            <i class="fas fa-file-image"></i> PNG
-                        </button>
-
                         <form method="GET" style="display: flex; align-items: center; gap: 8px; margin: 0; flex-wrap: wrap;">
                             <input type="hidden" name="page" value="monthly_report">
                             <label style="font-weight: 600;"><?php echo $current_lang === 'vi' ? 'Tháng:' : 'Month:'; ?></label>
@@ -2451,244 +3011,6 @@ if ($page == 'equipment' && isset($_GET['delete_equipment'])) {
                     </div>
                 </div>
 
-                <script>
-                function openInvoiceModal(id) {
-                    const modal = document.getElementById('invoice-modal-' + id);
-                    if (modal) modal.style.display = 'flex';
-                }
-                function closeInvoiceModal(id) {
-                    const modal = document.getElementById('invoice-modal-' + id);
-                    if (modal) modal.style.display = 'none';
-                }
-                function downloadInvoicePDF(id) {
-                    const card = document.getElementById('invoice-card-' + id);
-                    if (!card) return;
-                    
-                    html2canvas(card, {
-                        scale: 2,
-                        useCORS: true,
-                        backgroundColor: '#ffffff'
-                    }).then(canvas => {
-                        const { jsPDF } = window.jspdf;
-                        const imgData = canvas.toDataURL('image/jpeg', 0.98);
-                        const imgWidth = 210;
-                        const imgHeight = (canvas.height * imgWidth) / canvas.width;
-                        const pdf = new jsPDF('p', 'mm', [imgWidth, imgHeight]);
-                        pdf.addImage(imgData, 'JPEG', 0, 0, imgWidth, imgHeight);
-                        pdf.save(`Invoice_#${id}_GymManager.pdf`);
-                    }).catch(err => {
-                        console.error("PDF Invoice export error:", err);
-                        alert("Could not export invoice PDF.");
-                    });
-                }
-                function downloadInvoiceImage(id, format) {
-                    const card = document.getElementById('invoice-card-' + id);
-                    if (!card) return;
-                    
-                    html2canvas(card, {
-                        scale: 2,
-                        useCORS: true,
-                        backgroundColor: '#ffffff'
-                    }).then(canvas => {
-                        const link = document.createElement('a');
-                        link.download = `Invoice_#${id}_GymManager.${format}`;
-                        link.href = canvas.toDataURL(`image/${format === 'jpg' ? 'jpeg' : 'png'}`, 0.98);
-                        link.click();
-                    }).catch(err => {
-                        console.error("Canvas export error:", err);
-                        alert("Could not export invoice image.");
-                    });
-                }
-                function captureElementFull(element) {
-                    return new Promise((resolve, reject) => {
-                        const clone = element.cloneNode(true);
-                        
-                        clone.style.width = '1450px';
-                        clone.style.maxWidth = 'none';
-                        clone.style.position = 'absolute';
-                        clone.style.left = '-9999px';
-                        clone.style.top = '0';
-                        clone.style.zIndex = '-9999';
-                        clone.style.background = '#ffffff';
-
-                        // Copy canvas content (Chart.js)
-                        const origCanvases = element.querySelectorAll('canvas');
-                        const cloneCanvases = clone.querySelectorAll('canvas');
-                        origCanvases.forEach((origCanvas, i) => {
-                            if (cloneCanvases[i]) {
-                                const destCtx = cloneCanvases[i].getContext('2d');
-                                cloneCanvases[i].width = origCanvas.width;
-                                cloneCanvases[i].height = origCanvas.height;
-                                destCtx.drawImage(origCanvas, 0, 0);
-                            }
-                        });
-
-                        // Make all table containers 100% visible and unconstrained
-                        const scrollables = clone.querySelectorAll('.table-responsive, table, div');
-                        scrollables.forEach(el => {
-                            el.style.overflow = 'visible';
-                            el.style.overflowX = 'visible';
-                            el.style.maxWidth = 'none';
-                        });
-
-                        // Hide action buttons in clone for clean report
-                        const actionBtns = clone.querySelectorAll('.invoice-export-btn, button');
-                        actionBtns.forEach(btn => btn.style.display = 'none');
-
-                        document.body.appendChild(clone);
-
-                        setTimeout(() => {
-                            html2canvas(clone, {
-                                scale: 2,
-                                useCORS: true,
-                                backgroundColor: '#ffffff',
-                                width: 1450,
-                                windowWidth: 1450
-                            }).then(canvas => {
-                                document.body.removeChild(clone);
-                                resolve(canvas);
-                            }).catch(err => {
-                                if (document.body.contains(clone)) document.body.removeChild(clone);
-                                reject(err);
-                            });
-                        }, 100);
-                    });
-                }
-
-                function downloadYearlyReportPDF(year, evt) {
-                    const reportArea = document.getElementById('yearly-report-export-area');
-                    if (!reportArea) return;
-                    
-                    let btn = evt ? evt.currentTarget : null;
-                    let originalText = btn ? btn.innerHTML : '';
-                    if (btn) {
-                        btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Generating PDF...';
-                        btn.disabled = true;
-                    }
-                    
-                    captureElementFull(reportArea).then(canvas => {
-                        const { jsPDF } = window.jspdf;
-                        const imgData = canvas.toDataURL('image/jpeg', 0.95);
-                        
-                        const pdf = new jsPDF({
-                            orientation: 'landscape',
-                            unit: 'mm',
-                            format: 'a4'
-                        });
-
-                        const imgWidth = 297;
-                        const pageHeight = 210;
-                        const imgHeight = (canvas.height * imgWidth) / canvas.width;
-                        let heightLeft = imgHeight;
-                        let position = 0;
-
-                        pdf.addImage(imgData, 'JPEG', 0, position, imgWidth, imgHeight);
-                        heightLeft -= pageHeight;
-
-                        while (heightLeft > 0) {
-                            position = heightLeft - imgHeight;
-                            pdf.addPage();
-                            pdf.addImage(imgData, 'JPEG', 0, position, imgWidth, imgHeight);
-                            heightLeft -= pageHeight;
-                        }
-
-                        pdf.save(`GymManager_Yearly_Report_${year}.pdf`);
-
-                        if (btn) {
-                            btn.innerHTML = originalText;
-                            btn.disabled = false;
-                        }
-                    }).catch(err => {
-                        console.error("Report PDF export error:", err);
-                        alert("Could not export report PDF.");
-                        if (btn) {
-                            btn.innerHTML = originalText;
-                            btn.disabled = false;
-                        }
-                    });
-                }
-                function downloadYearlyReportImage(year) {
-                    const reportArea = document.getElementById('yearly-report-export-area');
-                    if (!reportArea) return;
-                    
-                    captureElementFull(reportArea).then(canvas => {
-                        const link = document.createElement('a');
-                        link.download = `GymManager_Yearly_Report_${year}.png`;
-                        link.href = canvas.toDataURL('image/png', 0.98);
-                        link.click();
-                    }).catch(err => {
-                        console.error("Report export error:", err);
-                        alert("Could not export report image.");
-                    });
-                }
-                function downloadMonthlyReportPDF(month, year, evt) {
-                    const reportArea = document.getElementById('monthly-report-export-area');
-                    if (!reportArea) return;
-                    
-                    let btn = evt ? evt.currentTarget : null;
-                    let originalText = btn ? btn.innerHTML : '';
-                    if (btn) {
-                        btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Generating PDF...';
-                        btn.disabled = true;
-                    }
-                    
-                    captureElementFull(reportArea).then(canvas => {
-                        const { jsPDF } = window.jspdf;
-                        const imgData = canvas.toDataURL('image/jpeg', 0.95);
-                        
-                        const pdf = new jsPDF({
-                            orientation: 'landscape',
-                            unit: 'mm',
-                            format: 'a4'
-                        });
-
-                        const imgWidth = 297;
-                        const pageHeight = 210;
-                        const imgHeight = (canvas.height * imgWidth) / canvas.width;
-                        let heightLeft = imgHeight;
-                        let position = 0;
-
-                        pdf.addImage(imgData, 'JPEG', 0, position, imgWidth, imgHeight);
-                        heightLeft -= pageHeight;
-
-                        while (heightLeft > 0) {
-                            position = heightLeft - imgHeight;
-                            pdf.addPage();
-                            pdf.addImage(imgData, 'JPEG', 0, position, imgWidth, imgHeight);
-                            heightLeft -= pageHeight;
-                        }
-
-                        pdf.save(`GymManager_Monthly_Report_${month}_${year}.pdf`);
-
-                        if (btn) {
-                            btn.innerHTML = originalText;
-                            btn.disabled = false;
-                        }
-                    }).catch(err => {
-                        console.error("Report PDF export error:", err);
-                        alert("Could not export report PDF.");
-                        if (btn) {
-                            btn.innerHTML = originalText;
-                            btn.disabled = false;
-                        }
-                    });
-                }
-                function downloadMonthlyReportImage(month, year) {
-                    const reportArea = document.getElementById('monthly-report-export-area');
-                    if (!reportArea) return;
-                    
-                    captureElementFull(reportArea).then(canvas => {
-                        const link = document.createElement('a');
-                        link.download = `GymManager_Monthly_Report_${month}_${year}.png`;
-                        link.href = canvas.toDataURL('image/png', 0.98);
-                        link.click();
-                    }).catch(err => {
-                        console.error("Report export error:", err);
-                        alert("Could not export report image.");
-                    });
-                }
-                </script>
-
             <?php elseif ($page == 'member_subscriptions'): 
                 $edit_sub = null;
                 if (isset($_GET['edit_sub'])) {
@@ -3009,7 +3331,7 @@ if ($page == 'equipment' && isset($_GET['delete_equipment'])) {
                                 <td style="padding: 1.2rem; background: white; border-radius: 0 15px 15px 0; text-align: center; white-space: nowrap;">
                                     <div style="display: flex; gap: 8px; justify-content: center;">
                                         <?php if ($s['status'] === 'pending'): ?>
-                                            <a href="/Gym Manager/dashboards/manager.php?page=member_subscriptions&approve_sub=<?php echo $s['id']; ?>" class="action-btn" style="background:#dcfce7;color:#16a34a;border:1px solid #86efac;" onclick="return confirm('<?php echo $current_lang === 'vi' ? 'Xác nhận KÍCH HOẠT thẻ thành viên này?' : 'Confirm activation of this membership?'; ?>');" title="<?php echo $current_lang === 'vi' ? 'Kích Hoạt Ngay (1-Click)' : 'Instant Activation'; ?>">
+                                            <a href="/Gym Manager/dashboards/manager.php?page=member_subscriptions&approve_sub=<?php echo $s['id']; ?>" class="action-btn" style="background:#dcfce7;color:#16a34a;border:1px solid #86efac;" onclick="return confirmLinkCustom(event, this, '<?php echo $current_lang === 'vi' ? 'Xác nhận KÍCH HOẠT thẻ thành viên này?' : 'Confirm activation of this membership?'; ?>', '<?php echo $current_lang === 'vi' ? 'Kích Hoạt Thẻ' : 'Activate Membership'; ?>', '⚡');" title="<?php echo $current_lang === 'vi' ? 'Kích Hoạt Ngay (1-Click)' : 'Instant Activation'; ?>">
                                                 <i class="fas fa-check"></i>
                                             </a>
                                             <a href="/Gym Manager/dashboards/manager.php?page=member_subscriptions&confirm_action=approve&sub_id=<?php echo $s['id']; ?>" class="action-btn" style="background:#eff6ff;color:#2563eb;border:1px solid #93c5fd;" title="<?php echo $current_lang === 'vi' ? 'Xem Chi Tiết Xác Nhận' : 'View Details & Confirm'; ?>">
@@ -3022,7 +3344,7 @@ if ($page == 'equipment' && isset($_GET['delete_equipment'])) {
                                         <a href="/Gym Manager/dashboards/manager.php?page=member_subscriptions&edit_sub=<?php echo $s['id']; ?>" class="action-btn btn-edit" title="Sửa Thẻ">
                                             <i class="fas fa-edit"></i>
                                         </a>
-                                        <a href="/Gym Manager/dashboards/manager.php?page=member_subscriptions&delete_sub=<?php echo $s['id']; ?>" class="action-btn btn-delete" onclick="return confirm('<?php echo $current_lang === 'vi' ? 'Bạn có chắc chắn muốn XÓA thẻ thành viên này của khách hàng?' : 'Are you sure you want to DELETE this membership?'; ?>');" title="Xóa Thẻ">
+                                        <a href="/Gym Manager/dashboards/manager.php?page=member_subscriptions&delete_sub=<?php echo $s['id']; ?>" class="action-btn btn-delete" onclick="return confirmLinkCustom(event, this, '<?php echo $current_lang === 'vi' ? 'Bạn có chắc chắn muốn XÓA thẻ thành viên này của khách hàng?' : 'Are you sure you want to DELETE this membership?'; ?>', '<?php echo $current_lang === 'vi' ? 'Xóa Thẻ Thành Viên' : 'Delete Membership'; ?>', '🗑️');" title="Xóa Thẻ">
                                             <i class="fas fa-trash-alt"></i>
                                         </a>
                                     </div>
@@ -3224,7 +3546,7 @@ if ($page == 'equipment' && isset($_GET['delete_equipment'])) {
                                         <a href="/Gym Manager/dashboards/manager.php?page=equipment&edit_equipment=<?php echo $eq['id']; ?>" class="action-btn btn-edit" title="Edit Equipment">
                                             <i class="fas fa-edit"></i>
                                         </a>
-                                        <a href="/Gym Manager/dashboards/manager.php?page=equipment&delete_equipment=<?php echo $eq['id']; ?>" class="action-btn btn-delete" onclick="return confirm('Are you sure you want to DELETE this equipment?');" title="Delete Equipment">
+                                        <a href="/Gym Manager/dashboards/manager.php?page=equipment&delete_equipment=<?php echo $eq['id']; ?>" class="action-btn btn-delete" onclick="return confirmLinkCustom(event, this, '<?php echo $current_lang === 'vi' ? 'Bạn có chắc chắn muốn XÓA thiết bị này?' : 'Are you sure you want to DELETE this equipment?'; ?>', '<?php echo $current_lang === 'vi' ? 'Xóa Thiết Bị' : 'Delete Equipment'; ?>', '🗑️');" title="Delete Equipment">
                                             <i class="fas fa-trash-alt"></i>
                                         </a>
                                     </div>

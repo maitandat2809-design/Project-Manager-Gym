@@ -1,3 +1,20 @@
 scratch/
 *.log
 .DS_Store
+.$*
+*.bkp
+*.dtmp
+
+# Diagrams, Word docs & render scripts
+*.docx
+*.drawio
+*.drawio.*
+output/
+usecase_viewer.html
+Gym_Manager_*
+Activity-Diagram-*
+SiteMap-*
+UseCase-*
+render_*.ps1
+create_word_diagram_pages.ps1
+assets/img/user_structure_diagram.png

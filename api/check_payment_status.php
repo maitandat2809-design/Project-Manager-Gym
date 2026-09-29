@@ -38,7 +38,7 @@ if (!$sub) {
     exit();
 }
 
-$current_lang = $_SESSION['lang'] ?? 'vi';
+$current_lang = $_SESSION['lang'] ?? 'en';
 $plan_name = ($current_lang === 'vi' && !empty($sub['name_vi'])) ? $sub['name_vi'] : $sub['name'];
 
 echo json_encode([
