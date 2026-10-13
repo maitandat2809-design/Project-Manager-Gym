@@ -24,13 +24,13 @@ $message = '';
 $valid = true;
 
 if ($field === 'email') {
-    if (!filter_var($value, FILTER_VALIDATE_EMAIL)) {
+    if (!filter_var($value, FILTER_VALIDATE_EMAIL) || !preg_match('/^[^@\s]+@gmail\.com$/i', $value)) {
         echo json_encode([
             'success' => true,
             'exists' => false,
             'valid' => false,
             'field' => 'email',
-            'message' => __('email_invalid_format')
+            'message' => $current_lang === 'vi' ? 'Email phải có định dạng @gmail.com.' : 'Email must use a @gmail.com address.'
         ]);
         exit();
     }
@@ -44,22 +44,19 @@ if ($field === 'email') {
         $message = __('email_available');
     }
 } elseif ($field === 'phone') {
-    // Strip non-digit characters to check pure digits
-    $clean_phone = preg_replace('/[^0-9]/', '', $value);
-    
-    if (strlen($clean_phone) !== 10) {
+    if (!preg_match('/^[0-9]{10}$/', $value)) {
         echo json_encode([
             'success' => true,
             'exists' => false,
             'valid' => false,
             'field' => 'phone',
-            'message' => __('phone_invalid')
+            'message' => $current_lang === 'vi' ? 'Số điện thoại phải gồm đúng 10 chữ số.' : 'Phone number must contain exactly 10 digits.'
         ]);
         exit();
     }
     
-    $stmt = $pdo->prepare("SELECT id FROM users WHERE (phone = ? OR phone = ?) AND id != ? AND phone IS NOT NULL AND phone != ''");
-    $stmt->execute([$value, $clean_phone, $exclude_id]);
+    $stmt = $pdo->prepare("SELECT id FROM users WHERE phone = ? AND id != ? AND phone IS NOT NULL AND phone != ''");
+    $stmt->execute([$value, $exclude_id]);
     if ($stmt->fetch()) {
         $exists = true;
         $message = __('phone_exists_error');

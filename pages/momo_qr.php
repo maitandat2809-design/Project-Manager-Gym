@@ -144,7 +144,7 @@ $qr_img_url = "https://api.qrserver.com/v1/create-qr-code/?size=260x260&margin=8
 include_once __DIR__ . '/../includes/header.php';
 ?>
 <!DOCTYPE html>
-<html lang="vi">
+<html lang="<?php echo $is_vi ? 'vi' : 'en'; ?>">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">

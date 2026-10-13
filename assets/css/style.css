@@ -504,6 +504,9 @@ nav a:hover::after {
     height: 100%;
     z-index: -2;
     overflow: hidden;
+    pointer-events: none !important;
+    user-select: none !important;
+    background: #0f172a;
 }
 
 .hero-bg-video iframe {
@@ -514,8 +517,10 @@ nav a:hover::after {
     position: absolute;
     top: 50%;
     left: 50%;
-    transform: translate(-50%, -50%) scale(1.15);
-    pointer-events: none;
+    transform: translate(-50%, -50%) scale(1.35);
+    pointer-events: none !important;
+    border: none;
+    outline: none;
 }
 
 .hero-overlay {
@@ -524,8 +529,9 @@ nav a:hover::after {
     left: 0;
     width: 100%;
     height: 100%;
-    background: linear-gradient(rgba(15, 23, 42, 0.2), rgba(15, 23, 42, 0.95));
+    background: linear-gradient(rgba(15, 23, 42, 0.25), rgba(15, 23, 42, 0.95));
     z-index: -1;
+    pointer-events: none;
 }
 
 .hero h1 {
@@ -638,6 +644,54 @@ section {
     transform: translateX(-50%);
     animation: none;
 }
+
+/* Membership classification for the Profile page heading. */
+.section-title .membership-account-title {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.5rem;
+}
+
+.section-title .membership-account-title .fas {
+    font-size: 0.7em;
+}
+
+.section-title .membership-account-title.account-heading-member {
+    padding: 0.12em 0.36em;
+    border-radius: 0.28em;
+}
+
+.section-title .membership-account-title.account-heading-starter {
+    color: #9a6700;
+    background: linear-gradient(90deg, transparent, #fff7df, transparent);
+}
+
+.section-title .membership-account-title.account-heading-wellness {
+    color: #047857;
+    background: linear-gradient(90deg, transparent, #eafaf4, transparent);
+}
+
+.section-title .membership-account-title.account-heading-athletic {
+    color: #6d28d9;
+    background: linear-gradient(90deg, transparent, #f3efff, transparent);
+}
+
+.membership-account-label {
+    display: inline-block;
+    margin-top: 0.6rem;
+    padding: 0.35rem 0.75rem;
+    border-radius: 999px;
+    color: #fff;
+    font-size: 0.68rem;
+    font-weight: 900;
+    letter-spacing: 0.12em;
+    line-height: 1;
+}
+
+.membership-account-label.account-heading-starter { background: linear-gradient(135deg, #b7791f, #e5ad38); }
+.membership-account-label.account-heading-wellness { background: linear-gradient(135deg, #047857, #10b981); }
+.membership-account-label.account-heading-athletic { background: linear-gradient(135deg, #6d28d9, #8b5cf6); }
 
 @keyframes moveLight {
     0%, 100% { left: 0; }
@@ -1582,7 +1636,8 @@ footer p {
 
 .search-input-wrapper input {
     width: 100%;
-    padding: 1.3rem 2rem 1.3rem 3.8rem;
+    box-sizing: border-box;
+    padding: 1.3rem 9.2rem 1.3rem 3.8rem;
     border-radius: 20px;
     border: 2px solid #e2e8f0;
     background: white;
@@ -1599,7 +1654,7 @@ footer p {
     transform: translateY(-3px);
 }
 
-.search-input-wrapper i {
+.search-input-wrapper > i {
     position: absolute;
     left: 1.6rem;
     top: 50%;
@@ -1609,8 +1664,33 @@ footer p {
     transition: all 0.3s ease;
 }
 
-.search-input-wrapper input:focus + i {
-    transform: translateY(-50%) scale(1.1);
+.shop-search-submit {
+    position: absolute;
+    top: 50%;
+    right: 0.6rem;
+    transform: translateY(-50%);
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.45rem;
+    border: 0;
+    border-radius: 13px;
+    padding: 0.72rem 1rem;
+    color: #ffffff;
+    background: linear-gradient(135deg, #2563eb, #1d4ed8);
+    box-shadow: 0 4px 12px rgba(37, 99, 235, 0.25);
+    font-size: 0.84rem;
+    font-weight: 800;
+    cursor: pointer;
+    transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+.shop-search-submit:hover { transform: translateY(-50%) scale(1.03); box-shadow: 0 6px 16px rgba(37, 99, 235, 0.35); }
+.shop-search-submit i { position: static; transform: none; color: inherit; font-size: 0.8rem; }
+
+@media (max-width: 480px) {
+    .search-input-wrapper input { padding-right: 3.8rem; }
+    .shop-search-submit { width: 2.55rem; padding: 0.72rem 0; }
+    .shop-search-submit span { display: none; }
 }
 
 @media (max-width: 768px) {
@@ -3121,6 +3201,70 @@ nav {
     text-transform: uppercase !important;
     box-shadow: 0 1.5px 4px rgba(0, 0, 0, 0.15) !important;
     line-height: 1 !important;
+}
+
+/* Membership profile identity: active members are intentionally more prominent
+   than accounts that have not purchased a plan. */
+.profile-pill.profile-pill-member {
+    position: relative !important;
+    overflow: visible !important;
+    border-width: 2px !important;
+    box-shadow: 0 5px 14px rgba(15, 23, 42, 0.16) !important;
+}
+
+.profile-pill.profile-pill-member::after {
+    content: 'MEMBER' !important;
+    position: absolute !important;
+    top: -8px !important;
+    right: 9px !important;
+    padding: 2px 5px !important;
+    border-radius: 999px !important;
+    color: #fff !important;
+    font-size: 0.45rem !important;
+    font-weight: 900 !important;
+    letter-spacing: 0.65px !important;
+    line-height: 1 !important;
+}
+
+.profile-pill.member-tier-starter {
+    background: linear-gradient(135deg, #fff8e7, #fff 62%) !important;
+    border-color: #e9b949 !important;
+}
+.profile-pill.member-tier-starter::after { background: #b7791f !important; }
+.profile-pill.member-tier-starter img { border-color: #e9b949 !important; box-shadow: 0 0 0 3px rgba(233, 185, 73, 0.18) !important; }
+
+.profile-pill.member-tier-wellness {
+    background: linear-gradient(135deg, #ecfdf5, #fff 62%) !important;
+    border-color: #34d399 !important;
+}
+.profile-pill.member-tier-wellness::after { background: #059669 !important; }
+.profile-pill.member-tier-wellness img { border-color: #10b981 !important; box-shadow: 0 0 0 3px rgba(16, 185, 129, 0.16) !important; }
+
+.profile-pill.member-tier-athletic {
+    background: linear-gradient(135deg, #f5f3ff, #fff 62%) !important;
+    border-color: #a78bfa !important;
+}
+.profile-pill.member-tier-athletic::after { background: #7c3aed !important; }
+.profile-pill.member-tier-athletic img { border-color: #8b5cf6 !important; box-shadow: 0 0 0 3px rgba(139, 92, 246, 0.16) !important; }
+
+.profile-pill.profile-pill-member:hover {
+    transform: translateY(-2px) !important;
+    box-shadow: 0 8px 18px rgba(15, 23, 42, 0.2) !important;
+}
+
+.profile-pill.profile-pill-guest {
+    border-color: rgba(100, 116, 139, 0.28) !important;
+    box-shadow: none !important;
+}
+
+.profile-pill.profile-pill-pending {
+    border-color: rgba(217, 119, 6, 0.5) !important;
+    background: #fffaf0 !important;
+}
+
+.profile-plan-badge .fas {
+    margin-right: 3px !important;
+    font-size: 0.55rem !important;
 }
 
 /* --- Symmetrical Height & Alignment Balance for Navbar Elements --- */

@@ -260,8 +260,9 @@ if ($page == 'member_subscriptions' && isset($_POST['add_subscription'])) {
     } else {
         try {
             if (isset($_POST['overwrite_existing']) && $_POST['overwrite_existing'] == '1') {
-                $stmt_del_old = $pdo->prepare("DELETE FROM member_subscriptions WHERE user_id = ?");
-                $stmt_del_old->execute([$user_id]);
+                // Preserve membership purchase history by expiring rather than deleting
+                $stmt_arch_old = $pdo->prepare("UPDATE member_subscriptions SET status = 'expired' WHERE user_id = ? AND status = 'active'");
+                $stmt_arch_old->execute([$user_id]);
             }
 
             $stmt_ins = $pdo->prepare("
@@ -313,7 +314,10 @@ if ($page == 'member_subscriptions' && (isset($_GET['approve_sub']) || isset($_P
                 JOIN membership_plans mp ON ms.plan_id = mp.id 
                 SET ms.status = 'active', 
                     ms.admin_seen = 1,
-                    ms.pt_sessions_total = CASE WHEN ms.pt_sessions_total = 0 THEN mp.pt_sessions ELSE ms.pt_sessions_total END 
+                    ms.pt_sessions_total = CASE 
+                        WHEN ms.pt_sessions_total > 0 THEN ms.pt_sessions_total 
+                        ELSE (mp.pt_sessions + COALESCE(ms.bonus_pt, 0)) 
+                    END 
                 WHERE ms.id = ?
             ");
             $stmt_app->execute([$sub_id]);
@@ -349,21 +353,33 @@ if ($page == 'member_subscriptions' && (isset($_GET['approve_sub']) || isset($_P
                     $mail->addAddress($sub_info['user_email'], $sub_info['user_name']);
                     $mail->isHTML(true);
                     
-                    $p_name_display = ($current_lang === 'vi' && !empty($sub_info['plan_name_vi'])) ? $sub_info['plan_name_vi'] : $sub_info['plan_name'];
-                    $mail->Subject = "🎉 [GymX] Thẻ Thành Viên " . $p_name_display . " Của Bạn Đã Được Kích Hoạt!";
+                    // Membership activation emails are always sent in English.
+                    $is_vi_email = false;
+                    $p_name_display = ($is_vi_email && !empty($sub_info['plan_name_vi'])) ? $sub_info['plan_name_vi'] : $sub_info['plan_name'];
+                    $is_ren = !empty($sub_info['is_renewal']);
+                    $mail_title = $is_vi_email
+                        ? ($is_ren ? "🎉 [GymX Tri Ân] Thẻ Thành Viên Gia Hạn (" . $p_name_display . ") Đã Kích Hoạt!" : "🎉 [GymX] Thẻ Thành Viên " . $p_name_display . " Của Bạn Đã Được Kích Hoạt!")
+                        : ($is_ren ? "🎉 [GymX Loyalty] Membership Renewal (" . $p_name_display . ") Activated!" : "🎉 [GymX] Your Membership (" . $p_name_display . ") Has Been Activated!");
+                    $mail->Subject = $mail_title;
 
                     $user_body = "<div style='font-family: Arial, sans-serif; max-width: 650px; margin: auto; padding: 25px; border: 1px solid #e2e8f0; border-radius: 20px; background: #ffffff;'>";
                     $user_body .= "<div style='background: linear-gradient(135deg, #10b981, #059669); color: white; padding: 20px; border-radius: 15px; text-align: center;'>";
-                    $user_body .= "<h2 style='margin: 0; font-size: 1.5rem;'>🎉 Kích Hoạt Thẻ Thành Viên Thành Công!</h2>";
-                    $user_body .= "<p style='margin: 5px 0 0; opacity: 0.95;'>Chào " . htmlspecialchars($sub_info['user_name']) . ", thẻ thành viên của bạn đã sẵn sàng sử dụng.</p></div>";
+                    $user_body .= "<h2 style='margin: 0; font-size: 1.5rem;'>🎉 " . ($is_vi_email ? ($is_ren ? "Gia Hạn Thẻ Thành Công & Kích Hoạt Đặc Quyền!" : "Kích Hoạt Thẻ Thành Viên Thành Công!") : ($is_ren ? "Membership Renewed & Perks Activated!" : "Membership Activated Successfully!")) . "</h2>";
+                    $user_body .= "<p style='margin: 5px 0 0; opacity: 0.95;'>" . ($is_vi_email ? "Chào " . htmlspecialchars($sub_info['user_name']) . ", thẻ thành viên của bạn đã sẵn sàng sử dụng." : "Hello " . htmlspecialchars($sub_info['user_name']) . ", your membership is active and ready to use.") . "</p></div>";
                     $user_body .= "<div style='background: #f0fdf4; padding: 18px; border-radius: 15px; margin: 20px 0; border: 1px solid #86efac;'>";
-                    $user_body .= "<strong>Gói Thẻ:</strong> " . htmlspecialchars($p_name_display) . "<br>";
-                    $user_body .= "<strong>Thời Hạn:</strong> " . date('d/m/Y', strtotime($sub_info['start_date'])) . " đến " . date('d/m/Y', strtotime($sub_info['end_date'])) . "<br>";
-                    if ($sub_info['pt_sessions_total'] > 0) {
-                        $user_body .= "<strong>Số Buổi PT Đi Kèm:</strong> " . $sub_info['pt_sessions_total'] . " buổi<br>";
+                    $user_body .= "<strong>" . ($is_vi_email ? "Gói Thẻ:" : "Plan:") . "</strong> " . htmlspecialchars($p_name_display) . "<br>";
+                    $user_body .= "<strong>" . ($is_vi_email ? "Thời Hạn:" : "Duration:") . "</strong> " . date('d/m/Y', strtotime($sub_info['start_date'])) . " " . ($is_vi_email ? "đến" : "to") . " " . date('d/m/Y', strtotime($sub_info['end_date'])) . "<br>";
+                    if (!empty($sub_info['bonus_days'])) {
+                        $user_body .= "<strong>" . ($is_vi_email ? "Ngày Tập Tặng Thêm:" : "Bonus Days:") . "</strong> <span style='color: #15803d; font-weight: bold;'>+" . $sub_info['bonus_days'] . ($is_vi_email ? " ngày tập miễn phí tri ân hội viên" : " free bonus days") . "</span><br>";
                     }
-                    $user_body .= "<strong>Trạng Thái:</strong> <span style='color: #15803d; font-weight: bold;'>ĐANG HOẠT ĐỘNG (ACTIVE)</span></div>";
-                    $user_body .= "<p style='text-align: center; color: #64748b;'>Cảm ơn bạn đã lựa chọn GymX Center! Chúc bạn có những giờ phút tập luyện hiệu quả.</p></div>";
+                    if ($sub_info['pt_sessions_total'] > 0) {
+                        $user_body .= "<strong>" . ($is_vi_email ? "Số Buổi PT 1:1 Đi Kèm:" : "1:1 PT Sessions:") . "</strong> " . $sub_info['pt_sessions_total'] . ($is_vi_email ? " buổi" : " sessions") . (!empty($sub_info['bonus_pt']) ? ($is_vi_email ? " (Đã bao gồm +{$sub_info['bonus_pt']} buổi tặng thêm)" : " (Includes +{$sub_info['bonus_pt']} bonus sessions)") : "") . "<br>";
+                    }
+                    if ($is_ren) {
+                        $user_body .= "<strong>" . ($is_vi_email ? "Đặc Quyền Hội Viên Thân Thiết:" : "Loyal Member Perks:") . "</strong> " . ($is_vi_email ? "Tặng Bình nước GymX Shaker VIP Pro + 2 Guest Pass mời bạn bè + Giảm 10% tại GymX Shop" : "Free GymX Shaker VIP Pro + 2 Guest Passes + 10% OFF at GymX Shop") . "<br>";
+                    }
+                    $user_body .= "<strong>" . ($is_vi_email ? "Trạng Thái:" : "Status:") . "</strong> <span style='color: #15803d; font-weight: bold;'>ACTIVE</span></div>";
+                    $user_body .= "<p style='text-align: center; color: #64748b;'>" . ($is_vi_email ? "Cảm ơn bạn đã tiếp tục đồng hành cùng GymX Center! Chúc bạn có những giờ phút tập luyện hiệu quả và bứt phá thể lực." : "Thank you for training with GymX Center! Wishing you effective workouts and peak fitness.") . "</p></div>";
 
                     $mail->Body = $user_body;
                     $mail->send();
@@ -413,7 +429,10 @@ if ($page == 'member_subscriptions' && isset($_GET['delete_sub'])) {
 // Handle Actions (Add/Update/Delete)
 if ($page == 'products' && isset($_POST['add_product'])) {
     $name = $_POST['name'];
-    $price = $_POST['price'];
+    $price = floatval($_POST['price']);
+    if ($price >= 1000) {
+        $price = round($price / 25000, 2);
+    }
     $stock = $_POST['stock'];
     $desc = $_POST['description'] ?: 'Premium quality fitness equipment/supplement.';
     $category = $_POST['category'] ?? 'supplement';
@@ -440,7 +459,10 @@ if ($page == 'products' && isset($_POST['add_product'])) {
 if ($page == 'products' && isset($_POST['update_product'])) {
     $id = $_POST['product_id'];
     $name = $_POST['name'];
-    $price = $_POST['price'];
+    $price = floatval($_POST['price']);
+    if ($price >= 1000) {
+        $price = round($price / 25000, 2);
+    }
     $stock = $_POST['stock'];
     $desc = $_POST['description'];
     $category = $_POST['category'] ?? 'supplement';
@@ -919,6 +941,15 @@ if ($page == 'equipment' && isset($_POST['add_equipment'])) {
     $discipline = $_POST['discipline'] ?? 'gym';
     $description = trim($_POST['description'] ?? '');
     $status = $_POST['status'] ?? 'active';
+    $purchase_date = !empty($_POST['purchase_date']) ? $_POST['purchase_date'] : date('Y-m-d');
+    $warranty_months = intval($_POST['warranty_months'] ?? 12);
+    $warranty_expiry_date = !empty($_POST['warranty_expiry_date']) 
+        ? $_POST['warranty_expiry_date'] 
+        : date('Y-m-d', strtotime("+{$warranty_months} months", strtotime($purchase_date)));
+    $next_maintenance_date = !empty($_POST['next_maintenance_date']) 
+        ? $_POST['next_maintenance_date'] 
+        : date('Y-m-d', strtotime('+3 months', strtotime($purchase_date)));
+    $notes = trim($_POST['notes'] ?? '');
     $image_path = '/Gym Manager/assets/img/equipment/treadmills.png';
 
     if (isset($_FILES['image']) && $_FILES['image']['error'] === UPLOAD_ERR_OK) {
@@ -936,12 +967,21 @@ if ($page == 'equipment' && isset($_POST['add_equipment'])) {
     }
 
     if (empty($name) || empty($description)) {
-        $message = "Error: Equipment name and description are required.";
+        $message = ($current_lang === 'vi') ? "Lỗi: Vui lòng nhập tên và mô tả thiết bị." : "Error: Equipment name and description are required.";
     } else {
         try {
-            $stmt = $pdo->prepare("INSERT INTO equipment (name, discipline, description, status, image) VALUES (?, ?, ?, ?, ?)");
-            $stmt->execute([$name, $discipline, $description, $status, $image_path]);
-            $message = "Equipment added successfully!";
+            $stmt = $pdo->prepare("
+                INSERT INTO equipment 
+                (name, discipline, description, status, image, purchase_date, warranty_months, warranty_expiry_date, next_maintenance_date, notes) 
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ");
+            $stmt->execute([
+                $name, $discipline, $description, $status, $image_path,
+                $purchase_date, $warranty_months, $warranty_expiry_date, $next_maintenance_date, $notes
+            ]);
+            $new_eq_id = $pdo->lastInsertId();
+            $_GET['details_id'] = $new_eq_id;
+            $message = ($current_lang === 'vi') ? "Thêm mới thiết bị và hồ sơ bảo hành thành công!" : "Equipment and warranty details added successfully!";
         } catch (Exception $e) {
             $message = "Error adding equipment: " . $e->getMessage();
         }
@@ -954,11 +994,20 @@ if ($page == 'equipment' && isset($_POST['update_equipment'])) {
     $discipline = $_POST['discipline'] ?? 'gym';
     $description = trim($_POST['description'] ?? '');
     $status = $_POST['status'] ?? 'active';
+    $purchase_date = !empty($_POST['purchase_date']) ? $_POST['purchase_date'] : null;
+    $warranty_months = intval($_POST['warranty_months'] ?? 12);
+    $warranty_expiry_date = !empty($_POST['warranty_expiry_date']) ? $_POST['warranty_expiry_date'] : null;
+    if ($purchase_date && empty($warranty_expiry_date)) {
+        $warranty_expiry_date = date('Y-m-d', strtotime("+{$warranty_months} months", strtotime($purchase_date)));
+    }
+    $next_maintenance_date = !empty($_POST['next_maintenance_date']) ? $_POST['next_maintenance_date'] : null;
+    $notes = trim($_POST['notes'] ?? '');
 
     if ($eq_id <= 0 || empty($name) || empty($description)) {
-        $message = "Error: Invalid equipment details.";
+        $message = ($current_lang === 'vi') ? "Lỗi: Thông tin thiết bị không hợp lệ." : "Error: Invalid equipment details.";
     } else {
         try {
+            $new_image_path = null;
             if (isset($_FILES['image']) && $_FILES['image']['error'] === UPLOAD_ERR_OK) {
                 $upload_dir_fs = __DIR__ . '/../assets/img/equipment/';
                 if (!is_dir($upload_dir_fs)) {
@@ -968,23 +1017,67 @@ if ($page == 'equipment' && isset($_POST['update_equipment'])) {
                 $file_name = 'eq_' . uniqid() . '.' . $ext;
                 if (move_uploaded_file($_FILES['image']['tmp_name'], $upload_dir_fs . $file_name)) {
                     $new_image_path = '/Gym Manager/assets/img/equipment/' . $file_name;
-                    $stmt = $pdo->prepare("UPDATE equipment SET name = ?, discipline = ?, description = ?, status = ?, image = ? WHERE id = ?");
-                    $stmt->execute([$name, $discipline, $description, $status, $new_image_path, $eq_id]);
-                } else {
-                    $stmt = $pdo->prepare("UPDATE equipment SET name = ?, discipline = ?, description = ?, status = ? WHERE id = ?");
-                    $stmt->execute([$name, $discipline, $description, $status, $eq_id]);
                 }
             } elseif (!empty($_POST['custom_image_url'])) {
                 $new_image_path = trim($_POST['custom_image_url']);
-                $stmt = $pdo->prepare("UPDATE equipment SET name = ?, discipline = ?, description = ?, status = ?, image = ? WHERE id = ?");
-                $stmt->execute([$name, $discipline, $description, $status, $new_image_path, $eq_id]);
-            } else {
-                $stmt = $pdo->prepare("UPDATE equipment SET name = ?, discipline = ?, description = ?, status = ? WHERE id = ?");
-                $stmt->execute([$name, $discipline, $description, $status, $eq_id]);
             }
-            $message = "Equipment updated successfully!";
+
+            if ($new_image_path) {
+                $stmt = $pdo->prepare("
+                    UPDATE equipment 
+                    SET name = ?, discipline = ?, description = ?, status = ?, image = ?, 
+                        purchase_date = ?, warranty_months = ?, warranty_expiry_date = ?, next_maintenance_date = ?, notes = ? 
+                    WHERE id = ?
+                ");
+                $stmt->execute([
+                    $name, $discipline, $description, $status, $new_image_path,
+                    $purchase_date, $warranty_months, $warranty_expiry_date, $next_maintenance_date, $notes,
+                    $eq_id
+                ]);
+            } else {
+                $stmt = $pdo->prepare("
+                    UPDATE equipment 
+                    SET name = ?, discipline = ?, description = ?, status = ?, 
+                        purchase_date = ?, warranty_months = ?, warranty_expiry_date = ?, next_maintenance_date = ?, notes = ? 
+                    WHERE id = ?
+                ");
+                $stmt->execute([
+                    $name, $discipline, $description, $status,
+                    $purchase_date, $warranty_months, $warranty_expiry_date, $next_maintenance_date, $notes,
+                    $eq_id
+                ]);
+            }
+            $_GET['details_id'] = $eq_id;
+            $message = ($current_lang === 'vi') ? "Cập nhật thiết bị và thông tin bảo hành thành công!" : "Equipment and warranty details updated successfully!";
         } catch (Exception $e) {
             $message = "Error updating equipment: " . $e->getMessage();
+        }
+    }
+}
+
+if ($page == 'equipment' && isset($_POST['log_maintenance'])) {
+    $eq_id = intval($_POST['equipment_id'] ?? 0);
+    $maint_note = trim($_POST['maintenance_note'] ?? '');
+    $next_interval = intval($_POST['next_interval_months'] ?? 3);
+    $new_next_date = date('Y-m-d', strtotime("+{$next_interval} months"));
+
+    if ($eq_id > 0) {
+        try {
+            $log_entry = "\n[" . date('d/m/Y H:i') . "] Bảo dưỡng: " . ($maint_note ?: "Kiểm tra kỹ thuật định kỳ đạt chuẩn.");
+            $stmt = $pdo->prepare("
+                UPDATE equipment 
+                SET status = 'active',
+                    next_maintenance_date = ?,
+                    notes = CONCAT(COALESCE(notes, ''), ?)
+                WHERE id = ?
+            ");
+            $stmt->execute([$new_next_date, $log_entry, $eq_id]);
+            $_GET['details_id'] = $eq_id;
+            $message = ($current_lang === 'vi') 
+                ? "Đã ghi nhận bảo trì thành công! Kỳ bảo hành/bảo trì kế tiếp: " . date('d/m/Y', strtotime($new_next_date))
+                : "Maintenance logged successfully! Next maintenance: " . date('d/m/Y', strtotime($new_next_date));
+        } catch (Exception $e) {
+            $message = "Error logging maintenance: " . $e->getMessage();
         }
     }
 }
@@ -994,7 +1087,7 @@ if ($page == 'equipment' && isset($_GET['delete_equipment'])) {
     try {
         $stmt = $pdo->prepare("DELETE FROM equipment WHERE id = ?");
         $stmt->execute([$eq_id]);
-        $message = "Equipment deleted successfully!";
+        $message = ($current_lang === 'vi') ? "Đã xóa thiết bị thành công!" : "Equipment deleted successfully!";
     } catch (Exception $e) {
         $message = "Error deleting equipment: " . $e->getMessage();
     }
@@ -1013,7 +1106,7 @@ if ($page == 'equipment' && isset($_GET['delete_equipment'])) {
         <div class="admin-sidebar">
             <ul>
                 <li><a href="/Gym Manager/dashboards/manager.php?page=dashboard" class="<?php echo $page == 'dashboard' ? 'active' : ''; ?>"><?php echo __("overview"); ?></a></li>
-                <li><a href="/Gym Manager/dashboards/manager.php?page=member_subscriptions" class="<?php echo $page == 'member_subscriptions' ? 'active' : ''; ?>"><?php echo $current_lang === 'vi' ? 'Quản Lý Thẻ Thành Viên' : 'Member Subscriptions'; ?></a></li>
+                <li><a href="/Gym Manager/dashboards/manager.php?page=member_subscriptions" class="<?php echo in_array($page, ['member_subscriptions', 'memberships']) ? 'active' : ''; ?>"><?php echo __("membership_management"); ?></a></li>
                 <li><a href="/Gym Manager/dashboards/manager.php?page=products" class="<?php echo $page == 'products' ? 'active' : ''; ?>"><?php echo __("product_management"); ?></a></li>
                 <li><a href="/Gym Manager/dashboards/manager.php?page=orders" class="<?php echo $page == 'orders' ? 'active' : ''; ?>"><?php echo __("manage_orders"); ?></a></li>
                 <li><a href="/Gym Manager/dashboards/manager.php?page=bookings" class="<?php echo $page == 'bookings' ? 'active' : ''; ?>"><?php echo __("booking_management"); ?></a></li>
@@ -1145,8 +1238,8 @@ if ($page == 'equipment' && isset($_GET['delete_equipment'])) {
                             <input type="text" name="name" value="<?php echo htmlspecialchars($edit_prod['name']); ?>" required>
                         </div>
                         <div class="form-group" style="margin-bottom: 0;">
-                            <label style="font-weight: 600;">Price ($)</label>
-                            <input type="number" step="0.01" name="price" value="<?php echo $edit_prod['price']; ?>" required>
+                            <label style="font-weight: 600;"><?php echo ($current_lang === 'vi') ? 'Giá Bán (VNĐ)' : 'Price (VNĐ)'; ?></label>
+                            <input type="number" step="1000" name="price" value="<?php echo (int)round($edit_prod['price'] * 25000); ?>" required>
                         </div>
                         <div class="form-group" style="margin-bottom: 0;">
                             <label style="font-weight: 600;"><?php echo __("stock"); ?></label>
@@ -1191,8 +1284,8 @@ if ($page == 'equipment' && isset($_GET['delete_equipment'])) {
                             <input type="text" name="name" required placeholder="e.g. Whey Protein">
                         </div>
                         <div class="form-group" style="margin-bottom: 0;">
-                            <label style="font-weight: 600;">Price ($)</label>
-                            <input type="number" step="0.01" name="price" required placeholder="0.00">
+                            <label style="font-weight: 600;"><?php echo ($current_lang === 'vi') ? 'Giá Bán (VNĐ)' : 'Price (VNĐ)'; ?></label>
+                            <input type="number" step="1000" name="price" required placeholder="<?php echo ($current_lang === 'vi') ? 'Ví dụ: 250000' : 'e.g. 250000'; ?>">
                         </div>
                         <div class="form-group" style="margin-bottom: 0;">
                             <label style="font-weight: 600;"><?php echo __("stock"); ?></label>
@@ -1242,11 +1335,11 @@ if ($page == 'equipment' && isset($_GET['delete_equipment'])) {
                                 <td><img src="<?php echo get_image_url($p['image']); ?>" style="width: 40px; height: 40px; object-fit: cover; border-radius: 8px;"></td>
                                 <td>
                                     <strong><?php echo htmlspecialchars($p['name']); ?></strong>
-                                    <?php if (!empty($p['name_vi'])): ?>
+                                    <?php if ($current_lang === 'vi' && !empty($p['name_vi'])): ?>
                                         <div style="font-size: 0.78rem; color: #64748b; font-weight: 500;"><?php echo htmlspecialchars($p['name_vi']); ?></div>
                                     <?php endif; ?>
                                 </td>
-                                <td><strong>$<?php echo number_format($p['price'], 2); ?></strong></td>
+                                <td><strong style="color: #7e22ce;"><?php echo number_format((int)round($p['price'] * 25000), 0, ',', '.'); ?>đ</strong></td>
                                 <td>
                                     <?php 
                                     $stk = (int)$p['stock'];
@@ -1515,15 +1608,20 @@ if ($page == 'equipment' && isset($_GET['delete_equipment'])) {
                                             <div style="color: var(--text-muted); margin-top: 3px; max-width: 200px; white-space: normal; line-height: 1.3;">📍 <?php echo htmlspecialchars($o['address'] ?? 'N/A'); ?></div>
                                         </td>
                                         <td style="padding: 1.2rem; background: white;">
-                                            <div style="font-size: 1.1rem; font-weight: 800; color: #10b981;">$<?php echo number_format($o['total_price'], 2); ?></div>
+                                            <div style="font-size: 1.1rem; font-weight: 800; color: #10b981;"><?php echo number_format((int)round($o['total_price'] * 25000), 0, ',', '.'); ?>đ</div>
+                                            <?php if (!empty($o['member_discount']) && $o['member_discount'] > 0): ?>
+                                                <div style="font-size: 0.74rem; color: #b45309; font-weight: 700; margin-bottom: 3px;">
+                                                    <i class="fas fa-crown"></i> <?php echo $current_lang === 'vi' ? 'Giảm HV:' : 'Member Disc:'; ?> -<?php echo number_format((int)round($o['member_discount'] * 25000), 0, ',', '.'); ?>đ
+                                                </div>
+                                            <?php endif; ?>
                                             <?php if ($o['payment_method'] === 'momo'): ?>
                                                 <?php if (!empty($o['momo_confirmed'])): ?>
                                                     <span style="background: #fdf4ff; color: #a21caf; border: 1px solid #f0abfc; padding: 3px 8px; border-radius: 10px; font-weight: 800; font-size: 0.75rem;">
-                                                        💜 MOMO (Đã TT)
+                                                        💜 MOMO (<?php echo $current_lang === 'vi' ? 'Đã TT' : 'Paid'; ?>)
                                                     </span>
                                                 <?php else: ?>
                                                     <span style="background: #fff1f2; color: #e11d48; border: 1px solid #fecdd3; padding: 3px 8px; border-radius: 10px; font-weight: 700; font-size: 0.75rem;">
-                                                        💜 MOMO (Chờ TT)
+                                                        💜 MOMO (<?php echo $current_lang === 'vi' ? 'Chờ TT' : 'Pending'; ?>)
                                                     </span>
                                                 <?php endif; ?>
                                             <?php else: ?>
@@ -1584,7 +1682,7 @@ if ($page == 'equipment' && isset($_GET['delete_equipment'])) {
                                                         <div style="margin-top: 6px;">
                                                             <?php if ($o['payment_method'] === 'momo' && !empty($o['momo_confirmed'])): ?>
                                                                 <span style="background: #fdf4ff; color: #a21caf; border: 1px solid #f0abfc; padding: 3px 10px; border-radius: 10px; font-weight: 800; font-size: 0.75rem;">
-                                                                    💜 MOMO (Đã Thanh Toán Online)
+                                                                    💜 MOMO (<?php echo $current_lang === 'vi' ? 'Đã Thanh Toán Online' : 'Online Paid'; ?>)
                                                                 </span>
                                                             <?php else: ?>
                                                                 <span style="background: #e0f2fe; color: #0369a1; padding: 3px 10px; border-radius: 10px; font-weight: 800; font-size: 0.75rem; text-transform: uppercase;">
@@ -1616,16 +1714,26 @@ if ($page == 'equipment' && isset($_GET['delete_equipment'])) {
                                                             ?>
                                                                 <tr style="border-bottom: 1px solid #f1f5f9; text-align: left;">
                                                                     <td style="padding: 10px 12px; font-weight: 700; color: #1e293b;"><?php echo htmlspecialchars($pname); ?></td>
-                                                                    <td style="padding: 10px 12px; text-align: center; color: #64748b;">$<?php echo number_format($item['price'], 2); ?></td>
+                                                                    <td style="padding: 10px 12px; text-align: center; color: #64748b;"><?php echo number_format((int)round($item['price'] * 25000), 0, ',', '.'); ?>đ</td>
                                                                     <td style="padding: 10px 12px; text-align: center; font-weight: 800; color: var(--primary);">x<?php echo $item['quantity']; ?></td>
-                                                                    <td style="padding: 10px 12px; text-align: right; font-weight: 800; color: #10b981;">$<?php echo number_format($subtotal, 2); ?></td>
+                                                                    <td style="padding: 10px 12px; text-align: right; font-weight: 800; color: #10b981;"><?php echo number_format((int)round($subtotal * 25000), 0, ',', '.'); ?>đ</td>
                                                                 </tr>
                                                             <?php endforeach; ?>
                                                         </tbody>
                                                         <tfoot>
+                                                            <?php if (!empty($o['member_discount']) && $o['member_discount'] > 0): ?>
+                                                                <tr style="background: #fafaf9; font-size: 0.9rem; color: #64748b;">
+                                                                    <td colspan="3" style="padding: 8px 12px; text-align: right;"><?php echo $current_lang === 'vi' ? 'Tạm tính sản phẩm:' : 'Products Subtotal:'; ?></td>
+                                                                    <td style="padding: 8px 12px; text-align: right; font-weight: 700;"><?php echo number_format((int)round(($o['total_price'] + $o['member_discount']) * 25000), 0, ',', '.'); ?>đ</td>
+                                                                </tr>
+                                                                <tr style="background: #fffbeb; font-size: 0.88rem; color: #b45309; font-weight: 700;">
+                                                                    <td colspan="3" style="padding: 8px 12px; text-align: right;"><i class="fas fa-crown"></i> <?php echo $current_lang === 'vi' ? 'Đặc quyền Hội viên (-10%):' : 'VIP Member Perk (-10%):'; ?></td>
+                                                                    <td style="padding: 8px 12px; text-align: right; color: #16a34a;">-<?php echo number_format((int)round($o['member_discount'] * 25000), 0, ',', '.'); ?>đ</td>
+                                                                </tr>
+                                                            <?php endif; ?>
                                                             <tr style="background: #fafaf9; font-weight: 800; font-size: 0.95rem;">
                                                                 <td colspan="3" style="padding: 12px; text-align: right; color: var(--primary);"><?php echo $current_lang === 'vi' ? 'TỔNG CỘNG ĐƠN HÀNG:' : 'ORDER TOTAL:'; ?></td>
-                                                                <td style="padding: 12px; text-align: right; color: #10b981; font-size: 1.1rem;">$<?php echo number_format($o['total_price'], 2); ?></td>
+                                                                <td style="padding: 12px; text-align: right; color: #10b981; font-size: 1.1rem;"><?php echo number_format((int)round($o['total_price'] * 25000), 0, ',', '.'); ?>đ</td>
                                                             </tr>
                                                         </tfoot>
                                                     </table>
@@ -2130,6 +2238,31 @@ if ($page == 'equipment' && isset($_GET['delete_equipment'])) {
                     </script>
                 <?php endif; ?>
             <?php elseif ($page == 'yearly_report'): 
+                /* European editorial reporting style: restrained colour, generous spacing, clear hierarchy. */
+            ?>
+            <style>
+                .eu-report-shell { --eu-ink:#172033; --eu-wine:#7c2637; --eu-gold:#b28a4a; --eu-paper:#f7f4ee; --eu-line:#ded8cf; --eu-green:#206451; }
+                .eu-report-hero { background:linear-gradient(118deg,#172033 0%,#25324a 68%,#7c2637 170%); border-radius:24px; padding:2rem 2.2rem; margin:0 0 1.4rem; color:#fff; display:flex; justify-content:space-between; align-items:center; gap:1.5rem; box-shadow:0 18px 38px rgba(23,32,51,.15); }
+                .eu-report-kicker { margin:0 0 .45rem; color:#ddc99c; font-size:.72rem; font-weight:800; text-transform:uppercase; letter-spacing:.16em; }
+                .eu-report-hero h2 { margin:0; color:#fff; font-family:Georgia,'Times New Roman',serif; font-size:clamp(1.6rem,3vw,2.3rem); letter-spacing:-.025em; }
+                .eu-report-hero p { margin:.5rem 0 0; color:#d9dfeb; font-size:.93rem; }
+                .eu-report-hero strong { color:#f1d493; font-size:1.28rem; }
+                .eu-report-controls { display:flex; align-items:center; justify-content:flex-end; gap:.65rem; flex-wrap:wrap; }
+                .eu-report-controls form { display:flex; align-items:center; gap:.55rem; flex-wrap:wrap; margin:0; padding:.4rem; border:1px solid rgba(255,255,255,.2); border-radius:12px; background:rgba(255,255,255,.08); }
+                .eu-report-controls label { color:#f4f0e8; font-size:.76rem; font-weight:800; text-transform:uppercase; letter-spacing:.08em; }
+                .eu-report-controls select { appearance:none; background:#fff; color:var(--eu-ink); border:0; border-radius:8px; padding:.65rem 2rem .65rem .75rem; font-weight:700; }
+                .eu-report-btn { background:#d9bc7c; color:#172033; border:0; padding:.78rem 1rem; border-radius:10px; font-weight:800; font-size:.84rem; cursor:pointer; display:inline-flex; align-items:center; gap:.5rem; box-shadow:none; }
+                .eu-report-btn:hover { background:#f1d493; transform:translateY(-1px); }
+                .eu-report-canvas { background:var(--eu-paper); padding:1.7rem; border-radius:22px; border:1px solid var(--eu-line); box-shadow:none; margin-bottom:2rem; }
+                .eu-chart-panel { background:#fffdf9; padding:1.5rem; border-radius:16px; border:1px solid var(--eu-line); margin-bottom:2.25rem; }
+                .eu-chart-panel h3, .eu-report-canvas > h3 { font-family:Georgia,'Times New Roman',serif; color:var(--eu-ink)!important; letter-spacing:-.01em; }
+                .eu-report-canvas table thead tr { background:#ede7dc!important; border-color:var(--eu-line)!important; }
+                .eu-report-canvas table th { color:#4a5364!important; letter-spacing:.065em; }
+                .eu-report-canvas table tbody tr:hover { background:#fffdf9; }
+                .eu-report-canvas .status-badge { border-radius:999px; font-size:.69rem; letter-spacing:.05em; }
+                @media (max-width:760px) { .eu-report-hero { padding:1.45rem; align-items:flex-start; flex-direction:column; } .eu-report-controls { justify-content:flex-start; } .eu-report-canvas { padding:1rem; } }
+            </style>
+            <?php
                 $selected_year = $_GET['year'] ?? date('Y');
                 
                 // Fetch bookings for the year
@@ -2163,7 +2296,7 @@ if ($page == 'equipment' && isset($_GET['delete_equipment'])) {
 
                 $monthly_revenue = array_fill(1, 12, 0);
                 foreach($chart_data_raw as $row) {
-                    $monthly_revenue[(int)$row['month']] = (float)$row['revenue'];
+                    $monthly_revenue[(int)$row['month']] = (int)round((float)$row['revenue'] * 25000);
                 }
             ?>
                 <?php $total_yearly_revenue = array_sum($monthly_revenue); ?>
@@ -2171,23 +2304,23 @@ if ($page == 'equipment' && isset($_GET['delete_equipment'])) {
                 <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
                 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 
-                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 2rem; flex-wrap: wrap; gap: 1rem;">
+                <div class="eu-report-shell">
+                <div class="eu-report-hero">
                     <div>
-                        <h2>Yearly Report - <?php echo htmlspecialchars($selected_year); ?></h2>
-                        <p style="font-size: 1.1rem; color: var(--text-muted); margin-top: 5px;">
-                            Total Revenue: <strong style="color: #10b981; font-size: 1.5rem;">$<?php echo number_format($total_yearly_revenue, 2); ?></strong>
-                        </p>
+                        <p class="eu-report-kicker">Gym Manager · Annual Overview</p>
+                        <h2>Yearly Report — <?php echo htmlspecialchars($selected_year); ?></h2>
+                        <p>Total revenue: <strong><?php echo number_format($total_yearly_revenue, 0, ',', '.'); ?> VND</strong></p>
                     </div>
-                    <div style="display: flex; align-items: center; gap: 10px; flex-wrap: wrap;">
+                    <div class="eu-report-controls">
                         <button type="button" onclick="downloadYearlyReportPDF('<?php echo $selected_year; ?>', event)" 
-                                style="background: linear-gradient(135deg, #10b981, #059669); color: white; border: none; padding: 0.8rem 1.3rem; border-radius: 12px; font-weight: 700; font-size: 0.9rem; cursor: pointer; display: flex; align-items: center; gap: 8px; box-shadow: 0 4px 12px rgba(16,185,129,0.3); transition: transform 0.2s;">
+                                class="eu-report-btn">
                             <i class="fas fa-file-pdf"></i> <?php echo $current_lang === 'vi' ? 'Tải Báo Cáo Năm (PDF)' : 'Download Yearly Report (PDF)'; ?>
                         </button>
 
-                        <form method="GET" style="display: flex; align-items: center; gap: 10px; margin: 0;">
+                        <form method="GET">
                             <input type="hidden" name="page" value="yearly_report">
                             <label style="font-weight: 600;"><?php echo __("select_year"); ?></label>
-                            <select name="year" onchange="this.form.submit()" style="padding: 0.8rem; border-radius: 10px; border: 1px solid var(--border); outline: none; font-weight: 600;">
+                            <select name="year" onchange="this.form.submit()">
                                 <?php 
                                 $current_year = date('Y');
                                 for ($y = $current_year; $y >= $current_year - 5; $y--) {
@@ -2198,12 +2331,13 @@ if ($page == 'equipment' && isset($_GET['delete_equipment'])) {
                         </form>
                     </div>
                 </div>
+                </div>
 
-                <div id="yearly-report-export-area" style="background: white; padding: 2rem; border-radius: 20px; border: 1px solid var(--border); box-shadow: 0 4px 20px rgba(0,0,0,0.03); margin-bottom: 2rem;">
+                <div id="yearly-report-export-area" class="eu-report-canvas">
 
                     <!-- Chart Section -->
                     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-                    <div style="background: #fafafa; padding: 2rem; border-radius: 20px; border: 1px solid var(--border); margin-bottom: 3rem;">
+                    <div class="eu-chart-panel">
                         <h3 style="margin-bottom: 1.5rem; color: var(--text-main); font-weight: 700; display: flex; align-items: center; gap: 10px;">
                             <i class="fas fa-chart-line" style="color: var(--primary);"></i>
                             <?php echo __("monthly_revenue_chart"); ?>
@@ -2220,8 +2354,8 @@ if ($page == 'equipment' && isset($_GET['delete_equipment'])) {
                             const ctx = canvas.getContext('2d');
                             
                             let gradient = ctx.createLinearGradient(0, 0, 0, 400);
-                            gradient.addColorStop(0, 'rgba(0, 98, 255, 0.4)');
-                            gradient.addColorStop(1, 'rgba(0, 98, 255, 0.0)');
+                            gradient.addColorStop(0, 'rgba(124, 38, 55, 0.34)');
+                            gradient.addColorStop(1, 'rgba(124, 38, 55, 0.02)');
 
                             new Chart(ctx, {
                                 type: 'line',
@@ -2231,10 +2365,10 @@ if ($page == 'equipment' && isset($_GET['delete_equipment'])) {
                                         label: 'Revenue',
                                         data: <?php echo json_encode(array_values($monthly_revenue)); ?>,
                                         backgroundColor: gradient,
-                                        borderColor: '#0062ff',
+                                        borderColor: '#7c2637',
                                         borderWidth: 3,
                                         pointBackgroundColor: '#ffffff',
-                                        pointBorderColor: '#0062ff',
+                                        pointBorderColor: '#7c2637',
                                         pointBorderWidth: 2,
                                         pointRadius: 4,
                                         pointHoverRadius: 6,
@@ -2255,7 +2389,7 @@ if ($page == 'equipment' && isset($_GET['delete_equipment'])) {
                                             displayColors: false,
                                             callbacks: {
                                                 label: function(context) {
-                                                    return '$' + context.parsed.y.toLocaleString();
+                                                    return context.parsed.y.toLocaleString('en-GB') + ' VND';
                                                 }
                                             }
                                         }
@@ -2265,7 +2399,7 @@ if ($page == 'equipment' && isset($_GET['delete_equipment'])) {
                                             beginAtZero: true,
                                             grid: { color: '#f1f5f9', drawBorder: false },
                                             ticks: {
-                                                callback: function(value) { return '$' + value; },
+                                                callback: function(value) { return value.toLocaleString('en-GB') + ' VND'; },
                                                 font: { family: 'Inter, sans-serif', size: 12 },
                                                 color: '#64748b'
                                             }
@@ -2355,12 +2489,10 @@ if ($page == 'equipment' && isset($_GET['delete_equipment'])) {
                                     <th style="padding: 0.75rem 0.8rem; text-align: left; font-weight: 700; color: #475569; font-size: 0.75rem; text-transform: uppercase; white-space: nowrap;"><?php echo __("date"); ?></th>
                                     <th style="padding: 0.75rem 0.8rem; text-align: left; font-weight: 700; color: #475569; font-size: 0.75rem; text-transform: uppercase; white-space: nowrap;"><?php echo __("order_id"); ?></th>
                                     <th style="padding: 0.75rem 0.8rem; text-align: left; font-weight: 700; color: #475569; font-size: 0.75rem; text-transform: uppercase; white-space: nowrap;"><?php echo __("client_name"); ?></th>
-                                    <th style="padding: 0.75rem 0.8rem; text-align: left; font-weight: 700; color: #475569; font-size: 0.75rem; text-transform: uppercase; white-space: nowrap;"><?php echo __("email"); ?></th>
-                                    <th style="padding: 0.75rem 0.8rem; text-align: left; font-weight: 700; color: #475569; font-size: 0.75rem; text-transform: uppercase; white-space: nowrap;"><?php echo __("phone"); ?></th>
                                     <th style="padding: 0.75rem 0.8rem; text-align: left; font-weight: 700; color: #475569; font-size: 0.75rem; text-transform: uppercase; white-space: nowrap;"><?php echo __("total_price"); ?></th>
                                     <th style="padding: 0.75rem 0.8rem; text-align: left; font-weight: 700; color: #475569; font-size: 0.75rem; text-transform: uppercase; white-space: nowrap; min-width: 140px;"><?php echo __("items"); ?></th>
                                     <th style="padding: 0.75rem 0.8rem; text-align: center; font-weight: 700; color: #475569; font-size: 0.75rem; text-transform: uppercase; white-space: nowrap;"><?php echo __("status"); ?></th>
-                                    <th style="padding: 0.75rem 0.8rem; text-align: center; font-weight: 700; color: #475569; font-size: 0.75rem; text-transform: uppercase; white-space: nowrap;" class="invoice-export-btn"><?php echo $current_lang === 'vi' ? 'Hóa Đơn' : 'Invoice'; ?></th>
+                                    <th style="padding: 0.75rem 0.8rem; text-align: center; font-weight: 700; color: #475569; font-size: 0.75rem; text-transform: uppercase; white-space: nowrap;" class="invoice-export-btn"><?php echo $current_lang === 'vi' ? 'Chi Tiết' : 'Details'; ?></th>
                                 </tr>
                             </thead>
                             <tbody>
@@ -2374,10 +2506,12 @@ if ($page == 'equipment' && isset($_GET['delete_equipment'])) {
                                 <tr style="border-bottom: 1px solid #f1f5f9; background: white; transition: background 0.2s;">
                                     <td style="padding: 0.75rem 0.8rem; font-weight: 600; white-space: nowrap;"><?php echo date('d/m/Y', strtotime($o['created_at'])); ?></td>
                                     <td style="padding: 0.75rem 0.8rem; font-weight: 800; color: var(--primary); white-space: nowrap;">#<?php echo $o['id']; ?></td>
-                                    <td style="padding: 0.75rem 0.8rem; font-weight: 700; color: #0f172a; white-space: nowrap;"><?php echo htmlspecialchars($o['user_name']); ?></td>
-                                    <td style="padding: 0.75rem 0.8rem; color: #475569; word-break: break-all; max-width: 160px; font-size: 0.8rem;"><?php echo htmlspecialchars($o['user_email']); ?></td>
-                                    <td style="padding: 0.75rem 0.8rem; color: #475569; white-space: nowrap; font-size: 0.8rem;"><?php echo htmlspecialchars($o['phone'] ?? 'N/A'); ?></td>
-                                    <td style="padding: 0.75rem 0.8rem; color: #10b981; font-weight: 800; white-space: nowrap;">$<?php echo number_format($o['total_price'], 2); ?></td>
+                                    <td style="padding: 0.75rem 0.8rem; min-width: 190px;">
+                                        <strong style="display:block; color:#0f172a;"><?php echo htmlspecialchars($o['user_name']); ?></strong>
+                                        <span style="display:block; margin-top:3px; color:#64748b; font-size:.74rem; overflow-wrap:anywhere;"><i class="far fa-envelope"></i> <?php echo htmlspecialchars($o['user_email']); ?></span>
+                                        <span style="display:block; margin-top:2px; color:#64748b; font-size:.74rem;"><i class="fas fa-phone-alt"></i> <?php echo htmlspecialchars($o['phone'] ?? 'N/A'); ?></span>
+                                    </td>
+                                    <td style="padding: 0.75rem 0.8rem; color: #10b981; font-weight: 800; white-space: nowrap;"><?php echo number_format((int)round($o['total_price'] * 25000), 0, ',', '.'); ?>đ</td>
                                     <td style="padding: 0.75rem 0.8rem; color: #334155; font-size: 0.8rem; line-height: 1.35; max-width: 220px; word-wrap: break-word;"><?php echo htmlspecialchars(implode(', ', $items_str)); ?></td>
                                     <td style="padding: 0.75rem 0.8rem; text-align: center; white-space: nowrap;">
                                         <span class="status-badge" style="background: #dcfce7; color: #16a34a; padding: 4px 10px; border-radius: 20px; font-weight: 800; font-size: 0.7rem;">
@@ -2387,7 +2521,7 @@ if ($page == 'equipment' && isset($_GET['delete_equipment'])) {
                                     <td style="padding: 0.75rem 0.8rem; text-align: center; white-space: nowrap;">
                                         <button type="button" class="invoice-export-btn" onclick="openInvoiceModal(<?php echo $o['id']; ?>)" 
                                                 style="background: linear-gradient(135deg, #1e293b, #0f172a); color: white; border: none; padding: 6px 12px; border-radius: 8px; font-weight: 700; font-size: 0.75rem; cursor: pointer; display: inline-flex; align-items: center; gap: 5px; box-shadow: 0 2px 6px rgba(0,0,0,0.12); transition: all 0.2s;">
-                                            <i class="fas fa-file-invoice" style="color: #60a5fa;"></i> <?php echo $current_lang === 'vi' ? 'Xuất Hóa Đơn' : 'Export Invoice'; ?>
+                                            <i class="fas fa-eye" style="color: #ddc99c;"></i> <?php echo $current_lang === 'vi' ? 'Chi Tiết' : 'Details'; ?>
                                         </button>
 
                                         <!-- Invoice Modal for Order #<?php echo $o['id']; ?> -->
@@ -2495,8 +2629,8 @@ if ($page == 'equipment' && isset($_GET['delete_equipment'])) {
                                                                         <?php endif; ?>
                                                                     </td>
                                                                     <td style="padding: 10px; text-align: center; font-weight: 600;"><?php echo $item['quantity']; ?></td>
-                                                                    <td style="padding: 10px; text-align: right; color: #475569;">$<?php echo number_format($item['price'], 2); ?></td>
-                                                                    <td style="padding: 10px; text-align: right; font-weight: 700; color: #0062ff;">$<?php echo number_format($item_total, 2); ?></td>
+                                                                    <td style="padding: 10px; text-align: right; color: #475569;"><?php echo number_format((int)round($item['price'] * 25000), 0, ',', '.'); ?>đ</td>
+                                                                    <td style="padding: 10px; text-align: right; font-weight: 700; color: #0062ff;"><?php echo number_format((int)round($item_total * 25000), 0, ',', '.'); ?>đ</td>
                                                                 </tr>
                                                                 <?php endforeach; ?>
                                                             </tbody>
@@ -2509,7 +2643,7 @@ if ($page == 'equipment' && isset($_GET['delete_equipment'])) {
                                                                 <p style="margin: 2px 0 0; font-size: 0.75rem; color: #cbd5e1;"><?php echo $current_lang === 'vi' ? 'Đã bao gồm thuế & phí' : 'Taxes & fees included'; ?></p>
                                                             </div>
                                                             <h2 style="margin: 0; font-size: 1.8rem; font-weight: 900; color: #10b981;">
-                                                                $<?php echo number_format($o['total_price'], 2); ?>
+                                                                <?php echo number_format((int)round($o['total_price'] * 25000), 0, ',', '.'); ?>đ
                                                             </h2>
                                                         </div>
 
@@ -2545,7 +2679,7 @@ if ($page == 'equipment' && isset($_GET['delete_equipment'])) {
                                 </tr>
                                 <?php endforeach; ?>
                                 <?php if (empty($yearly_orders)): ?>
-                                <tr><td colspan="9" style="text-align:center; padding: 2rem; color: var(--text-muted);"><?php echo __("no_orders"); ?></td></tr>
+                                <tr><td colspan="7" style="text-align:center; padding: 2rem; color: var(--text-muted);"><?php echo __("no_orders"); ?></td></tr>
                                 <?php endif; ?>
                             </tbody>
                         </table>
@@ -2553,6 +2687,17 @@ if ($page == 'equipment' && isset($_GET['delete_equipment'])) {
                 </div>
 
             <?php elseif ($page == 'monthly_report'): 
+                /* The monthly view uses the same European editorial system as the annual report. */
+            ?>
+            <style>
+                .eu-report-shell { --eu-ink:#172033; --eu-wine:#7c2637; --eu-gold:#b28a4a; --eu-paper:#f7f4ee; --eu-line:#ded8cf; --eu-green:#206451; }
+                .eu-report-hero { background:linear-gradient(118deg,#172033 0%,#25324a 68%,#7c2637 170%); border-radius:24px; padding:2rem 2.2rem; margin:0 0 1.4rem; color:#fff; display:flex; justify-content:space-between; align-items:center; gap:1.5rem; box-shadow:0 18px 38px rgba(23,32,51,.15); }
+                .eu-report-kicker { margin:0 0 .45rem; color:#ddc99c; font-size:.72rem; font-weight:800; text-transform:uppercase; letter-spacing:.16em; }
+                .eu-report-hero h2 { margin:0; color:#fff; font-family:Georgia,'Times New Roman',serif; font-size:clamp(1.6rem,3vw,2.3rem); letter-spacing:-.025em; }
+                .eu-report-hero p { margin:.5rem 0 0; color:#d9dfeb; font-size:.93rem; }.eu-report-hero strong{color:#f1d493;font-size:1.28rem;}
+                .eu-report-controls { display:flex; align-items:center; justify-content:flex-end; gap:.65rem; flex-wrap:wrap; }.eu-report-controls form{display:flex;align-items:center;gap:.55rem;flex-wrap:wrap;margin:0;padding:.4rem;border:1px solid rgba(255,255,255,.2);border-radius:12px;background:rgba(255,255,255,.08);}.eu-report-controls label{color:#f4f0e8;font-size:.76rem;font-weight:800;text-transform:uppercase;letter-spacing:.08em;}.eu-report-controls select{appearance:none;background:#fff;color:var(--eu-ink);border:0;border-radius:8px;padding:.65rem .75rem;font-weight:700;}.eu-report-btn{background:#d9bc7c;color:#172033;border:0;padding:.78rem 1rem;border-radius:10px;font-weight:800;font-size:.84rem;cursor:pointer;display:inline-flex;align-items:center;gap:.5rem;}.eu-report-btn:hover{background:#f1d493;transform:translateY(-1px);}.eu-report-filter{background:#7c2637;color:#fff;border:0;padding:.68rem .9rem;border-radius:8px;font-weight:800;cursor:pointer;}.eu-report-canvas{background:var(--eu-paper);padding:1.7rem;border-radius:22px;border:1px solid var(--eu-line);box-shadow:none;margin-bottom:2rem;}.eu-summary-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:1rem;margin-bottom:2.25rem;}.eu-summary-card{background:#fffdf9!important;color:var(--eu-ink)!important;padding:1.35rem!important;border:1px solid var(--eu-line);border-radius:14px!important;box-shadow:none!important;border-top:4px solid var(--eu-wine);}.eu-summary-card:nth-child(2){border-top-color:#206451;}.eu-summary-card:nth-child(3){border-top-color:#b28a4a;}.eu-summary-card h3{color:var(--eu-ink)!important;font-family:Georgia,'Times New Roman',serif;}.eu-summary-card span,.eu-summary-card p{color:#687284!important;}.eu-chart-panel{background:#fffdf9;padding:1.5rem;border-radius:16px;border:1px solid var(--eu-line);margin-bottom:2.25rem;}.eu-chart-panel h3,.eu-report-canvas>h3{font-family:Georgia,'Times New Roman',serif;color:var(--eu-ink)!important;}.eu-report-canvas table thead tr{background:#ede7dc!important;border-color:var(--eu-line)!important;}.eu-report-canvas table th{color:#4a5364!important;letter-spacing:.065em;}.eu-report-canvas table tbody tr:hover{background:#fffdf9;}@media(max-width:760px){.eu-report-hero{padding:1.45rem;align-items:flex-start;flex-direction:column;}.eu-report-controls{justify-content:flex-start;}.eu-report-canvas{padding:1rem;}.eu-summary-grid{grid-template-columns:1fr;}}
+            </style>
+            <?php
                 $selected_month = intval($_GET['month'] ?? date('n'));
                 $selected_year = intval($_GET['year'] ?? date('Y'));
                 
@@ -2598,7 +2743,7 @@ if ($page == 'equipment' && isset($_GET['delete_equipment'])) {
 
                 $daily_revenue = array_fill(1, $days_in_month, 0);
                 foreach($daily_data_raw as $row) {
-                    $daily_revenue[(int)$row['day_num']] = (float)$row['daily_revenue'];
+                    $daily_revenue[(int)$row['day_num']] = (int)round((float)$row['daily_revenue'] * 25000);
                 }
 
                 $total_monthly_revenue = array_sum($daily_revenue);
@@ -2608,23 +2753,23 @@ if ($page == 'equipment' && isset($_GET['delete_equipment'])) {
                 <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
                 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 
-                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 2rem; flex-wrap: wrap; gap: 1rem;">
+                <div class="eu-report-shell">
+                <div class="eu-report-hero">
                     <div>
-                        <h2><?php echo $current_lang === 'vi' ? 'Báo Cáo Tháng' : 'Monthly Report'; ?> - <?php echo htmlspecialchars($display_month_title); ?></h2>
-                        <p style="font-size: 1.1rem; color: var(--text-muted); margin-top: 5px;">
-                            <?php echo $current_lang === 'vi' ? 'Tổng Doanh Thu Tháng:' : 'Total Monthly Revenue:'; ?> <strong style="color: #10b981; font-size: 1.5rem;">$<?php echo number_format($total_monthly_revenue, 2); ?></strong>
-                        </p>
+                        <p class="eu-report-kicker">Gym Manager · Period Review</p>
+                        <h2><?php echo $current_lang === 'vi' ? 'Báo Cáo Tháng' : 'Monthly Report'; ?> — <?php echo htmlspecialchars($display_month_title); ?></h2>
+                        <p><?php echo $current_lang === 'vi' ? 'Tổng Doanh Thu Tháng:' : 'Total Monthly Revenue:'; ?> <strong><?php echo number_format($total_monthly_revenue, 0, ',', '.'); ?> VND</strong></p>
                     </div>
-                    <div style="display: flex; align-items: center; gap: 10px; flex-wrap: wrap;">
+                    <div class="eu-report-controls">
                         <button type="button" onclick="downloadMonthlyReportPDF('<?php echo $selected_month; ?>', '<?php echo $selected_year; ?>', event)" 
-                                style="background: linear-gradient(135deg, #10b981, #059669); color: white; border: none; padding: 0.8rem 1.3rem; border-radius: 12px; font-weight: 700; font-size: 0.9rem; cursor: pointer; display: flex; align-items: center; gap: 8px; box-shadow: 0 4px 12px rgba(16,185,129,0.3); transition: transform 0.2s;">
+                                class="eu-report-btn">
                             <i class="fas fa-file-pdf"></i> <?php echo $current_lang === 'vi' ? 'Tải Báo Cáo Tháng (PDF)' : 'Download Monthly Report (PDF)'; ?>
                         </button>
 
-                        <form method="GET" style="display: flex; align-items: center; gap: 8px; margin: 0; flex-wrap: wrap;">
+                        <form method="GET">
                             <input type="hidden" name="page" value="monthly_report">
                             <label style="font-weight: 600;"><?php echo $current_lang === 'vi' ? 'Tháng:' : 'Month:'; ?></label>
-                            <select name="month" style="padding: 0.75rem; border-radius: 10px; border: 1px solid var(--border); outline: none; font-weight: 600;">
+                            <select name="month">
                                 <?php 
                                 for ($m = 1; $m <= 12; $m++) {
                                     $m_label = $current_lang === 'vi' ? 'Tháng ' . $m : date('F', mktime(0,0,0,$m,1));
@@ -2634,7 +2779,7 @@ if ($page == 'equipment' && isset($_GET['delete_equipment'])) {
                             </select>
 
                             <label style="font-weight: 600;"><?php echo __("select_year"); ?></label>
-                            <select name="year" style="padding: 0.75rem; border-radius: 10px; border: 1px solid var(--border); outline: none; font-weight: 600;">
+                            <select name="year">
                                 <?php 
                                 $curr_yr = date('Y');
                                 for ($y = $curr_yr; $y >= $curr_yr - 5; $y--) {
@@ -2642,27 +2787,28 @@ if ($page == 'equipment' && isset($_GET['delete_equipment'])) {
                                 }
                                 ?>
                             </select>
-                            <button type="submit" style="background: var(--primary); color: white; border: none; padding: 0.75rem 1.2rem; border-radius: 10px; font-weight: 700; cursor: pointer;">
+                            <button type="submit" class="eu-report-filter">
                                 <i class="fas fa-filter"></i> Filter
                             </button>
                         </form>
                     </div>
                 </div>
+                </div>
 
-                <div id="monthly-report-export-area" style="background: white; padding: 2rem; border-radius: 20px; border: 1px solid var(--border); box-shadow: 0 4px 20px rgba(0,0,0,0.03); margin-bottom: 2rem;">
+                <div id="monthly-report-export-area" class="eu-report-canvas">
                     
                     <!-- Top Summary Stats Grid -->
-                    <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 1.5rem; margin-bottom: 2.5rem;">
-                        <div style="background: linear-gradient(135deg, #0f172a, #1e293b); color: white; padding: 1.5rem; border-radius: 16px; text-align: left; box-shadow: 0 10px 25px rgba(15,23,42,0.15);">
+                    <div class="eu-summary-grid">
+                        <div class="eu-summary-card">
                             <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.5rem;">
                                 <span style="font-size: 0.8rem; font-weight: 700; text-transform: uppercase; color: #94a3b8; letter-spacing: 0.5px;"><?php echo $current_lang === 'vi' ? 'DOANH THU THÁNG' : 'MONTHLY REVENUE'; ?></span>
                                 <i class="fas fa-wallet" style="color: #10b981; font-size: 1.2rem;"></i>
                             </div>
-                            <h3 style="margin: 0; font-size: 1.8rem; font-weight: 900; color: #10b981;">$<?php echo number_format($total_monthly_revenue, 2); ?></h3>
+                            <h3 style="margin: 0; font-size: 1.8rem; font-weight: 900; color: #10b981;"><?php echo number_format($total_monthly_revenue, 0, ',', '.'); ?>đ</h3>
                             <p style="margin: 4px 0 0; font-size: 0.75rem; color: #cbd5e1;"><?php echo $display_month_title; ?></p>
                         </div>
 
-                        <div style="background: linear-gradient(135deg, #0f172a, #1e293b); color: white; padding: 1.5rem; border-radius: 16px; text-align: left; box-shadow: 0 10px 25px rgba(15,23,42,0.15);">
+                        <div class="eu-summary-card">
                             <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.5rem;">
                                 <span style="font-size: 0.8rem; font-weight: 700; text-transform: uppercase; color: #94a3b8; letter-spacing: 0.5px;"><?php echo $current_lang === 'vi' ? 'ĐƠN HÀNG THÀNH CÔNG' : 'COMPLETED ORDERS'; ?></span>
                                 <i class="fas fa-shopping-bag" style="color: #60a5fa; font-size: 1.2rem;"></i>
@@ -2671,7 +2817,7 @@ if ($page == 'equipment' && isset($_GET['delete_equipment'])) {
                             <p style="margin: 4px 0 0; font-size: 0.75rem; color: #cbd5e1;"><?php echo $current_lang === 'vi' ? 'Tổng đơn hàng sản phẩm' : 'Total store product orders'; ?></p>
                         </div>
 
-                        <div style="background: linear-gradient(135deg, #0f172a, #1e293b); color: white; padding: 1.5rem; border-radius: 16px; text-align: left; box-shadow: 0 10px 25px rgba(15,23,42,0.15);">
+                        <div class="eu-summary-card">
                             <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.5rem;">
                                 <span style="font-size: 0.8rem; font-weight: 700; text-transform: uppercase; color: #94a3b8; letter-spacing: 0.5px;"><?php echo $current_lang === 'vi' ? 'BUỔI TẬP HLV (PT)' : 'COACH BOOKINGS'; ?></span>
                                 <i class="fas fa-dumbbell" style="color: #f59e0b; font-size: 1.2rem;"></i>
@@ -2683,7 +2829,7 @@ if ($page == 'equipment' && isset($_GET['delete_equipment'])) {
 
                     <!-- Daily Chart Section -->
                     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-                    <div style="background: #fafafa; padding: 2rem; border-radius: 20px; border: 1px solid var(--border); margin-bottom: 3rem;">
+                    <div class="eu-chart-panel">
                         <h3 style="margin-bottom: 1.5rem; color: var(--text-main); font-weight: 700; display: flex; align-items: center; gap: 10px;">
                             <i class="fas fa-chart-area" style="color: var(--primary);"></i>
                             <?php echo $current_lang === 'vi' ? 'Biểu Đồ Doanh Thu Theo Ngày' : 'Daily Revenue Growth Chart'; ?> (<?php echo $display_month_title; ?>)
@@ -2700,12 +2846,12 @@ if ($page == 'equipment' && isset($_GET['delete_equipment'])) {
                             const ctx = canvas.getContext('2d');
                             
                             let gradient = ctx.createLinearGradient(0, 0, 0, 400);
-                            gradient.addColorStop(0, 'rgba(16, 185, 129, 0.4)');
-                            gradient.addColorStop(1, 'rgba(16, 185, 129, 0.0)');
+                            gradient.addColorStop(0, 'rgba(32, 100, 81, 0.34)');
+                            gradient.addColorStop(1, 'rgba(32, 100, 81, 0.02)');
 
                             const daysLabels = [];
                             for(let d = 1; d <= <?php echo $days_in_month; ?>; d++) {
-                                daysLabels.push('Day ' + d);
+                                daysLabels.push(String(d).padStart(2, '0'));
                             }
 
                             new Chart(ctx, {
@@ -2713,13 +2859,13 @@ if ($page == 'equipment' && isset($_GET['delete_equipment'])) {
                                 data: {
                                     labels: daysLabels,
                                     datasets: [{
-                                        label: 'Daily Revenue ($)',
+                                        label: 'Daily Revenue (VND)',
                                         data: <?php echo json_encode(array_values($daily_revenue)); ?>,
                                         backgroundColor: gradient,
-                                        borderColor: '#10b981',
+                                        borderColor: '#206451',
                                         borderWidth: 3,
                                         pointBackgroundColor: '#ffffff',
-                                        pointBorderColor: '#10b981',
+                                        pointBorderColor: '#206451',
                                         pointBorderWidth: 2,
                                         pointRadius: 4,
                                         fill: true,
@@ -2737,7 +2883,7 @@ if ($page == 'equipment' && isset($_GET['delete_equipment'])) {
                                             beginAtZero: true,
                                             grid: { color: '#f1f5f9' },
                                             ticks: {
-                                                callback: function(value) { return '$' + value; },
+                                                callback: function(value) { return value.toLocaleString('en-GB') + ' VND'; },
                                                 font: { family: "'Outfit', sans-serif", weight: '600' }
                                             }
                                         },
@@ -2814,12 +2960,10 @@ if ($page == 'equipment' && isset($_GET['delete_equipment'])) {
                                     <th style="padding: 0.75rem 0.8rem; text-align: left; font-weight: 700; color: #475569; font-size: 0.75rem; text-transform: uppercase; white-space: nowrap;"><?php echo __("date"); ?></th>
                                     <th style="padding: 0.75rem 0.8rem; text-align: left; font-weight: 700; color: #475569; font-size: 0.75rem; text-transform: uppercase; white-space: nowrap;"><?php echo __("order_id"); ?></th>
                                     <th style="padding: 0.75rem 0.8rem; text-align: left; font-weight: 700; color: #475569; font-size: 0.75rem; text-transform: uppercase; white-space: nowrap;"><?php echo __("client_name"); ?></th>
-                                    <th style="padding: 0.75rem 0.8rem; text-align: left; font-weight: 700; color: #475569; font-size: 0.75rem; text-transform: uppercase; white-space: nowrap;"><?php echo __("email"); ?></th>
-                                    <th style="padding: 0.75rem 0.8rem; text-align: left; font-weight: 700; color: #475569; font-size: 0.75rem; text-transform: uppercase; white-space: nowrap;"><?php echo __("phone"); ?></th>
                                     <th style="padding: 0.75rem 0.8rem; text-align: left; font-weight: 700; color: #475569; font-size: 0.75rem; text-transform: uppercase; white-space: nowrap;"><?php echo __("total_price"); ?></th>
                                     <th style="padding: 0.75rem 0.8rem; text-align: left; font-weight: 700; color: #475569; font-size: 0.75rem; text-transform: uppercase; white-space: nowrap; min-width: 140px;"><?php echo __("items"); ?></th>
                                     <th style="padding: 0.75rem 0.8rem; text-align: center; font-weight: 700; color: #475569; font-size: 0.75rem; text-transform: uppercase; white-space: nowrap;"><?php echo __("status"); ?></th>
-                                    <th style="padding: 0.75rem 0.8rem; text-align: center; font-weight: 700; color: #475569; font-size: 0.75rem; text-transform: uppercase; white-space: nowrap;" class="invoice-export-btn"><?php echo $current_lang === 'vi' ? 'Hóa Đơn' : 'Invoice'; ?></th>
+                                    <th style="padding: 0.75rem 0.8rem; text-align: center; font-weight: 700; color: #475569; font-size: 0.75rem; text-transform: uppercase; white-space: nowrap;" class="invoice-export-btn"><?php echo $current_lang === 'vi' ? 'Chi Tiết' : 'Details'; ?></th>
                                 </tr>
                             </thead>
                             <tbody>
@@ -2833,10 +2977,12 @@ if ($page == 'equipment' && isset($_GET['delete_equipment'])) {
                                 <tr style="border-bottom: 1px solid #f1f5f9; background: white; transition: background 0.2s;">
                                     <td style="padding: 0.75rem 0.8rem; font-weight: 600; white-space: nowrap;"><?php echo date('d/m/Y', strtotime($o['created_at'])); ?></td>
                                     <td style="padding: 0.75rem 0.8rem; font-weight: 800; color: var(--primary); white-space: nowrap;">#<?php echo $o['id']; ?></td>
-                                    <td style="padding: 0.75rem 0.8rem; font-weight: 700; color: #0f172a; white-space: nowrap;"><?php echo htmlspecialchars($o['user_name']); ?></td>
-                                    <td style="padding: 0.75rem 0.8rem; color: #475569; word-break: break-all; max-width: 160px; font-size: 0.8rem;"><?php echo htmlspecialchars($o['user_email']); ?></td>
-                                    <td style="padding: 0.75rem 0.8rem; color: #475569; white-space: nowrap; font-size: 0.8rem;"><?php echo htmlspecialchars($o['phone'] ?? 'N/A'); ?></td>
-                                    <td style="padding: 0.75rem 0.8rem; color: #10b981; font-weight: 800; white-space: nowrap;">$<?php echo number_format($o['total_price'], 2); ?></td>
+                                    <td style="padding: 0.75rem 0.8rem; min-width: 190px;">
+                                        <strong style="display:block; color:#0f172a;"><?php echo htmlspecialchars($o['user_name']); ?></strong>
+                                        <span style="display:block; margin-top:3px; color:#64748b; font-size:.74rem; overflow-wrap:anywhere;"><i class="far fa-envelope"></i> <?php echo htmlspecialchars($o['user_email']); ?></span>
+                                        <span style="display:block; margin-top:2px; color:#64748b; font-size:.74rem;"><i class="fas fa-phone-alt"></i> <?php echo htmlspecialchars($o['phone'] ?? 'N/A'); ?></span>
+                                    </td>
+                                    <td style="padding: 0.75rem 0.8rem; color: #10b981; font-weight: 800; white-space: nowrap;"><?php echo number_format((int)round($o['total_price'] * 25000), 0, ',', '.'); ?>đ</td>
                                     <td style="padding: 0.75rem 0.8rem; color: #334155; font-size: 0.8rem; line-height: 1.35; max-width: 220px; word-wrap: break-word;"><?php echo htmlspecialchars(implode(', ', $items_str)); ?></td>
                                     <td style="padding: 0.75rem 0.8rem; text-align: center; white-space: nowrap;">
                                         <span class="status-badge" style="background: #dcfce7; color: #16a34a; padding: 4px 10px; border-radius: 20px; font-weight: 800; font-size: 0.7rem;">
@@ -2846,7 +2992,7 @@ if ($page == 'equipment' && isset($_GET['delete_equipment'])) {
                                     <td style="padding: 0.75rem 0.8rem; text-align: center; white-space: nowrap;">
                                         <button type="button" class="invoice-export-btn" onclick="openInvoiceModal(<?php echo $o['id']; ?>)" 
                                                 style="background: linear-gradient(135deg, #1e293b, #0f172a); color: white; border: none; padding: 6px 12px; border-radius: 8px; font-weight: 700; font-size: 0.75rem; cursor: pointer; display: inline-flex; align-items: center; gap: 5px; box-shadow: 0 2px 6px rgba(0,0,0,0.12); transition: all 0.2s;">
-                                            <i class="fas fa-file-invoice" style="color: #60a5fa;"></i> <?php echo $current_lang === 'vi' ? 'Xuất Hóa Đơn' : 'Export Invoice'; ?>
+                                            <i class="fas fa-eye" style="color: #ddc99c;"></i> <?php echo $current_lang === 'vi' ? 'Chi Tiết' : 'Details'; ?>
                                         </button>
 
                                         <!-- Invoice Modal for Order #<?php echo $o['id']; ?> -->
@@ -2954,8 +3100,8 @@ if ($page == 'equipment' && isset($_GET['delete_equipment'])) {
                                                                         <?php endif; ?>
                                                                     </td>
                                                                     <td style="padding: 10px; text-align: center; font-weight: 600;"><?php echo $item['quantity']; ?></td>
-                                                                    <td style="padding: 10px; text-align: right; color: #475569;">$<?php echo number_format($item['price'], 2); ?></td>
-                                                                    <td style="padding: 10px; text-align: right; font-weight: 700; color: #0062ff;">$<?php echo number_format($item_total, 2); ?></td>
+                                                                    <td style="padding: 10px; text-align: right; color: #475569;"><?php echo number_format((int)round($item['price'] * 25000), 0, ',', '.'); ?>đ</td>
+                                                                    <td style="padding: 10px; text-align: right; font-weight: 700; color: #0062ff;"><?php echo number_format((int)round($item_total * 25000), 0, ',', '.'); ?>đ</td>
                                                                 </tr>
                                                                 <?php endforeach; ?>
                                                             </tbody>
@@ -2968,7 +3114,7 @@ if ($page == 'equipment' && isset($_GET['delete_equipment'])) {
                                                                 <p style="margin: 2px 0 0; font-size: 0.75rem; color: #cbd5e1;"><?php echo $current_lang === 'vi' ? 'Đã bao gồm thuế & phí' : 'Taxes & fees included'; ?></p>
                                                             </div>
                                                             <h2 style="margin: 0; font-size: 1.8rem; font-weight: 900; color: #10b981;">
-                                                                $<?php echo number_format($o['total_price'], 2); ?>
+                                                                <?php echo number_format((int)round($o['total_price'] * 25000), 0, ',', '.'); ?>đ
                                                             </h2>
                                                         </div>
 
@@ -3004,7 +3150,7 @@ if ($page == 'equipment' && isset($_GET['delete_equipment'])) {
                                 </tr>
                                 <?php endforeach; ?>
                                 <?php if (empty($monthly_orders)): ?>
-                                <tr><td colspan="9" style="text-align:center; padding: 2rem; color: var(--text-muted);"><?php echo $current_lang === 'vi' ? 'Không có đơn hàng nào trong tháng này.' : 'No orders found for this month.'; ?></td></tr>
+                                <tr><td colspan="7" style="text-align:center; padding: 2rem; color: var(--text-muted);"><?php echo $current_lang === 'vi' ? 'Không có đơn hàng nào trong tháng này.' : 'No orders found for this month.'; ?></td></tr>
                                 <?php endif; ?>
                             </tbody>
                         </table>
@@ -3012,553 +3158,1788 @@ if ($page == 'equipment' && isset($_GET['delete_equipment'])) {
                 </div>
 
             <?php elseif ($page == 'member_subscriptions'): 
+                // Fetch stats (Identical to Booking Management 4-card structure)
+                $stat_total   = $pdo->query("SELECT COUNT(*) FROM member_subscriptions")->fetchColumn();
+                $stat_pending = $pdo->query("SELECT COUNT(*) FROM member_subscriptions WHERE status = 'pending'")->fetchColumn();
+                $stat_active  = $pdo->query("SELECT COUNT(*) FROM member_subscriptions WHERE status = 'active'")->fetchColumn();
+                $stat_expired = $pdo->query("SELECT COUNT(*) FROM member_subscriptions WHERE status IN ('expired', 'cancelled')")->fetchColumn();
+
+                // Filters & Search logic
+                $search = trim($_GET['search'] ?? '');
+                $status_filter = trim($_GET['status_filter'] ?? '');
+                
+                $query_str = "SELECT ms.*, u.name as user_name, u.email as user_email, u.phone as user_phone, u.avatar as user_avatar, 
+                                     mp.name as plan_name, mp.name_vi as plan_name_vi, mp.badge, mp.badge_color, mp.price as plan_default_price, mp.duration_days as plan_duration_days
+                              FROM member_subscriptions ms 
+                              JOIN users u ON ms.user_id = u.id 
+                              JOIN membership_plans mp ON ms.plan_id = mp.id";
+                
+                $params = [];
+                $conditions = [];
+                
+                if ($search !== '') {
+                    $conditions[] = "(u.name LIKE ? OR u.email LIKE ? OR u.phone LIKE ? OR mp.name LIKE ? OR mp.name_vi LIKE ? OR ms.id LIKE ?)";
+                    $params[] = "%$search%";
+                    $params[] = "%$search%";
+                    $params[] = "%$search%";
+                    $params[] = "%$search%";
+                    $params[] = "%$search%";
+                    $params[] = "%$search%";
+                }
+                
+                if ($status_filter !== '') {
+                    if ($status_filter === 'expired_all') {
+                        $conditions[] = "ms.status IN ('expired', 'cancelled')";
+                    } elseif (in_array($status_filter, ['pending', 'active', 'expired', 'cancelled'])) {
+                        $conditions[] = "ms.status = ?";
+                        $params[] = $status_filter;
+                    }
+                }
+                
+                if (!empty($conditions)) {
+                    $query_str .= " WHERE " . implode(" AND ", $conditions);
+                }
+                
+                $query_str .= " ORDER BY ms.id DESC";
+                
+                $stmt = $pdo->prepare($query_str);
+                $stmt->execute($params);
+                $all_subs = $stmt->fetchAll();
+
+                // Fetch all users for dropdown
+                $all_users = $pdo->query("SELECT id, name, email FROM users ORDER BY name ASC")->fetchAll();
+                
+                // Fetch all active plans for dropdown
+                $all_plans = $pdo->query("SELECT id, name, name_vi, price, duration_days, badge FROM membership_plans WHERE is_active = 1 ORDER BY sort_order ASC")->fetchAll();
+
+                // Check if editing a subscription
                 $edit_sub = null;
                 if (isset($_GET['edit_sub'])) {
                     $stmt_es = $pdo->prepare("SELECT ms.*, u.name as user_name, u.email as user_email FROM member_subscriptions ms JOIN users u ON ms.user_id = u.id WHERE ms.id = ?");
                     $stmt_es->execute([$_GET['edit_sub']]);
                     $edit_sub = $stmt_es->fetch();
                 }
-
-                $all_users = $pdo->query("SELECT id, name, email FROM users ORDER BY name ASC")->fetchAll();
-                $all_plans = $pdo->query("SELECT id, name, name_vi, price, duration_days, badge FROM membership_plans WHERE is_active = 1 ORDER BY sort_order ASC")->fetchAll();
-                $all_subs  = $pdo->query("
-                    SELECT ms.*, u.name as user_name, u.email as user_email, u.avatar as user_avatar, mp.name as plan_name, mp.name_vi as plan_name_vi, mp.badge, mp.badge_color 
-                    FROM member_subscriptions ms 
-                    JOIN users u ON ms.user_id = u.id 
-                    JOIN membership_plans mp ON ms.plan_id = mp.id 
-                    ORDER BY ms.id DESC
-                ")->fetchAll();
-                $confirm_sub = null;
-                $confirm_action = $_GET['confirm_action'] ?? null;
-                if (isset($_GET['sub_id']) && in_array($confirm_action, ['approve', 'reject'])) {
-                    $stmt_cs = $pdo->prepare("
-                        SELECT ms.*, u.name as user_name, u.email as user_email, u.avatar as user_avatar, u.phone as user_phone, 
-                               mp.name as plan_name, mp.name_vi as plan_name_vi, mp.price as plan_price, mp.duration_days 
-                        FROM member_subscriptions ms 
-                        JOIN users u ON ms.user_id = u.id 
-                        JOIN membership_plans mp ON ms.plan_id = mp.id 
-                        WHERE ms.id = ?
-                    ");
-                    $stmt_cs->execute([$_GET['sub_id']]);
-                    $confirm_sub = $stmt_cs->fetch();
-                }
             ?>
-                <div style="display: flex; justify-content: space-between; align-items: center;">
-                    <h2><?php echo $current_lang === 'vi' ? 'Quản Lý Thẻ Thành Viên Khách Hàng' : 'Manage Customer Memberships'; ?></h2>
+                <!-- Section Header -->
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 2rem;">
+                    <h2><?php echo __("membership_management"); ?></h2>
                 </div>
 
-                <?php if ($confirm_sub && $confirm_action === 'approve'): ?>
-                <!-- TRANG XÁC NHẬN KÍCH HOẠT THẺ -->
-                <div style="background: white; border-radius: 25px; padding: 2.5rem; margin: 2rem 0; border: 2px solid #16a34a; box-shadow: 0 15px 40px rgba(22,163,74,0.15); animation: slideUp 0.3s ease-out;">
-                    <div style="display:flex; align-items:center; gap:14px; margin-bottom: 1.5rem;">
-                        <div style="width: 52px; height: 52px; background: #dcfce7; color: #16a34a; border-radius: 16px; display: flex; align-items: center; justify-content: center; font-size: 1.6rem; box-shadow: 0 4px 12px rgba(22,163,74,0.2);">
-                            <i class="fas fa-check-circle"></i>
+                <!-- Statistics Cards (Exact Booking Management Grid Style) -->
+                <div class="grid" style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 1.5rem; margin-bottom: 2rem;">
+                    <a href="/Gym Manager/dashboards/manager.php?page=member_subscriptions" style="text-decoration: none; color: inherit; display: block;">
+                        <div style="background: #f8fafc; padding: 1.5rem; border-radius: 20px; text-align: center; border: 1px solid var(--border); transition: transform 0.2s, box-shadow 0.2s;" onmouseover="this.style.transform='translateY(-3px)';this.style.boxShadow='0 10px 25px rgba(0,0,0,0.06)'" onmouseout="this.style.transform='none';this.style.boxShadow='none'">
+                            <h4 style="color: var(--text-muted); font-size: 0.8rem; text-transform: uppercase;"><?php echo $current_lang === 'vi' ? 'Tổng Thẻ Thành Viên' : 'Total Memberships'; ?></h4>
+                            <p style="font-size: 2rem; font-weight: 800; color: var(--text-main); margin-top: 5px;"><?php echo $stat_total; ?></p>
                         </div>
-                        <div>
-                            <h3 style="margin:0; color:#16a34a; font-size:1.4rem; font-weight:800;">
-                                <?php echo $current_lang === 'vi' ? 'TRANG XÁC NHẬN KÍCH HOẠT THẺ THÀNH VIÊN #' . $confirm_sub['id'] : 'CONFIRM MEMBERSHIP ACTIVATION #' . $confirm_sub['id']; ?>
-                            </h3>
-                            <p style="margin: 4px 0 0; color: var(--text-muted); font-size: 0.9rem;">Vui lòng kiểm tra thông tin hội viên trước khi xác nhận kích hoạt thẻ.</p>
+                    </a>
+                    <a href="/Gym Manager/dashboards/manager.php?page=member_subscriptions&status_filter=pending" style="text-decoration: none; color: inherit; display: block;">
+                        <div style="background: #fff7ed; padding: 1.5rem; border-radius: 20px; text-align: center; border: 1px solid #ffedd5; transition: transform 0.2s, box-shadow 0.2s;" onmouseover="this.style.transform='translateY(-3px)';this.style.boxShadow='0 10px 25px rgba(234,88,12,0.12)'" onmouseout="this.style.transform='none';this.style.boxShadow='none'">
+                            <h4 style="color: #c2410c; font-size: 0.8rem; text-transform: uppercase;"><?php echo $current_lang === 'vi' ? 'Chờ Xác Nhận' : 'Pending'; ?></h4>
+                            <p style="font-size: 2rem; font-weight: 800; color: #ea580c; margin-top: 5px;"><?php echo $stat_pending; ?></p>
                         </div>
-                    </div>
-
-                    <div style="background: #f8fafc; border-radius: 18px; padding: 1.5rem; margin-bottom: 1.8rem; border: 1px solid #e2e8f0; display: grid; grid-template-columns: 1fr 1fr; gap: 1.5rem;">
-                        <div>
-                            <h4 style="color: var(--text-main); margin: 0 0 10px; font-size: 1rem; border-bottom: 1px dashed #cbd5e1; padding-bottom: 6px;">👤 Thông tin Hội viên:</h4>
-                            <p style="margin: 6px 0; font-size: 0.92rem;"><strong>Họ và tên:</strong> <?php echo htmlspecialchars($confirm_sub['user_name']); ?></p>
-                            <p style="margin: 6px 0; font-size: 0.92rem;"><strong>Email:</strong> <?php echo htmlspecialchars($confirm_sub['user_email']); ?></p>
-                            <p style="margin: 6px 0; font-size: 0.92rem;"><strong>SĐT:</strong> <?php echo htmlspecialchars($confirm_sub['user_phone'] ?? 'Chưa cập nhật'); ?></p>
+                    </a>
+                    <a href="/Gym Manager/dashboards/manager.php?page=member_subscriptions&status_filter=active" style="text-decoration: none; color: inherit; display: block;">
+                        <div style="background: #f0fdf4; padding: 1.5rem; border-radius: 20px; text-align: center; border: 1px solid #dcfce7; transition: transform 0.2s, box-shadow 0.2s;" onmouseover="this.style.transform='translateY(-3px)';this.style.boxShadow='0 10px 25px rgba(22,163,74,0.12)'" onmouseout="this.style.transform='none';this.style.boxShadow='none'">
+                            <h4 style="color: #15803d; font-size: 0.8rem; text-transform: uppercase;"><?php echo $current_lang === 'vi' ? 'Đang Hoạt Động' : 'Active'; ?></h4>
+                            <p style="font-size: 2rem; font-weight: 800; color: #16a34a; margin-top: 5px;"><?php echo $stat_active; ?></p>
                         </div>
-                        <div>
-                            <h4 style="color: var(--text-main); margin: 0 0 10px; font-size: 1rem; border-bottom: 1px dashed #cbd5e1; padding-bottom: 6px;">💳 Thông tin Thẻ & Gói đăng ký:</h4>
-                            <p style="margin: 6px 0; font-size: 0.92rem;"><strong>Gói tập:</strong> <span style="color:#2563eb;font-weight:700;"><?php echo htmlspecialchars(($current_lang === 'vi' && !empty($confirm_sub['plan_name_vi'])) ? $confirm_sub['plan_name_vi'] : $confirm_sub['plan_name']); ?></span></p>
-                            <p style="margin: 6px 0; font-size: 0.92rem;"><strong>Số tiền:</strong> <span style="color:#ef4444;font-weight:800;"><?php echo number_format($confirm_sub['price_paid'], 0, ',', '.'); ?>đ</span></p>
-                            <p style="margin: 6px 0; font-size: 0.92rem;"><strong>Thời hạn thẻ:</strong> <?php echo date('d/m/Y', strtotime($confirm_sub['start_date'])); ?> → <?php echo date('d/m/Y', strtotime($confirm_sub['end_date'])); ?> (<?php echo $confirm_sub['duration_days']; ?> ngày)</p>
-                            <p style="margin: 6px 0; font-size: 0.92rem;"><strong>Phương thức thanh toán:</strong> <?php echo strtoupper($confirm_sub['payment_method']); ?></p>
-                            <?php if (!empty($confirm_sub['note'])): ?>
-                                <p style="margin: 6px 0; font-size: 0.92rem;"><strong>Ghi chú:</strong> <em><?php echo htmlspecialchars($confirm_sub['note']); ?></em></p>
-                            <?php endif; ?>
+                    </a>
+                    <a href="/Gym Manager/dashboards/manager.php?page=member_subscriptions&status_filter=expired_all" style="text-decoration: none; color: inherit; display: block;">
+                        <div style="background: #fafafa; padding: 1.5rem; border-radius: 20px; text-align: center; border: 1px solid var(--border); transition: transform 0.2s, box-shadow 0.2s;" onmouseover="this.style.transform='translateY(-3px)';this.style.boxShadow='0 10px 25px rgba(0,0,0,0.06)'" onmouseout="this.style.transform='none';this.style.boxShadow='none'">
+                            <h4 style="color: #4b5563; font-size: 0.8rem; text-transform: uppercase;"><?php echo $current_lang === 'vi' ? 'Hết Hạn / Đã Hủy' : 'Expired / Cancelled'; ?></h4>
+                            <p style="font-size: 2rem; font-weight: 800; color: #4b5563; margin-top: 5px;"><?php echo $stat_expired; ?></p>
                         </div>
-                    </div>
-
-                    <form method="POST" style="display: flex; gap: 1rem; align-items: center; flex-wrap: wrap;">
-                        <input type="hidden" name="sub_id" value="<?php echo $confirm_sub['id']; ?>">
-                        <button type="submit" name="do_approve_sub" class="btn-auth" style="margin: 0; width: auto; padding: 1.1rem 2.2rem; background: linear-gradient(135deg, #16a34a, #15803d); box-shadow: 0 8px 20px rgba(22,163,74,0.3);">
-                            <i class="fas fa-check-circle" style="margin-right: 8px;"></i>
-                            <?php echo $current_lang === 'vi' ? 'XÁC NHẬN KÍCH HOẠT THẺ THÀNH VIÊN' : 'CONFIRM & ACTIVATE MEMBERSHIP'; ?>
-                        </button>
-                        <a href="/Gym Manager/dashboards/manager.php?page=member_subscriptions" class="action-btn" style="background: #f1f5f9; color: var(--text-muted); border-radius: 15px; padding: 1.1rem 1.8rem; height: auto; text-decoration: none; font-weight: 700;">
-                            <i class="fas fa-arrow-left" style="margin-right: 6px;"></i> Quay Lại Danh Sách
-                        </a>
-                    </form>
+                    </a>
                 </div>
 
-                <?php elseif ($confirm_sub && $confirm_action === 'reject'): ?>
-                <!-- TRANG XÁC NHẬN TỪ CHỐI THẺ -->
-                <div style="background: white; border-radius: 25px; padding: 2.5rem; margin: 2rem 0; border: 2px solid #dc2626; box-shadow: 0 15px 40px rgba(220,38,38,0.15); animation: slideUp 0.3s ease-out;">
-                    <div style="display:flex; align-items:center; gap:14px; margin-bottom: 1.5rem;">
-                        <div style="width: 52px; height: 52px; background: #fee2e2; color: #dc2626; border-radius: 16px; display: flex; align-items: center; justify-content: center; font-size: 1.6rem; box-shadow: 0 4px 12px rgba(220,38,38,0.2);">
-                            <i class="fas fa-times-circle"></i>
-                        </div>
-                        <div>
-                            <h3 style="margin:0; color:#dc2626; font-size:1.4rem; font-weight:800;">
-                                <?php echo $current_lang === 'vi' ? 'TRANG XÁC NHẬN TỪ CHỐI / HỦY ĐĂNG KÝ THẺ #' . $confirm_sub['id'] : 'CONFIRM MEMBERSHIP REJECTION #' . $confirm_sub['id']; ?>
-                            </h3>
-                            <p style="margin: 4px 0 0; color: var(--text-muted); font-size: 0.9rem;">Bạn đang thực hiện từ chối yêu cầu đăng ký thẻ thành viên này.</p>
-                        </div>
-                    </div>
-
-                    <div style="background: #f8fafc; border-radius: 18px; padding: 1.5rem; margin-bottom: 1.8rem; border: 1px solid #e2e8f0; display: grid; grid-template-columns: 1fr 1fr; gap: 1.5rem;">
-                        <div>
-                            <h4 style="color: var(--text-main); margin: 0 0 10px; font-size: 1rem; border-bottom: 1px dashed #cbd5e1; padding-bottom: 6px;">👤 Thông tin Hội viên:</h4>
-                            <p style="margin: 6px 0; font-size: 0.92rem;"><strong>Họ và tên:</strong> <?php echo htmlspecialchars($confirm_sub['user_name']); ?></p>
-                            <p style="margin: 6px 0; font-size: 0.92rem;"><strong>Email:</strong> <?php echo htmlspecialchars($confirm_sub['user_email']); ?></p>
-                        </div>
-                        <div>
-                            <h4 style="color: var(--text-main); margin: 0 0 10px; font-size: 1rem; border-bottom: 1px dashed #cbd5e1; padding-bottom: 6px;">💳 Gói Đăng Ký:</h4>
-                            <p style="margin: 6px 0; font-size: 0.92rem;"><strong>Gói tập:</strong> <?php echo htmlspecialchars(($current_lang === 'vi' && !empty($confirm_sub['plan_name_vi'])) ? $confirm_sub['plan_name_vi'] : $confirm_sub['plan_name']); ?></p>
-                            <p style="margin: 6px 0; font-size: 0.92rem;"><strong>Số tiền:</strong> <?php echo number_format($confirm_sub['price_paid'], 0, ',', '.'); ?>đ</p>
-                        </div>
-                    </div>
-
-                    <form method="POST">
-                        <input type="hidden" name="sub_id" value="<?php echo $confirm_sub['id']; ?>">
-                        <div class="form-group" style="margin-bottom: 1.5rem;">
-                            <label style="font-weight: 700; color: var(--text-main); display: block; margin-bottom: 8px;">
-                                📝 Lý do từ chối / hủy (Ghi chú hệ thống):
-                            </label>
-                            <textarea name="reject_reason" rows="2" placeholder="Ví dụ: Chưa nhận được thanh toán tại quầy, thông tin không chính xác..." style="width:100%; padding: 1rem; border-radius: 12px; border: 1.5px solid #e2e8f0; outline: none; font-size: 0.9rem; font-family: inherit;"></textarea>
-                        </div>
-
-                        <div style="display: flex; gap: 1rem; align-items: center; flex-wrap: wrap;">
-                            <button type="submit" name="do_reject_sub" class="btn-auth" style="margin: 0; width: auto; padding: 1.1rem 2.2rem; background: linear-gradient(135deg, #dc2626, #b91c1c); box-shadow: 0 8px 20px rgba(220,38,38,0.3);">
-                                <i class="fas fa-ban" style="margin-right: 8px;"></i>
-                                <?php echo $current_lang === 'vi' ? 'XÁC NHẬN TỪ CHỐI ĐĂNG KÝ' : 'CONFIRM REJECTION'; ?>
-                            </button>
-                            <a href="/Gym Manager/dashboards/manager.php?page=member_subscriptions" class="action-btn" style="background: #f1f5f9; color: var(--text-muted); border-radius: 15px; padding: 1.1rem 1.8rem; height: auto; text-decoration: none; font-weight: 700;">
-                                <i class="fas fa-arrow-left" style="margin-right: 6px;"></i> Quay Lại Danh Sách
-                            </a>
-                        </div>
-                    </form>
+                <!-- Interactive Status Tabs Bar (Trình bày hiện rõ trong Tab) -->
+                <div class="membership-tabs-nav" style="display: flex; gap: 0.6rem; margin-bottom: 1.8rem; flex-wrap: wrap; background: #ffffff; padding: 0.6rem 0.8rem; border-radius: 18px; border: 1px solid var(--border); box-shadow: 0 2px 8px rgba(0,0,0,0.03);">
+                    <a href="/Gym Manager/dashboards/manager.php?page=member_subscriptions<?php echo $search !== '' ? '&search=' . urlencode($search) : ''; ?>" 
+                       style="display: inline-flex; align-items: center; gap: 8px; padding: 0.65rem 1.3rem; border-radius: 12px; font-weight: 700; font-size: 0.88rem; text-decoration: none; transition: all 0.2s; <?php echo empty($status_filter) ? 'background: #1a2744; color: white; box-shadow: 0 4px 12px rgba(26,39,68,0.2);' : 'background: #f8fafc; color: #64748b; border: 1px solid #e2e8f0;'; ?>">
+                        <i class="fas fa-layer-group"></i>
+                        <span><?php echo $current_lang === 'vi' ? 'Tất Cả Thẻ' : 'All Cards'; ?></span>
+                        <span style="background: <?php echo empty($status_filter) ? 'rgba(255,255,255,0.25)' : '#e2e8f0'; ?>; color: <?php echo empty($status_filter) ? '#fff' : '#475569'; ?>; padding: 2px 8px; border-radius: 20px; font-size: 0.75rem; font-weight: 800;"><?php echo $stat_total; ?></span>
+                    </a>
+                    <a href="/Gym Manager/dashboards/manager.php?page=member_subscriptions&status_filter=pending<?php echo $search !== '' ? '&search=' . urlencode($search) : ''; ?>" 
+                       style="display: inline-flex; align-items: center; gap: 8px; padding: 0.65rem 1.3rem; border-radius: 12px; font-weight: 700; font-size: 0.88rem; text-decoration: none; transition: all 0.2s; <?php echo $status_filter === 'pending' ? 'background: #ea580c; color: white; box-shadow: 0 4px 12px rgba(234,88,12,0.25);' : 'background: #fff7ed; color: #c2410c; border: 1px solid #ffedd5;'; ?>">
+                        <i class="fas fa-hourglass-half"></i>
+                        <span><?php echo $current_lang === 'vi' ? 'Chờ Duyệt' : 'Pending'; ?></span>
+                        <span style="background: <?php echo $status_filter === 'pending' ? 'rgba(255,255,255,0.25)' : '#fed7aa'; ?>; color: <?php echo $status_filter === 'pending' ? '#fff' : '#9a3412'; ?>; padding: 2px 8px; border-radius: 20px; font-size: 0.75rem; font-weight: 800;"><?php echo $stat_pending; ?></span>
+                    </a>
+                    <a href="/Gym Manager/dashboards/manager.php?page=member_subscriptions&status_filter=active<?php echo $search !== '' ? '&search=' . urlencode($search) : ''; ?>" 
+                       style="display: inline-flex; align-items: center; gap: 8px; padding: 0.65rem 1.3rem; border-radius: 12px; font-weight: 700; font-size: 0.88rem; text-decoration: none; transition: all 0.2s; <?php echo $status_filter === 'active' ? 'background: #16a34a; color: white; box-shadow: 0 4px 12px rgba(22,163,74,0.25);' : 'background: #f0fdf4; color: #15803d; border: 1px solid #dcfce7;'; ?>">
+                        <i class="fas fa-check-circle"></i>
+                        <span><?php echo $current_lang === 'vi' ? 'Đang Hoạt Động' : 'Active'; ?></span>
+                        <span style="background: <?php echo $status_filter === 'active' ? 'rgba(255,255,255,0.25)' : '#bbf7d0'; ?>; color: <?php echo $status_filter === 'active' ? '#fff' : '#14532d'; ?>; padding: 2px 8px; border-radius: 20px; font-size: 0.75rem; font-weight: 800;"><?php echo $stat_active; ?></span>
+                    </a>
+                    <a href="/Gym Manager/dashboards/manager.php?page=member_subscriptions&status_filter=expired_all<?php echo $search !== '' ? '&search=' . urlencode($search) : ''; ?>" 
+                       style="display: inline-flex; align-items: center; gap: 8px; padding: 0.65rem 1.3rem; border-radius: 12px; font-weight: 700; font-size: 0.88rem; text-decoration: none; transition: all 0.2s; <?php echo in_array($status_filter, ['expired', 'cancelled', 'expired_all']) ? 'background: #ef4444; color: white; box-shadow: 0 4px 12px rgba(239,68,68,0.25);' : 'background: #fef2f2; color: #dc2626; border: 1px solid #fee2e2;'; ?>">
+                        <i class="fas fa-history"></i>
+                        <span><?php echo $current_lang === 'vi' ? 'Hết Hạn / Đã Hủy' : 'Expired / Cancelled'; ?></span>
+                        <span style="background: <?php echo in_array($status_filter, ['expired', 'cancelled', 'expired_all']) ? 'rgba(255,255,255,0.25)' : '#fecaca'; ?>; color: <?php echo in_array($status_filter, ['expired', 'cancelled', 'expired_all']) ? '#fff' : '#991b1b'; ?>; padding: 2px 8px; border-radius: 20px; font-size: 0.75rem; font-weight: 800;"><?php echo $stat_expired; ?></span>
+                    </a>
                 </div>
 
-                <?php elseif ($edit_sub): ?>
-                <!-- Edit Subscription Form -->
+                <?php if ($edit_sub): ?>
+                <!-- Edit Subscription Form (Exact Booking Management Style) -->
                 <form method="POST" style="background: white; padding: 2.5rem; border-radius: 25px; margin: 2rem 0; border: 2px solid var(--primary); box-shadow: var(--shadow-premium);">
                     <input type="hidden" name="sub_id" value="<?php echo $edit_sub['id']; ?>">
-                    <h3 style="margin-bottom:1.5rem;color:var(--primary);font-size:1.2rem;font-weight:800;">
-                        ✏️ <?php echo $current_lang === 'vi' ? 'Chỉnh Sửa Thẻ Thành Viên #' . $edit_sub['id'] : 'Edit Membership #' . $edit_sub['id']; ?> 
-                        (<?php echo htmlspecialchars($edit_sub['user_name']); ?>)
+                    <h3 style="margin-bottom: 1.5rem; color: var(--text-main); display: flex; align-items: center; gap: 10px;">
+                        <i class="fas fa-edit" style="color: var(--primary);"></i> <?php echo $current_lang === 'vi' ? 'Chỉnh Sửa Thẻ Thành Viên #' . $edit_sub['id'] : 'Edit Membership #' . $edit_sub['id']; ?> (<?php echo htmlspecialchars($edit_sub['user_name']); ?>)
                     </h3>
-
-                    <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 1.5rem; margin-bottom: 1.5rem;">
+                    <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 1.5rem; margin-bottom: 1.5rem;">
                         <div class="form-group" style="margin-bottom: 0;">
                             <label style="font-weight: 600;"><?php echo $current_lang === 'vi' ? 'Gói Thành Viên' : 'Membership Plan'; ?></label>
                             <select name="plan_id" required style="padding: 1.1rem; border-radius: 15px; background: #f1f5f9; border: none; width: 100%; outline: none; font-weight: 600;">
                                 <?php foreach($all_plans as $p): ?>
                                     <option value="<?php echo $p['id']; ?>" <?php echo $p['id'] == $edit_sub['plan_id'] ? 'selected' : ''; ?>>
-                                        <?php echo htmlspecialchars(($current_lang === 'vi' && !empty($p['name_vi'])) ? $p['name_vi'] : $p['name']); ?> 
-                                        (<?php echo number_format($p['price'], 0, ',', '.'); ?>đ - <?php echo $p['duration_days']; ?> ngày)
+                                        <?php echo htmlspecialchars(($current_lang === 'vi' && !empty($p['name_vi'])) ? $p['name_vi'] : $p['name']); ?> (<?php echo number_format($p['price'], 0, ',', '.'); ?>đ - <?php echo $p['duration_days']; ?> <?php echo $current_lang === 'vi' ? 'ngày' : 'days'; ?>)
                                     </option>
                                 <?php endforeach; ?>
                             </select>
                         </div>
                         <div class="form-group" style="margin-bottom: 0;">
                             <label style="font-weight: 600;"><?php echo $current_lang === 'vi' ? 'Ngày Bắt Đầu' : 'Start Date'; ?></label>
-                            <input type="date" name="start_date" value="<?php echo $edit_sub['start_date']; ?>" required>
+                            <input type="date" name="start_date" value="<?php echo $edit_sub['start_date']; ?>" required style="background: #f1f5f9; padding: 1.1rem; border-radius: 15px; border: none; width: 100%; outline: none; font-weight: 600;">
                         </div>
                         <div class="form-group" style="margin-bottom: 0;">
                             <label style="font-weight: 600;"><?php echo $current_lang === 'vi' ? 'Ngày Hết Hạn' : 'End Date'; ?></label>
-                            <input type="date" name="end_date" value="<?php echo $edit_sub['end_date']; ?>" required>
+                            <input type="date" name="end_date" value="<?php echo $edit_sub['end_date']; ?>" required style="background: #f1f5f9; padding: 1.1rem; border-radius: 15px; border: none; width: 100%; outline: none; font-weight: 600;">
                         </div>
                     </div>
-
-                    <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 1.5rem; margin-bottom: 1.5rem;">
+                    <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 1.5rem; margin-bottom: 1.5rem;">
                         <div class="form-group" style="margin-bottom: 0;">
                             <label style="font-weight: 600;"><?php echo $current_lang === 'vi' ? 'Giá Thanh Toán (VNĐ)' : 'Price Paid (VNĐ)'; ?></label>
-                            <input type="number" step="1000" name="price_paid" value="<?php echo $edit_sub['price_paid']; ?>" required>
+                            <input type="number" step="1000" name="price_paid" value="<?php echo $edit_sub['price_paid']; ?>" required style="background: #f1f5f9; padding: 1.1rem; border-radius: 15px; border: none; width: 100%; outline: none; font-weight: 600;">
                         </div>
                         <div class="form-group" style="margin-bottom: 0;">
-                            <label style="font-weight: 600;"><?php echo $current_lang === 'vi' ? 'Phương Thức Thanh Toán' : 'Payment Method'; ?></label>
+                            <label style="font-weight: 600;"><?php echo $current_lang === 'vi' ? 'Phương Thức' : 'Payment Method'; ?></label>
                             <select name="payment_method" style="padding: 1.1rem; border-radius: 15px; background: #f1f5f9; border: none; width: 100%; outline: none; font-weight: 600;">
-                                <option value="cod" <?php echo $edit_sub['payment_method'] == 'cod' ? 'selected' : ''; ?>><?php echo $current_lang === 'vi' ? 'Thanh toán tại quầy (COD)' : 'Pay at counter (COD)'; ?></option>
+                                <option value="cod" <?php echo $edit_sub['payment_method'] == 'cod' ? 'selected' : ''; ?>><?php echo $current_lang === 'vi' ? 'Tại quầy (COD)' : 'At counter (COD)'; ?></option>
+                                <option value="momo" <?php echo $edit_sub['payment_method'] == 'momo' ? 'selected' : ''; ?>><?php echo $current_lang === 'vi' ? 'Ví MoMo' : 'MoMo Wallet'; ?></option>
                                 <option value="cash" <?php echo $edit_sub['payment_method'] == 'cash' ? 'selected' : ''; ?>><?php echo $current_lang === 'vi' ? 'Tiền mặt' : 'Cash'; ?></option>
+                                <option value="bank_transfer" <?php echo $edit_sub['payment_method'] == 'bank_transfer' ? 'selected' : ''; ?>><?php echo $current_lang === 'vi' ? 'Chuyển khoản' : 'Bank Transfer'; ?></option>
                             </select>
                         </div>
                         <div class="form-group" style="margin-bottom: 0;">
                             <label style="font-weight: 600;"><?php echo $current_lang === 'vi' ? 'Trạng Thái Thẻ' : 'Status'; ?></label>
                             <select name="status" style="padding: 1.1rem; border-radius: 15px; background: #f1f5f9; border: none; width: 100%; outline: none; font-weight: 600;">
-                                <option value="active" <?php echo $edit_sub['status'] == 'active' ? 'selected' : ''; ?>>🟢 <?php echo $current_lang === 'vi' ? 'Đang hoạt động (Kích hoạt ngay)' : 'Active (Instant activation)'; ?></option>
-                                <option value="pending" <?php echo $edit_sub['status'] == 'pending' ? 'selected' : ''; ?>>🟡 <?php echo $current_lang === 'vi' ? 'Chờ thanh toán (Chờ xác nhận)' : 'Pending (Awaiting payment)'; ?></option>
-                                <option value="expired" <?php echo $edit_sub['status'] == 'expired' ? 'selected' : ''; ?>>🔴 <?php echo $current_lang === 'vi' ? 'Đã hết hạn' : 'Expired'; ?></option>
-                                <option value="cancelled" <?php echo $edit_sub['status'] == 'cancelled' ? 'selected' : ''; ?>>⚪ <?php echo $current_lang === 'vi' ? 'Đã hủy' : 'Cancelled'; ?></option>
+                                <option value="active" <?php echo $edit_sub['status'] == 'active' ? 'selected' : ''; ?>>🟢 <?php echo $current_lang === 'vi' ? 'Active (Đang hoạt động)' : 'Active'; ?></option>
+                                <option value="pending" <?php echo $edit_sub['status'] == 'pending' ? 'selected' : ''; ?>>🟡 <?php echo $current_lang === 'vi' ? 'Pending (Chờ duyệt)' : 'Pending'; ?></option>
+                                <option value="expired" <?php echo $edit_sub['status'] == 'expired' ? 'selected' : ''; ?>>🔴 <?php echo $current_lang === 'vi' ? 'Expired (Đã hết hạn)' : 'Expired'; ?></option>
+                                <option value="cancelled" <?php echo $edit_sub['status'] == 'cancelled' ? 'selected' : ''; ?>>⚪ <?php echo $current_lang === 'vi' ? 'Cancelled (Đã hủy)' : 'Cancelled'; ?></option>
                             </select>
                         </div>
                     </div>
-
                     <div class="form-group" style="margin-bottom: 1.5rem;">
-                        <label style="font-weight: 600;"><?php echo $current_lang === 'vi' ? 'Ghi Chú Admin/Manager' : 'Notes'; ?></label>
-                        <input type="text" name="note" value="<?php echo htmlspecialchars($edit_sub['note'] ?? ''); ?>" placeholder="<?php echo $current_lang === 'vi' ? 'Ghi chú thêm...' : 'Additional notes...'; ?>">
+                        <label style="font-weight: 600;"><?php echo $current_lang === 'vi' ? 'Ghi Chú Quản Trị' : 'Admin Notes'; ?></label>
+                        <input type="text" name="note" value="<?php echo htmlspecialchars($edit_sub['note'] ?? ''); ?>" placeholder="<?php echo $current_lang === 'vi' ? 'Nhập ghi chú thêm...' : 'Additional notes...'; ?>" style="background: #f1f5f9; padding: 1.1rem; border-radius: 15px; border: none; width: 100%; outline: none; font-weight: 600;">
                     </div>
-
                     <div style="display: flex; gap: 1rem;">
                         <button type="submit" name="update_subscription" class="btn-auth" style="margin-top: 0; width: auto; padding: 1.1rem 2rem;"><?php echo $current_lang === 'vi' ? 'Lưu Thay Đổi' : 'Save Changes'; ?></button>
-                        <a href="/Gym Manager/dashboards/manager.php?page=member_subscriptions" class="action-btn" style="background: #f1f5f9; color: var(--text-muted); border-radius: 15px; padding: 1.1rem 1.5rem; height: auto; text-decoration: none; font-weight: 700;"><?php echo $current_lang === 'vi' ? 'Hủy Bỏ' : 'Cancel'; ?></a>
+                        <a href="/Gym Manager/dashboards/manager.php?page=member_subscriptions" class="action-btn" style="background: #f1f5f9; color: var(--text-muted); border-radius: 15px; padding: 1.1rem 1.5rem; height: auto; display: flex; align-items: center; text-decoration: none; font-weight: 700;"><?php echo $current_lang === 'vi' ? 'Hủy Bỏ' : 'Cancel'; ?></a>
                     </div>
                 </form>
                 <?php else: ?>
-                <!-- Add Subscription Form -->
+                <!-- Create Direct Membership Form (Exact Booking Management Style) -->
                 <form method="POST" style="background: white; padding: 2.5rem; border-radius: 25px; margin: 2rem 0; box-shadow: var(--shadow-premium); border: 1px solid var(--border);">
-                    <h3 style="margin-bottom:1.5rem;color:var(--primary);font-size:1.2rem;font-weight:800;">
-                        ➕ <?php echo $current_lang === 'vi' ? 'Tạo Thẻ Thành Viên Cho Khách Hàng' : 'Create Membership for Customer'; ?>
+                    <h3 style="margin-bottom: 1.5rem; color: var(--text-main); display: flex; align-items: center; gap: 10px;">
+                        <i class="fas fa-id-card" style="color: var(--primary);"></i> <?php echo $current_lang === 'vi' ? 'Tạo Thẻ Thành Viên Trực Tiếp' : 'Create Direct Membership'; ?>
                     </h3>
-
-                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1.5rem; margin-bottom: 1.5rem;">
+                    <div style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 1.5rem; align-items: flex-end;">
                         <div class="form-group" style="margin-bottom: 0;">
-                            <label style="font-weight: 600;"><?php echo $current_lang === 'vi' ? 'Chọn Tài Khoản Khách Hàng' : 'Select Customer Account'; ?></label>
+                            <label style="font-weight: 600;"><?php echo $current_lang === 'vi' ? 'Học Viên' : 'Client'; ?></label>
                             <select name="user_id" required style="padding: 1.1rem; border-radius: 15px; background: #f1f5f9; border: none; width: 100%; outline: none; font-weight: 600;">
-                                <option value=""><?php echo $current_lang === 'vi' ? '-- Chọn tài khoản --' : '-- Select Account --'; ?></option>
+                                <option value="" disabled selected><?php echo $current_lang === 'vi' ? '-- Chọn Học Viên --' : '-- Select Client --'; ?></option>
                                 <?php foreach($all_users as $u): ?>
                                     <option value="<?php echo $u['id']; ?>"><?php echo htmlspecialchars($u['name']); ?> (<?php echo htmlspecialchars($u['email']); ?>)</option>
                                 <?php endforeach; ?>
                             </select>
                         </div>
                         <div class="form-group" style="margin-bottom: 0;">
-                            <label style="font-weight: 600;"><?php echo $current_lang === 'vi' ? 'Chọn Gói Thành Viên' : 'Select Membership Plan'; ?></label>
-                            <select name="plan_id" required style="padding: 1.1rem; border-radius: 15px; background: #f1f5f9; border: none; width: 100%; outline: none; font-weight: 600;">
-                                <option value=""><?php echo $current_lang === 'vi' ? '-- Chọn gói --' : '-- Select Plan --'; ?></option>
+                            <label style="font-weight: 600;"><?php echo $current_lang === 'vi' ? 'Gói Thành Viên' : 'Membership Plan'; ?></label>
+                            <select name="plan_id" id="create_sub_plan_id" required onchange="handlePlanSelect(this)" style="padding: 1.1rem; border-radius: 15px; background: #f1f5f9; border: none; width: 100%; outline: none; font-weight: 600;">
+                                <option value="" disabled selected><?php echo $current_lang === 'vi' ? '-- Chọn Gói --' : '-- Select Plan --'; ?></option>
                                 <?php foreach($all_plans as $p): ?>
-                                    <option value="<?php echo $p['id']; ?>">
-                                        <?php echo htmlspecialchars(($current_lang === 'vi' && !empty($p['name_vi'])) ? $p['name_vi'] : $p['name']); ?> 
-                                        (<?php echo number_format($p['price'], 0, ',', '.'); ?>đ - <?php echo $p['duration_days']; ?> ngày)
+                                    <option value="<?php echo $p['id']; ?>" data-price="<?php echo $p['price']; ?>" data-days="<?php echo $p['duration_days']; ?>">
+                                        <?php echo htmlspecialchars(($current_lang === 'vi' && !empty($p['name_vi'])) ? $p['name_vi'] : $p['name']); ?> (<?php echo number_format($p['price'], 0, ',', '.'); ?>đ)
                                     </option>
                                 <?php endforeach; ?>
                             </select>
                         </div>
-                    </div>
-
-                    <div style="display: grid; grid-template-columns: 1fr 1fr 1fr 1fr; gap: 1.5rem; margin-bottom: 1.5rem;">
                         <div class="form-group" style="margin-bottom: 0;">
                             <label style="font-weight: 600;"><?php echo $current_lang === 'vi' ? 'Ngày Bắt Đầu' : 'Start Date'; ?></label>
-                            <input type="date" name="start_date" value="<?php echo date('Y-m-d'); ?>" required>
-                        </div>
-                        <div class="form-group" style="margin-bottom: 0;">
-                            <label style="font-weight: 600;"><?php echo $current_lang === 'vi' ? 'Ngày Hết Hạn' : 'End Date'; ?></label>
-                            <input type="date" name="end_date" value="<?php echo date('Y-m-d', strtotime('+30 days')); ?>" required>
-                        </div>
-                        <div class="form-group" style="margin-bottom: 0;">
-                            <label style="font-weight: 600;"><?php echo $current_lang === 'vi' ? 'Giá Thanh Toán' : 'Price Paid'; ?></label>
-                            <input type="number" step="1000" name="price_paid" placeholder="500000" required>
+                            <input type="date" name="start_date" id="create_sub_start_date" value="<?php echo date('Y-m-d'); ?>" required onchange="calcEndDate()" style="background: #f1f5f9; padding: 1.1rem; border-radius: 15px; border: none; width: 100%; outline: none; font-weight: 600;">
                         </div>
                         <div class="form-group" style="margin-bottom: 0;">
                             <label style="font-weight: 600;"><?php echo $current_lang === 'vi' ? 'Trạng Thái' : 'Status'; ?></label>
                             <select name="status" style="padding: 1.1rem; border-radius: 15px; background: #f1f5f9; border: none; width: 100%; outline: none; font-weight: 600;">
-                                <option value="active">🟢 <?php echo $current_lang === 'vi' ? 'Đang hoạt động (Kích hoạt ngay)' : 'Active (Instant activation)'; ?></option>
-                                <option value="pending">🟡 <?php echo $current_lang === 'vi' ? 'Chờ thanh toán (Chờ xác nhận)' : 'Pending (Awaiting payment)'; ?></option>
+                                <option value="active" selected>🟢 <?php echo $current_lang === 'vi' ? 'Active (Kích hoạt ngay)' : 'Active (Immediate)'; ?></option>
+                                <option value="pending">🟡 <?php echo $current_lang === 'vi' ? 'Pending (Chờ xác nhận)' : 'Pending (Requires Confirmation)'; ?></option>
                             </select>
                         </div>
                     </div>
-
-                    <div class="form-group" style="margin-bottom: 1.5rem; display: flex; align-items: center; gap: 10px;">
-                        <input type="checkbox" name="overwrite_existing" value="1" id="add_overwrite" checked style="width: 20px; height: 20px;">
-                        <label for="add_overwrite" style="font-weight: 600; cursor: pointer; color: #ef4444;">
-                            <?php echo $current_lang === 'vi' ? 'Xóa/Thay thế thẻ thành viên cũ của khách hàng nếu đã có' : 'Overwrite previous membership if user already has one'; ?>
-                        </label>
+                    <div style="display: grid; grid-template-columns: 1fr 1fr 2fr; gap: 1.5rem; margin-top: 1.5rem; align-items: flex-end;">
+                        <div class="form-group" style="margin-bottom: 0;">
+                            <label style="font-weight: 600;"><?php echo $current_lang === 'vi' ? 'Ngày Hết Hạn' : 'End Date'; ?></label>
+                            <input type="date" name="end_date" id="create_sub_end_date" value="<?php echo date('Y-m-d', strtotime('+30 days')); ?>" required style="background: #f1f5f9; padding: 1.1rem; border-radius: 15px; border: none; width: 100%; outline: none; font-weight: 600;">
+                        </div>
+                        <div class="form-group" style="margin-bottom: 0;">
+                            <label style="font-weight: 600;"><?php echo $current_lang === 'vi' ? 'Giá Thanh Toán' : 'Price Paid'; ?></label>
+                            <input type="number" step="1000" name="price_paid" id="create_sub_price_paid" placeholder="899000" required style="background: #f1f5f9; padding: 1.1rem; border-radius: 15px; border: none; width: 100%; outline: none; font-weight: 600;">
+                        </div>
+                        <div class="form-group" style="margin-bottom: 0; display: flex; align-items: center; gap: 10px; height: 55px;">
+                            <input type="checkbox" name="overwrite_existing" value="1" id="add_overwrite" checked style="width: 20px; height: 20px; accent-color: var(--primary);">
+                            <label for="add_overwrite" style="font-weight: 600; cursor: pointer; color: #64748b; font-size: 0.9rem;">
+                                <?php echo $current_lang === 'vi' ? 'Thay thế thẻ cũ của khách hàng nếu đang có thẻ hoạt động' : 'Overwrite previous active membership if user already has one'; ?>
+                            </label>
+                        </div>
                     </div>
-
-                    <button type="submit" name="add_subscription" class="btn-auth" style="margin-top: 0; width: auto; padding: 1.1rem 2rem;">
-                        <i class="fas fa-plus-circle" style="margin-right:8px;"></i>
-                        <?php echo $current_lang === 'vi' ? 'Tạo Thẻ Thành Viên' : 'Create Membership'; ?>
-                    </button>
+                    <button type="submit" name="add_subscription" class="btn-auth" style="margin-top: 1.5rem; width: auto; padding: 1.1rem 2.5rem;"><?php echo $current_lang === 'vi' ? 'Tạo Thẻ Thành Viên' : 'Create Membership'; ?></button>
                 </form>
                 <?php endif; ?>
 
-                <!-- Subscriptions List Table -->
-                <div class="table-responsive" style="overflow-x: auto; width: 100%; max-width: calc(100vw - 320px);">
-                    <table>
-                        <thead>
-                            <tr>
-                                <th>ID</th>
-                                <th><?php echo $current_lang === 'vi' ? 'Khách Hàng' : 'Customer'; ?></th>
-                                <th><?php echo $current_lang === 'vi' ? 'Gói Đăng Ký' : 'Plan'; ?></th>
-                                <th><?php echo $current_lang === 'vi' ? 'Ngày Bắt Đầu' : 'Start Date'; ?></th>
-                                <th><?php echo $current_lang === 'vi' ? 'Ngày Hết Hạn' : 'End Date'; ?></th>
-                                <th><?php echo $current_lang === 'vi' ? 'Số Tiền' : 'Amount'; ?></th>
-                                <th><?php echo $current_lang === 'vi' ? 'Trạng Thái' : 'Status'; ?></th>
-                                <th style="text-align: center;"><?php echo $current_lang === 'vi' ? 'Hành Động' : 'Actions'; ?></th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            <?php foreach($all_subs as $s): 
-                                $p_name = ($current_lang === 'vi' && !empty($s['plan_name_vi'])) ? $s['plan_name_vi'] : $s['plan_name'];
-                                $b_bg   = !empty($s['badge_color']) ? $s['badge_color'] : '#2563eb';
-                                $b_txt  = !empty($s['badge']) ? $s['badge'] : mb_strtoupper($p_name);
-                            ?>
-                            <tr style="box-shadow: 0 2px 10px rgba(0,0,0,0.02);">
-                                <td style="padding: 1.2rem; background: white; border-radius: 15px 0 0 15px; font-weight: 600;">#<?php echo $s['id']; ?></td>
-                                <td style="padding: 1.2rem; background: white;">
-                                    <div style="display:flex;align-items:center;gap:10px;">
-                                        <img src="<?php echo $s['user_avatar'] ?: 'https://ui-avatars.com/api/?name='.urlencode($s['user_name']).'&background=0062ff&color=fff&size=40'; ?>" style="width:36px;height:36px;border-radius:50%;object-fit:cover;">
-                                        <div>
-                                            <strong><?php echo htmlspecialchars($s['user_name']); ?></strong><br>
-                                            <span style="font-size:0.8rem;color:var(--text-muted);"><?php echo htmlspecialchars($s['user_email']); ?></span>
+                <!-- Search & Filters (Exact Booking Management Style) -->
+                <form method="GET" style="display: flex; gap: 1rem; align-items: center; margin-bottom: 2rem; background: #f8fafc; padding: 1.2rem; border-radius: 20px; border: 1px solid var(--border);">
+                    <input type="hidden" name="page" value="member_subscriptions">
+                    <div style="flex: 2; position: relative;">
+                        <i class="fas fa-search" style="position: absolute; left: 15px; top: 50%; transform: translateY(-50%); color: var(--text-muted);"></i>
+                        <input type="text" name="search" value="<?php echo htmlspecialchars($search); ?>" placeholder="<?php echo $current_lang === 'vi' ? 'Tìm theo tên hội viên, email, số điện thoại, mã thẻ, gói tập...' : 'Search member name, email, phone, card ID, plan...'; ?>" style="width: 100%; padding: 1rem 1rem 1rem 3rem; background: white; border: 1px solid var(--border); border-radius: 15px; font-size: 0.95rem; outline: none;">
+                    </div>
+                    <div style="flex: 1;">
+                        <select name="status_filter" style="width: 100%; padding: 1rem; background: white; border: 1px solid var(--border); border-radius: 15px; font-weight: 600; outline: none; font-size: 0.95rem;">
+                            <option value=""><?php echo $current_lang === 'vi' ? '-- Tất Cả Trạng Thái --' : '-- All Statuses --'; ?></option>
+                            <option value="pending" <?php echo $status_filter == 'pending' ? 'selected' : ''; ?>>Pending (<?php echo $current_lang === 'vi' ? 'Chờ Duyệt' : 'Pending'; ?>)</option>
+                            <option value="active" <?php echo $status_filter == 'active' ? 'selected' : ''; ?>>Active (<?php echo $current_lang === 'vi' ? 'Đang Hoạt Động' : 'Active'; ?>)</option>
+                            <option value="expired" <?php echo $status_filter == 'expired' ? 'selected' : ''; ?>>Expired (<?php echo $current_lang === 'vi' ? 'Hết Hạn' : 'Expired'; ?>)</option>
+                            <option value="cancelled" <?php echo $status_filter == 'cancelled' ? 'selected' : ''; ?>>Cancelled (<?php echo $current_lang === 'vi' ? 'Đã Hủy' : 'Cancelled'; ?>)</option>
+                        </select>
+                    </div>
+                    <button type="submit" class="btn-auth" style="margin-top: 0; width: auto; padding: 1rem 2rem; font-size: 0.95rem;"><?php echo __("search"); ?></button>
+                    <?php if ($search !== '' || $status_filter !== ''): ?>
+                        <a href="/Gym Manager/dashboards/manager.php?page=member_subscriptions" class="action-btn" style="background: #f1f5f9; color: var(--text-muted); padding: 1rem 1.5rem; border-radius: 15px; text-decoration: none; font-weight: 700; font-size: 0.95rem; display: flex; align-items: center;"><?php echo $current_lang === 'vi' ? 'Đặt Lại Bộ Lọc' : 'Reset Filter'; ?></a>
+                    <?php endif; ?>
+                </form>
+
+                <!-- Subscriptions Table (Exact Booking Management Table Structure) -->
+                <?php if (empty($all_subs)): ?>
+                    <div style="text-align: center; padding: 3rem; background: #f8fafc; border-radius: 20px; border: 1px solid var(--border); margin-top: 2rem;">
+                        <i class="far fa-id-card" style="font-size: 3rem; color: var(--text-muted); margin-bottom: 1rem;"></i>
+                        <p style="color: var(--text-muted); font-size: 1.1rem; font-weight: 600;"><?php echo $current_lang === 'vi' ? 'Không tìm thấy thẻ thành viên nào phù hợp bộ lọc.' : 'No membership subscriptions found matching filters.'; ?></p>
+                    </div>
+                <?php else: ?>
+                    <div class="table-responsive" style="overflow-x: auto; width: 100%; max-width: calc(100vw - 320px);">
+                        <table style="width: 100%; border-collapse: separate; border-spacing: 0 12px; margin-top: 0;">
+                            <thead>
+                                <tr style="background: #f8fafc;">
+                                    <th style="padding: 1.2rem; border-radius: 15px 0 0 15px;"><?php echo $current_lang === 'vi' ? 'HỘI VIÊN' : 'CLIENT'; ?></th>
+                                    <th style="padding: 1.2rem;"><?php echo $current_lang === 'vi' ? 'GÓI THÀNH VIÊN' : 'MEMBERSHIP PLAN'; ?></th>
+                                    <th style="padding: 1.2rem;"><?php echo $current_lang === 'vi' ? 'THỜI HẠN & HIỆU LỰC' : 'VALIDITY & DATES'; ?></th>
+                                    <th style="padding: 1.2rem; border-radius: 0 15px 15px 0; text-align: center;">DETAILS & ACTIONS</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <?php foreach($all_subs as $s): 
+                                    $p_name = ($current_lang === 'vi' && !empty($s['plan_name_vi'])) ? $s['plan_name_vi'] : $s['plan_name'];
+                                    $b_bg   = !empty($s['badge_color']) ? $s['badge_color'] : '#2563eb';
+                                    $b_txt  = !empty($s['badge']) ? $s['badge'] : mb_strtoupper($p_name);
+                                    $end_ts = strtotime($s['end_date']);
+                                    $today_ts = strtotime(date('Y-m-d'));
+                                    $days_left = ceil(($end_ts - $today_ts) / 86400);
+                                ?>
+                                <tr>
+                                    <td style="padding: 1.2rem; background: white; border-radius: 15px 0 0 15px;">
+                                        <div style="display: flex; align-items: center; gap: 10px;">
+                                            <img src="<?php echo $s['user_avatar'] ?: 'https://ui-avatars.com/api/?name='.urlencode($s['user_name']).'&background=0062ff&color=fff&size=40'; ?>" 
+                                                 style="width: 38px; height: 38px; border-radius: 50%; object-fit: cover; border: 1px solid var(--border);">
+                                            <div>
+                                                <div style="display: flex; align-items: center; gap: 6px;">
+                                                    <strong style="color: var(--text-main); font-weight: 700;"><?php echo htmlspecialchars($s['user_name']); ?></strong>
+                                                    <span style="background: #f1f5f9; color: #475569; font-size: 0.72rem; font-weight: 800; padding: 2px 6px; border-radius: 6px;">#<?php echo $s['id']; ?></span>
+                                                </div>
+                                                <div style="font-size: 0.8rem; color: var(--text-muted);"><?php echo htmlspecialchars($s['user_email']); ?></div>
+                                                <?php if (!empty($s['user_phone'])): ?>
+                                                    <div style="font-size: 0.8rem; color: var(--text-muted); margin-top: 2px;">
+                                                        <i class="fas fa-phone-alt" style="font-size: 0.75rem; color: var(--primary);"></i> <?php echo htmlspecialchars($s['user_phone']); ?>
+                                                    </div>
+                                                <?php endif; ?>
+                                            </div>
                                         </div>
-                                    </div>
-                                </td>
-                                <td style="padding: 1.2rem; background: white;">
-                                    <strong><?php echo htmlspecialchars($p_name); ?></strong><br>
-                                    <span style="background:<?php echo $b_bg; ?>;color:#fff;font-size:0.65rem;font-weight:800;padding:2px 8px;border-radius:6px;text-transform:uppercase;">
-                                        <?php echo htmlspecialchars($b_txt); ?>
-                                    </span>
-                                </td>
-                                <td style="padding: 1.2rem; background: white; white-space: nowrap;"><?php echo date('d/m/Y', strtotime($s['start_date'])); ?></td>
-                                <td style="padding: 1.2rem; background: white; white-space: nowrap;"><?php echo date('d/m/Y', strtotime($s['end_date'])); ?></td>
-                                <td style="padding: 1.2rem; background: white; color: var(--primary); font-weight: 700; white-space: nowrap;"><?php echo number_format($s['price_paid'], 0, ',', '.'); ?>đ</td>
-                                <td style="padding: 1.2rem; background: white;">
-                                    <?php
-                                    $st_map = [
-                                        'active' => ['bg' => '#dcfce7', 'color' => '#16a34a', 'label' => '🟢 ACTIVE'],
-                                        'pending' => ['bg' => '#fef3c7', 'color' => '#d97706', 'label' => '🟡 PENDING'],
-                                        'expired' => ['bg' => '#fee2e2', 'color' => '#ef4444', 'label' => '🔴 EXPIRED'],
-                                        'cancelled' => ['bg' => '#f1f5f9', 'color' => '#64748b', 'label' => '⚪ CANCELLED'],
-                                    ];
-                                    $st = $st_map[$s['status']] ?? ['bg' => '#f1f5f9', 'color' => '#64748b', 'label' => strtoupper($s['status'])];
-                                    ?>
-                                    <span style="background:<?php echo $st['bg']; ?>;color:<?php echo $st['color']; ?>;padding:5px 12px;border-radius:20px;font-weight:800;font-size:0.72rem;display:inline-block;">
-                                        <?php echo $st['label']; ?>
-                                    </span>
-                                </td>
-                                <td style="padding: 1.2rem; background: white; border-radius: 0 15px 15px 0; text-align: center; white-space: nowrap;">
-                                    <div style="display: flex; gap: 8px; justify-content: center;">
-                                        <?php if ($s['status'] === 'pending'): ?>
-                                            <a href="/Gym Manager/dashboards/manager.php?page=member_subscriptions&approve_sub=<?php echo $s['id']; ?>" class="action-btn" style="background:#dcfce7;color:#16a34a;border:1px solid #86efac;" onclick="return confirmLinkCustom(event, this, '<?php echo $current_lang === 'vi' ? 'Xác nhận KÍCH HOẠT thẻ thành viên này?' : 'Confirm activation of this membership?'; ?>', '<?php echo $current_lang === 'vi' ? 'Kích Hoạt Thẻ' : 'Activate Membership'; ?>', '⚡');" title="<?php echo $current_lang === 'vi' ? 'Kích Hoạt Ngay (1-Click)' : 'Instant Activation'; ?>">
-                                                <i class="fas fa-check"></i>
-                                            </a>
-                                            <a href="/Gym Manager/dashboards/manager.php?page=member_subscriptions&confirm_action=approve&sub_id=<?php echo $s['id']; ?>" class="action-btn" style="background:#eff6ff;color:#2563eb;border:1px solid #93c5fd;" title="<?php echo $current_lang === 'vi' ? 'Xem Chi Tiết Xác Nhận' : 'View Details & Confirm'; ?>">
-                                                <i class="fas fa-eye"></i>
-                                            </a>
-                                            <a href="/Gym Manager/dashboards/manager.php?page=member_subscriptions&confirm_action=reject&sub_id=<?php echo $s['id']; ?>" class="action-btn" style="background:#fee2e2;color:#dc2626;border:1px solid #fca5a5;" title="<?php echo $current_lang === 'vi' ? 'Từ Chối / Hủy Thẻ' : 'Reject Membership'; ?>">
-                                                <i class="fas fa-times"></i>
-                                            </a>
-                                        <?php endif; ?>
-                                        <a href="/Gym Manager/dashboards/manager.php?page=member_subscriptions&edit_sub=<?php echo $s['id']; ?>" class="action-btn btn-edit" title="Sửa Thẻ">
-                                            <i class="fas fa-edit"></i>
-                                        </a>
-                                        <a href="/Gym Manager/dashboards/manager.php?page=member_subscriptions&delete_sub=<?php echo $s['id']; ?>" class="action-btn btn-delete" onclick="return confirmLinkCustom(event, this, '<?php echo $current_lang === 'vi' ? 'Bạn có chắc chắn muốn XÓA thẻ thành viên này của khách hàng?' : 'Are you sure you want to DELETE this membership?'; ?>', '<?php echo $current_lang === 'vi' ? 'Xóa Thẻ Thành Viên' : 'Delete Membership'; ?>', '🗑️');" title="Xóa Thẻ">
-                                            <i class="fas fa-trash-alt"></i>
-                                        </a>
-                                    </div>
-                                </td>
-                            </tr>
-                            <?php endforeach; ?>
-                            <?php if (empty($all_subs)): ?>
-                            <tr><td colspan="8" style="text-align:center; padding: 2rem; color: var(--text-muted);"><?php echo $current_lang === 'vi' ? 'Chưa có thẻ thành viên nào.' : 'No membership subscriptions found.'; ?></td></tr>
-                            <?php endif; ?>
-                        </tbody>
-                    </table>
-                </div>
+                                    </td>
+                                    <td style="padding: 1.2rem; background: white;">
+                                        <div>
+                                            <strong style="color: var(--text-main); font-size: 0.95rem;"><?php echo htmlspecialchars($p_name); ?></strong>
+                                            <div style="display: flex; gap: 5px; flex-wrap: wrap; margin-top: 4px; align-items: center;">
+                                                <span style="background: <?php echo $b_bg; ?>; color: #fff; font-size: 0.65rem; font-weight: 800; padding: 2px 7px; border-radius: 6px; text-transform: uppercase;">
+                                                    <?php echo htmlspecialchars($b_txt); ?>
+                                                </span>
+                                                <?php if (!empty($s['is_renewal'])): ?>
+                                                    <span style="background: linear-gradient(135deg,#f59e0b,#d97706); color: #fff; font-size: 0.65rem; font-weight: 800; padding: 2px 7px; border-radius: 6px; display: inline-flex; align-items: center; gap: 3px;">
+                                                        <i class="fas fa-crown"></i> <?php echo $current_lang === 'vi' ? 'GIA HẠN' : 'RENEWAL'; ?>
+                                                    </span>
+                                                <?php endif; ?>
+                                                <span style="font-size: 0.82rem; font-weight: 800; color: #ef4444; margin-left: 2px;">
+                                                    <?php echo number_format($s['price_paid'], 0, ',', '.'); ?>đ
+                                                </span>
+                                            </div>
+                                        </div>
+                                    </td>
+                                    <td style="padding: 1.2rem; background: white;">
+                                        <div style="font-weight: 600; color: var(--text-main);">
+                                            <i class="far fa-calendar-alt" style="color: var(--primary); margin-right: 5px;"></i>
+                                            <?php echo date('d/m/Y', strtotime($s['start_date'])); ?> → <?php echo date('d/m/Y', strtotime($s['end_date'])); ?>
+                                        </div>
+                                        <div style="display: flex; gap: 6px; align-items: center; margin-top: 4px;">
+                                            <?php if ($s['status'] === 'active'): ?>
+                                                <?php if ($days_left > 0): ?>
+                                                    <span style="font-size: 0.75rem; color: #16a34a; font-weight: 700; background: #dcfce7; padding: 2px 8px; border-radius: 10px;">
+                                                        ⚡ <?php echo $current_lang === 'vi' ? "Còn $days_left ngày" : "$days_left days left"; ?>
+                                                    </span>
+                                                <?php else: ?>
+                                                    <span style="font-size: 0.75rem; color: #ef4444; font-weight: 700; background: #fee2e2; padding: 2px 8px; border-radius: 10px;">
+                                                        <?php echo $current_lang === 'vi' ? 'Hôm nay hết hạn' : 'Expires today'; ?>
+                                                    </span>
+                                                <?php endif; ?>
+                                            <?php elseif ($s['status'] === 'pending'): ?>
+                                                <span style="font-size: 0.75rem; color: #d97706; font-weight: 700; background: #fef3c7; padding: 2px 8px; border-radius: 10px;">
+                                                    ⏳ <?php echo $current_lang === 'vi' ? 'Chờ kích hoạt' : 'Pending'; ?>
+                                                </span>
+                                            <?php elseif ($s['status'] === 'expired'): ?>
+                                                <span style="font-size: 0.75rem; color: #ef4444; font-weight: 700; background: #fee2e2; padding: 2px 8px; border-radius: 10px;">
+                                                    <?php echo $current_lang === 'vi' ? 'Đã hết hạn' : 'Expired'; ?>
+                                                </span>
+                                            <?php elseif ($s['status'] === 'cancelled'): ?>
+                                                <span style="font-size: 0.75rem; color: #64748b; font-weight: 700; background: #f1f5f9; padding: 2px 8px; border-radius: 10px;">
+                                                    <?php echo $current_lang === 'vi' ? 'Đã hủy' : 'Cancelled'; ?>
+                                                </span>
+                                            <?php endif; ?>
+                                            <?php if (!empty($s['bonus_days']) && $s['bonus_days'] > 0): ?>
+                                                <span style="font-size: 0.75rem; color: #15803d; font-weight: 700;">+<?php echo $s['bonus_days']; ?>d free</span>
+                                            <?php endif; ?>
+                                        </div>
+                                    </td>
+                                    <td style="padding: 1.2rem; background: white; border-radius: 0 15px 15px 0; text-align: center;">
+                                        <button type="button" class="action-btn btn-edit" style="font-size: 0.82rem; padding: 7px 16px; border-radius: 12px; display: inline-flex; align-items: center; gap: 6px; cursor: pointer; font-weight: 700; background: linear-gradient(135deg, #1a2744, #2563eb); color: white; border: none;" onclick="showSubDetailsModal(<?php echo $s['id']; ?>)">
+                                            <i class="fas fa-eye"></i> <?php echo $current_lang === 'vi' ? 'Xem Chi Tiết' : 'Details'; ?>
+                                        </button>
+
+                                        <!-- Hidden Modal Content for Subscription #<?php echo $s['id']; ?> -->
+                                        <div id="sub-modal-content-<?php echo $s['id']; ?>" style="display:none;">
+                                            <!-- Membership Header & Status Badge -->
+                                            <div style="display: flex; justify-content: space-between; align-items: center; padding-bottom: 1rem; margin-bottom: 1.2rem; border-bottom: 1.5px solid #e2e8f0;">
+                                                <div>
+                                                    <h3 style="margin: 0; color: var(--primary); font-weight: 800; font-size: 1.2rem;">
+                                                        <?php echo $current_lang === 'vi' ? 'Thẻ Thành Viên #' : 'Membership Card #'; ?><?php echo $s['id']; ?>
+                                                    </h3>
+                                                    <span style="font-size: 0.82rem; color: #64748b; font-weight: 600;">
+                                                        📅 <?php echo date('d/m/Y H:i', strtotime($s['created_at'] ?? $s['start_date'])); ?>
+                                                    </span>
+                                                </div>
+                                                <div>
+                                                    <?php
+                                                    $st_styles = [
+                                                        'active' => ['bg' => '#dcfce7', 'color' => '#16a34a', 'border' => '#86efac', 'label' => '🟢 ACTIVE'],
+                                                        'pending' => ['bg' => '#fef3c7', 'color' => '#d97706', 'border' => '#fde68a', 'label' => '🟡 PENDING'],
+                                                        'expired' => ['bg' => '#fee2e2', 'color' => '#ef4444', 'border' => '#fca5a5', 'label' => '🔴 EXPIRED'],
+                                                        'cancelled' => ['bg' => '#f1f5f9', 'color' => '#64748b', 'border' => '#cbd5e1', 'label' => '⚪ CANCELLED'],
+                                                    ];
+                                                    $badge_curr = $st_styles[$s['status']] ?? ['bg' => '#f1f5f9', 'color' => '#64748b', 'border' => '#cbd5e1', 'label' => strtoupper($s['status'])];
+                                                    ?>
+                                                    <span style="display: inline-block; padding: 6px 14px; font-weight: 800; font-size: 0.8rem; border-radius: 20px; background: <?php echo $badge_curr['bg']; ?>; color: <?php echo $badge_curr['color']; ?>; border: 1px solid <?php echo $badge_curr['border']; ?>;">
+                                                        <?php echo $badge_curr['label']; ?>
+                                                    </span>
+                                                </div>
+                                            </div>
+
+                                            <!-- Member & Plan Info Cards -->
+                                            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; margin-bottom: 1.2rem; background: #f8fafc; padding: 1.2rem; border-radius: 16px; border: 1px solid #e2e8f0; text-align: left;">
+                                                <div>
+                                                    <div style="font-size: 0.75rem; text-transform: uppercase; font-weight: 800; color: #64748b; margin-bottom: 6px; letter-spacing: 0.5px;">
+                                                        👤 <?php echo $current_lang === 'vi' ? 'Hội Viên' : 'Member Info'; ?>
+                                                    </div>
+                                                    <div style="font-weight: 700; color: var(--primary); font-size: 0.95rem;"><?php echo htmlspecialchars($s['user_name']); ?></div>
+                                                    <div style="font-size: 0.82rem; color: #475569;"><?php echo htmlspecialchars($s['user_email']); ?></div>
+                                                    <?php if (!empty($s['user_phone'])): ?>
+                                                        <div style="font-size: 0.82rem; color: #334155; margin-top: 2px;">📞 <?php echo htmlspecialchars($s['user_phone']); ?></div>
+                                                    <?php endif; ?>
+                                                    <div style="font-size: 0.75rem; color: #64748b; margin-top: 4px;">User ID: #<?php echo $s['user_id']; ?></div>
+                                                </div>
+                                                <div>
+                                                    <div style="font-size: 0.75rem; text-transform: uppercase; font-weight: 800; color: #64748b; margin-bottom: 6px; letter-spacing: 0.5px;">
+                                                        💳 <?php echo $current_lang === 'vi' ? 'Gói Tập & Chi Phí' : 'Plan & Payment'; ?>
+                                                    </div>
+                                                    <div style="font-weight: 700; color: var(--primary); font-size: 0.95rem;"><?php echo htmlspecialchars($p_name); ?></div>
+                                                    <div style="font-size: 0.9rem; color: #ef4444; font-weight: 800;"><?php echo number_format($s['price_paid'], 0, ',', '.'); ?>đ</div>
+                                                    <div style="font-size: 0.82rem; color: #475569; margin-top: 2px;">
+                                                        <?php echo $current_lang === 'vi' ? 'Phương thức:' : 'Method:'; ?> <strong><?php echo strtoupper($s['payment_method']); ?></strong>
+                                                    </div>
+                                                    <div style="font-size: 0.8rem; color: #334155; margin-top: 2px;">
+                                                        📅 <?php echo date('d/m/Y', strtotime($s['start_date'])); ?> → <?php echo date('d/m/Y', strtotime($s['end_date'])); ?>
+                                                    </div>
+                                                </div>
+                                            </div>
+
+                                            <?php if (!empty($s['is_renewal'])): ?>
+                                            <!-- Loyalty & Renewal Privileges Card -->
+                                            <div style="background: #fffbeb; border: 1.5px solid #fcd34d; border-radius: 16px; padding: 1.2rem; margin-bottom: 1.2rem; text-align: left; font-size: 0.88rem; color: #92400e;">
+                                                <div style="font-weight: 800; display: flex; align-items: center; gap: 6px; margin-bottom: 6px;">
+                                                    <i class="fas fa-crown" style="color: #d97706;"></i> <?php echo $current_lang === 'vi' ? 'ĐẶC QUYỀN GIA HẠN / HỘI VIÊN THÂN THIẾT' : 'RENEWAL & LOYALTY PRIVILEGES'; ?>
+                                                </div>
+                                                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 6px;">
+                                                    <?php if (!empty($s['discount_amount']) && $s['discount_amount'] > 0): ?>
+                                                        <div>• <?php echo $current_lang === 'vi' ? 'Giảm giá tri ân:' : 'Discount:'; ?> <strong>-<?php echo number_format($s['discount_amount'], 0, ',', '.'); ?>đ</strong></div>
+                                                    <?php endif; ?>
+                                                    <?php if (!empty($s['bonus_days']) && $s['bonus_days'] > 0): ?>
+                                                        <div>• <?php echo $current_lang === 'vi' ? 'Tặng thêm:' : 'Bonus:'; ?> <strong>+<?php echo $s['bonus_days']; ?> <?php echo $current_lang === 'vi' ? 'ngày tập free' : 'free days'; ?></strong></div>
+                                                    <?php endif; ?>
+                                                    <?php if (!empty($s['bonus_pt']) && $s['bonus_pt'] > 0): ?>
+                                                        <div>• <?php echo $current_lang === 'vi' ? 'Tặng kèm:' : 'Bonus:'; ?> <strong>+<?php echo $s['bonus_pt']; ?> buổi PT 1:1</strong></div>
+                                                    <?php endif; ?>
+                                                    <div>• <?php echo $current_lang === 'vi' ? 'Quà tặng:' : 'Gift:'; ?> <strong>Bình GymX Shaker VIP Pro + 2 Guest Pass</strong></div>
+                                                </div>
+                                            </div>
+                                            <?php endif; ?>
+
+                                            <!-- Notes Card -->
+                                            <div style="background: #f1f5f9; padding: 1.2rem; border-radius: 16px; border: 1px solid #cbd5e1; margin-bottom: 1.5rem; text-align: left;">
+                                                <div style="font-size: 0.8rem; font-weight: 800; color: var(--primary); text-transform: uppercase; margin-bottom: 6px; letter-spacing: 0.5px; display: flex; align-items: center; gap: 6px;">
+                                                    <i class="fas fa-sticky-note" style="color: var(--gold);"></i> <?php echo $current_lang === 'vi' ? 'Ghi Chú Hệ Thống' : 'System Notes'; ?>
+                                                </div>
+                                                <div style="font-size: 0.9rem; color: #334155; font-weight: 600; line-height: 1.4;">
+                                                    <?php echo !empty($s['note']) ? htmlspecialchars($s['note']) : '<span style="color: #94a3b8; font-style: italic; font-weight: 500;">' . ($current_lang === 'vi' ? 'Chưa có ghi chú' : 'None') . '</span>'; ?>
+                                                </div>
+                                            </div>
+
+                                            <!-- Action Controls inside Modal (Exact Booking Management Action Style) -->
+                                            <div style="background: #f8fafc; padding: 1.2rem; border-radius: 16px; border: 1px solid #cbd5e1; text-align: left;">
+                                                <div style="font-size: 0.8rem; font-weight: 800; color: var(--primary); text-transform: uppercase; margin-bottom: 0.8rem; letter-spacing: 0.5px; display: flex; align-items: center; gap: 6px;">
+                                                    <i class="fas fa-cogs" style="color: var(--gold);"></i> <?php echo $current_lang === 'vi' ? 'Thao Tác Quản Lý Thẻ Thành Viên' : 'Membership Management Actions'; ?>
+                                                </div>
+                                                <div style="display: flex; gap: 10px; flex-wrap: wrap; align-items: center;">
+                                                    <?php if ($s['status'] === 'pending'): ?>
+                                                        <a href="/Gym Manager/dashboards/manager.php?page=member_subscriptions&approve_sub=<?php echo $s['id']; ?>" class="action-btn btn-add" style="font-size: 0.82rem; padding: 8px 16px; text-decoration: none;" onclick="return confirmLinkCustom(event, this, '<?php echo $current_lang === 'vi' ? 'Xác nhận KÍCH HOẠT thẻ thành viên này cho hội viên?' : 'Confirm activation of this membership?'; ?>', '<?php echo $current_lang === 'vi' ? 'Kích Hoạt Thẻ' : 'Activate Membership'; ?>', '⚡');">
+                                                            <i class="fas fa-check-circle"></i> <?php echo $current_lang === 'vi' ? 'Xác Nhận Kích Hoạt' : 'Confirm & Activate'; ?>
+                                                        </a>
+                                                        <a href="/Gym Manager/dashboards/manager.php?page=member_subscriptions&reject_sub=<?php echo $s['id']; ?>" class="action-btn btn-delete" style="font-size: 0.82rem; padding: 8px 16px; text-decoration: none;" onclick="return confirmLinkCustom(event, this, '<?php echo $current_lang === 'vi' ? 'Bạn có chắc chắn muốn TỪ CHỐI yêu cầu đăng ký thẻ này?' : 'Are you sure you want to reject this membership?'; ?>', '<?php echo $current_lang === 'vi' ? 'Từ Chối Thẻ' : 'Reject Membership'; ?>', '❌');">
+                                                            <i class="fas fa-times"></i> <?php echo $current_lang === 'vi' ? 'Từ Chối' : 'Reject'; ?>
+                                                        </a>
+                                                    <?php elseif ($s['status'] === 'active'): ?>
+                                                        <a href="/Gym Manager/dashboards/manager.php?page=member_subscriptions&reject_sub=<?php echo $s['id']; ?>" class="action-btn btn-delete" style="font-size: 0.82rem; padding: 8px 16px; text-decoration: none;" onclick="return confirmLinkCustom(event, this, '<?php echo $current_lang === 'vi' ? 'Bạn có chắc chắn muốn HỦY thẻ thành viên này?' : 'Are you sure you want to cancel this membership?'; ?>', '<?php echo $current_lang === 'vi' ? 'Hủy Thẻ' : 'Cancel Membership'; ?>', '❌');">
+                                                            <i class="fas fa-ban"></i> <?php echo $current_lang === 'vi' ? 'Hủy Thẻ' : 'Cancel'; ?>
+                                                        </a>
+                                                    <?php elseif (in_array($s['status'], ['expired', 'cancelled'])): ?>
+                                                        <a href="/Gym Manager/dashboards/manager.php?page=member_subscriptions&approve_sub=<?php echo $s['id']; ?>" class="action-btn btn-add" style="font-size: 0.82rem; padding: 8px 16px; text-decoration: none;" onclick="return confirmLinkCustom(event, this, '<?php echo $current_lang === 'vi' ? 'Kích hoạt lại thẻ thành viên này?' : 'Re-activate this membership?'; ?>', '<?php echo $current_lang === 'vi' ? 'Kích Hoạt Lại' : 'Re-activate'; ?>', '⚡');">
+                                                            <i class="fas fa-redo"></i> <?php echo $current_lang === 'vi' ? 'Kích Hoạt Lại' : 'Re-activate'; ?>
+                                                        </a>
+                                                    <?php endif; ?>
+
+                                                    <a href="/Gym Manager/dashboards/manager.php?page=member_subscriptions&edit_sub=<?php echo $s['id']; ?>" class="action-btn btn-edit" style="font-size: 0.82rem; padding: 8px 16px; text-decoration: none;">
+                                                        <i class="fas fa-edit"></i> <?php echo $current_lang === 'vi' ? 'Chỉnh Sửa' : 'Edit'; ?>
+                                                    </a>
+
+                                                    <a href="/Gym Manager/dashboards/manager.php?page=member_subscriptions&delete_sub=<?php echo $s['id']; ?>" class="action-btn btn-delete" style="font-size: 0.82rem; padding: 8px 16px; background: #fff1f2; color: #ef4444; text-decoration: none; margin-left: auto;" onclick="return confirmLinkCustom(event, this, '<?php echo $current_lang === 'vi' ? 'CẢNH BÁO: Bạn có chắc chắn muốn XÓA VĨNH VIỄN thẻ thành viên này?' : 'WARNING: Are you sure you want to PERMANENTLY DELETE this membership?'; ?>', '<?php echo $current_lang === 'vi' ? 'Xóa Vĩnh Viễn' : 'Delete Permanently'; ?>', '🗑️');">
+                                                        <i class="fas fa-trash-alt"></i> <?php echo $current_lang === 'vi' ? 'Xóa Vĩnh Viễn' : 'Delete'; ?>
+                                                    </a>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </td>
+                                </tr>
+                                <?php endforeach; ?>
+                            </tbody>
+                        </table>
+                    </div>
+
+                    <!-- Membership Details Modal Shell (Exact Booking Details Modal Shell Style) -->
+                    <div id="subDetailsModalShell" style="display: none; position: fixed; inset: 0; background: rgba(15, 23, 42, 0.65); backdrop-filter: blur(8px); z-index: 99999; align-items: center; justify-content: center; padding: 1.5rem;">
+                        <div style="background: #ffffff; width: 100%; max-width: 660px; border-radius: 24px; box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.25); border: 1px solid rgba(255, 255, 255, 0.2); overflow: hidden; animation: euModalPop 0.3s ease forwards;">
+                            <div style="display: flex; justify-content: space-between; align-items: center; padding: 1.2rem 1.6rem; background: linear-gradient(135deg, #1a2744, #2563eb); color: white;">
+                                <div style="font-weight: 800; font-size: 1.1rem; display: flex; align-items: center; gap: 8px;">
+                                    <i class="fas fa-id-card" style="color: var(--gold);"></i>
+                                    <span><?php echo $current_lang === 'vi' ? 'Chi Tiết & Quản Lý Thẻ Thành Viên' : 'Membership Details & Actions'; ?></span>
+                                </div>
+                                <button type="button" onclick="closeSubDetailsModal()" style="background: rgba(255,255,255,0.15); border: none; color: white; width: 32px; height: 32px; border-radius: 50%; cursor: pointer; font-size: 1rem; display: flex; align-items: center; justify-content: center; transition: background 0.2s;" onmouseover="this.style.background='rgba(255,255,255,0.3)'" onmouseout="this.style.background='rgba(255,255,255,0.15)'">
+                                    &times;
+                                </button>
+                            </div>
+                            <div id="subDetailsModalBody" style="padding: 1.6rem; max-height: 80vh; overflow-y: auto;"></div>
+                        </div>
+                    </div>
+
+                    <script>
+                    function showSubDetailsModal(subId) {
+                        const src = document.getElementById('sub-modal-content-' + subId);
+                        const body = document.getElementById('subDetailsModalBody');
+                        const shell = document.getElementById('subDetailsModalShell');
+                        if (src && body && shell) {
+                            body.innerHTML = src.innerHTML;
+                            shell.style.display = 'flex';
+                        }
+                    }
+                    function closeSubDetailsModal() {
+                        const shell = document.getElementById('subDetailsModalShell');
+                        if (shell) shell.style.display = 'none';
+                    }
+                    window.addEventListener('click', function(e) {
+                        const shell = document.getElementById('subDetailsModalShell');
+                        if (e.target === shell) {
+                            closeSubDetailsModal();
+                        }
+                    });
+
+                    function handlePlanSelect(selectEl) {
+                        const opt = selectEl.options[selectEl.selectedIndex];
+                        if (opt) {
+                            const price = opt.getAttribute('data-price');
+                            const days = parseInt(opt.getAttribute('data-days')) || 30;
+                            if (price) {
+                                document.getElementById('create_sub_price_paid').value = price;
+                            }
+                            calcEndDate(days);
+                        }
+                    }
+
+                    function calcEndDate(customDays) {
+                        const startInput = document.getElementById('create_sub_start_date');
+                        const endInput = document.getElementById('create_sub_end_date');
+                        const planSelect = document.getElementById('create_sub_plan_id');
+                        if (!startInput || !endInput) return;
+                        
+                        let days = customDays;
+                        if (!days && planSelect) {
+                            const opt = planSelect.options[planSelect.selectedIndex];
+                            if (opt) days = parseInt(opt.getAttribute('data-days')) || 30;
+                        }
+                        if (!days) days = 30;
+                        
+                        const startDate = new Date(startInput.value || new Date());
+                        startDate.setDate(startDate.getDate() + days);
+                        endInput.value = startDate.toISOString().split('T')[0];
+                    }
+
+                    // Auto open modal if sub_id or confirm_action is passed in URL
+                    document.addEventListener('DOMContentLoaded', function() {
+                        const urlParams = new URLSearchParams(window.location.search);
+                        const subId = urlParams.get('sub_id');
+                        if (subId) {
+                            showSubDetailsModal(subId);
+                        }
+                    });
+                    </script>
+                <?php endif; ?>
 
             <?php elseif ($page == 'equipment'): 
-                $edit_eq = null;
-                if (isset($_GET['edit_equipment'])) {
-                    $stmt = $pdo->prepare("SELECT * FROM equipment WHERE id = ?");
-                    $stmt->execute([$_GET['edit_equipment']]);
-                    $edit_eq = $stmt->fetch();
-                }
-
                 $all_equipment = $pdo->query("SELECT * FROM equipment ORDER BY id DESC")->fetchAll(PDO::FETCH_ASSOC);
                 
                 $total_eq = count($all_equipment);
                 $active_eq = count(array_filter($all_equipment, function($e) { return $e['status'] === 'active'; }));
                 $maint_eq = count(array_filter($all_equipment, function($e) { return $e['status'] === 'maintenance'; }));
+
+                $today_dt = new DateTime('today');
+                $overdue_eq = count(array_filter($all_equipment, function($e) use ($today_dt) {
+                    if ($e['status'] === 'maintenance') return true;
+                    if (empty($e['next_maintenance_date'])) return false;
+                    return new DateTime($e['next_maintenance_date']) < $today_dt;
+                }));
+
+                $upcoming_eq = count(array_filter($all_equipment, function($e) use ($today_dt) {
+                    if ($e['status'] === 'maintenance' || empty($e['next_maintenance_date'])) return false;
+                    $m_dt = new DateTime($e['next_maintenance_date']);
+                    if ($m_dt < $today_dt) return false;
+                    $diff = $today_dt->diff($m_dt);
+                    return $diff->days <= 15;
+                }));
+
+                $in_warranty_eq = count(array_filter($all_equipment, function($e) use ($today_dt) {
+                    if (empty($e['warranty_expiry_date'])) return false;
+                    return new DateTime($e['warranty_expiry_date']) >= $today_dt;
+                }));
+
+                // Determine initially selected equipment for the Details Tab
+                $selected_eq_id = intval($_GET['details_id'] ?? ($_GET['edit_equipment'] ?? 0));
+                $selected_eq = null;
+                if ($selected_eq_id > 0) {
+                    foreach ($all_equipment as $eq_item) {
+                        if (intval($eq_item['id']) === $selected_eq_id) {
+                            $selected_eq = $eq_item;
+                            break;
+                        }
+                    }
+                }
+                if (!$selected_eq && !empty($all_equipment)) {
+                    $selected_eq = $all_equipment[0];
+                }
+
+                $initial_tab = (!empty($_GET['details_id']) || !empty($_GET['edit_equipment'])) ? 'details' : ((isset($_GET['action']) && $_GET['action'] === 'add') ? 'add' : 'overview');
+
+                // JSON export for instant client-side reactivity
+                $all_equipment_json = json_encode(array_map(function($e) {
+                    return [
+                        'id' => intval($e['id']),
+                        'name' => $e['name'],
+                        'discipline' => $e['discipline'],
+                        'status' => $e['status'],
+                        'image' => $e['image'] ?: '/Gym Manager/assets/img/equipment/treadmills.png',
+                        'description' => $e['description'] ?? '',
+                        'purchase_date' => $e['purchase_date'] ?? '',
+                        'warranty_months' => intval($e['warranty_months'] ?? 12),
+                        'warranty_expiry_date' => $e['warranty_expiry_date'] ?? '',
+                        'next_maintenance_date' => $e['next_maintenance_date'] ?? '',
+                        'notes' => $e['notes'] ?? ''
+                    ];
+                }, $all_equipment), JSON_UNESCAPED_UNICODE | JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_AMP);
             ?>
-                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.5rem;">
-                    <h2>Gym Equipment Management</h2>
-                </div>
-
-                <!-- Stats summary cards -->
-                <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 1.5rem; margin-bottom: 2rem;">
-                    <div style="background: white; padding: 1.5rem; border-radius: 18px; box-shadow: var(--shadow-premium); border: 1px solid var(--border); text-align: center;">
-                        <h4 style="color: var(--text-muted); font-size: 0.85rem; text-transform: uppercase; margin-bottom: 0.5rem;">Total Equipment</h4>
-                        <span style="font-size: 2.2rem; font-weight: 800; color: var(--primary);"><?php echo $total_eq; ?></span>
-                    </div>
-                    <div style="background: white; padding: 1.5rem; border-radius: 18px; box-shadow: var(--shadow-premium); border: 1px solid var(--border); text-align: center;">
-                        <h4 style="color: var(--text-muted); font-size: 0.85rem; text-transform: uppercase; margin-bottom: 0.5rem;">Active Status</h4>
-                        <span style="font-size: 2.2rem; font-weight: 800; color: #16a34a;"><?php echo $active_eq; ?></span>
-                    </div>
-                    <div style="background: white; padding: 1.5rem; border-radius: 18px; box-shadow: var(--shadow-premium); border: 1px solid var(--border); text-align: center;">
-                        <h4 style="color: var(--text-muted); font-size: 0.85rem; text-transform: uppercase; margin-bottom: 0.5rem;">Under Maintenance</h4>
-                        <span style="font-size: 2.2rem; font-weight: 800; color: #d97706;"><?php echo $maint_eq; ?></span>
+                <!-- Equipment Management Header -->
+                <div id="equipmentSectionWrapper" style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.5rem; flex-wrap: wrap; gap: 1rem;">
+                    <div>
+                        <h2 style="margin: 0; font-size: 1.8rem; font-weight: 800; color: var(--text-main); display: flex; align-items: center; gap: 10px;">
+                            <i class="fas fa-dumbbell" style="color: var(--primary);"></i>
+                            <?php echo $lang['eq_mgmt_title'] ?? ($current_lang === 'vi' ? 'Quản Lý Thiết Bị Phòng Tập' : 'Gym Equipment Management'); ?>
+                        </h2>
+                        <p style="margin: 5px 0 0 0; color: var(--text-muted); font-size: 0.95rem;">
+                            <?php echo $current_lang === 'vi' 
+                                ? 'Bảng tổng thể hiển thị thông tin sơ bộ. Bấm Details để xem và chỉnh sửa bảo hành, lịch bảo trì và ghi chú kỹ thuật.' 
+                                : 'Overview table displays summary info. Click Details to view and edit warranty, maintenance schedule, and notes.'; ?>
+                        </p>
                     </div>
                 </div>
 
-                <?php if ($edit_eq): ?>
-                <!-- Edit Equipment Form -->
-                <form method="POST" enctype="multipart/form-data" style="background: white; padding: 2.5rem; border-radius: 25px; margin-bottom: 2.5rem; border: 2px solid var(--primary); box-shadow: var(--shadow-premium);">
-                    <input type="hidden" name="equipment_id" value="<?php echo $edit_eq['id']; ?>">
-                    <h3 style="margin-bottom: 1.5rem; color: var(--primary);"><i class="fas fa-edit"></i> Edit Equipment Details</h3>
-                    
-                    <div style="display: grid; grid-template-columns: 2fr 1fr 1fr; gap: 1.5rem; margin-bottom: 1.5rem;">
-                        <div class="form-group" style="margin-bottom: 0;">
-                            <label style="font-weight: 600;">Equipment Name</label>
-                            <input type="text" name="name" value="<?php echo htmlspecialchars($edit_eq['name']); ?>" required>
-                        </div>
-                        <div class="form-group" style="margin-bottom: 0;">
-                            <label style="font-weight: 600;">Discipline</label>
-                            <select name="discipline" required style="padding: 1.1rem; border-radius: 15px; background: #f1f5f9; border: none; width: 100%; outline: none; font-weight: 600;">
-                                <option value="gym" <?php echo $edit_eq['discipline'] == 'gym' ? 'selected' : ''; ?>>🏋️‍♂️ Gym Fitness</option>
-                                <option value="muay" <?php echo $edit_eq['discipline'] == 'muay' ? 'selected' : ''; ?>>🥊 Muay Thai / Boxing</option>
-                                <option value="yoga" <?php echo $edit_eq['discipline'] == 'yoga' ? 'selected' : ''; ?>>🧘‍♀️ Yoga & Pilates</option>
-                            </select>
-                        </div>
-                        <div class="form-group" style="margin-bottom: 0;">
-                            <label style="font-weight: 600;">Status</label>
-                            <select name="status" required style="padding: 1.1rem; border-radius: 15px; background: #f1f5f9; border: none; width: 100%; outline: none; font-weight: 600;">
-                                <option value="active" <?php echo $edit_eq['status'] == 'active' ? 'selected' : ''; ?>>🟢 Active</option>
-                                <option value="maintenance" <?php echo $edit_eq['status'] == 'maintenance' ? 'selected' : ''; ?>>🟡 Maintenance</option>
-                                <option value="retired" <?php echo $edit_eq['status'] == 'retired' ? 'selected' : ''; ?>>🔴 Retired</option>
-                            </select>
-                        </div>
-                    </div>
-
-                    <div class="form-group" style="margin-bottom: 1.5rem;">
-                        <label style="font-weight: 600;">Equipment Image</label>
-                        <div style="display: flex; align-items: center; gap: 1rem;">
-                            <?php if ($edit_eq['image']): ?>
-                                <img src="<?php echo htmlspecialchars($edit_eq['image']); ?>" style="width: 60px; height: 60px; object-fit: cover; border-radius: 12px; border: 1px solid var(--border);">
-                            <?php endif; ?>
-                            <input type="file" name="image" accept="image/*" style="padding: 0.5rem; background: #f1f5f9; border-radius: 10px; flex: 1;">
-                        </div>
-                        <input type="text" name="custom_image_url" placeholder="Or paste image URL here..." value="<?php echo htmlspecialchars($edit_eq['image']); ?>" style="margin-top: 10px;">
-                    </div>
-
-                    <div class="form-group">
-                        <label style="font-weight: 600;">Description</label>
-                        <textarea name="description" required style="width: 100%; padding: 1.1rem; border-radius: 15px; background: #f1f5f9; border: none; outline: none; min-height: 100px;"><?php echo htmlspecialchars($edit_eq['description']); ?></textarea>
-                    </div>
-
-                    <div style="display: flex; gap: 1rem;">
-                        <button type="submit" name="update_equipment" class="btn-auth" style="margin-top: 0; width: auto; padding: 1.1rem 2rem;">
-                            <i class="fas fa-save" style="margin-right: 8px;"></i>
-                            Update Equipment
-                        </button>
-                        <a href="/Gym Manager/dashboards/manager.php?page=equipment" class="action-btn" style="background: #f1f5f9; color: var(--text-muted); border-radius: 15px; padding: 1.1rem 1.5rem; height: auto; text-decoration: none; font-weight: 700; line-height: 2;">Cancel</a>
-                    </div>
-                </form>
-                <?php else: ?>
-
-                <!-- Add Equipment Form -->
-                <form method="POST" enctype="multipart/form-data" style="background: white; padding: 2.5rem; border-radius: 25px; margin-bottom: 2.5rem; box-shadow: var(--shadow-premium); border: 1px solid var(--border);">
-                    <h3 style="margin-bottom: 1.5rem; color: var(--primary);"><i class="fas fa-plus-circle"></i> Add New Equipment</h3>
-                    
-                    <div style="display: grid; grid-template-columns: 2fr 1fr 1fr; gap: 1.5rem; margin-bottom: 1.5rem;">
-                        <div class="form-group" style="margin-bottom: 0;">
-                            <label style="font-weight: 600;">Equipment Name</label>
-                            <input type="text" name="name" required placeholder="e.g. Treadmill Pro 5000">
-                        </div>
-                        <div class="form-group" style="margin-bottom: 0;">
-                            <label style="font-weight: 600;">Discipline</label>
-                            <select name="discipline" required style="padding: 1.1rem; border-radius: 15px; background: #f1f5f9; border: none; width: 100%; outline: none; font-weight: 600;">
-                                <option value="gym">🏋️‍♂️ Gym Fitness</option>
-                                <option value="muay">🥊 Muay Thai / Boxing</option>
-                                <option value="yoga">🧘‍♀️ Yoga & Pilates</option>
-                            </select>
-                        </div>
-                        <div class="form-group" style="margin-bottom: 0;">
-                            <label style="font-weight: 600;">Status</label>
-                            <select name="status" required style="padding: 1.1rem; border-radius: 15px; background: #f1f5f9; border: none; width: 100%; outline: none; font-weight: 600;">
-                                <option value="active">🟢 Active</option>
-                                <option value="maintenance">🟡 Maintenance</option>
-                                <option value="retired">🔴 Retired</option>
-                            </select>
-                        </div>
-                    </div>
-
-                    <div class="form-group" style="margin-bottom: 1.5rem;">
-                        <label style="font-weight: 600;">Equipment Image</label>
-                        <input type="file" name="image" accept="image/*" style="padding: 0.5rem; background: #f1f5f9; border-radius: 10px; width: 100%;">
-                        <input type="text" name="custom_image_url" placeholder="Or paste absolute image URL here..." style="margin-top: 10px;">
-                    </div>
-
-                    <div class="form-group">
-                        <label style="font-weight: 600;">Description</label>
-                        <textarea name="description" required placeholder="Enter equipment specifications, features, or notes..." style="width: 100%; padding: 1.1rem; border-radius: 15px; background: #f1f5f9; border: none; outline: none; min-height: 100px;"></textarea>
-                    </div>
-
-                    <button type="submit" name="add_equipment" class="btn-auth" style="margin-top: 0; width: auto; padding: 1.1rem 2rem;">
-                        <i class="fas fa-plus" style="margin-right: 8px;"></i>
-                        Add Equipment
+                <!-- Navigation Tabs Bar -->
+                <div class="equipment-tabs-bar" style="display: flex; gap: 8px; margin-bottom: 2rem; border-bottom: 2px solid var(--border); padding-bottom: 4px; flex-wrap: wrap;">
+                    <button type="button" class="eq-nav-tab <?php echo $initial_tab === 'overview' ? 'active' : ''; ?>" id="btn-tab-overview" onclick="switchEquipmentTab('overview')">
+                        <i class="fas fa-list-ul"></i> <?php echo $lang['eq_tab_overview'] ?? ($current_lang === 'vi' ? 'Bảng Tổng Thể' : 'Overview Table'); ?>
                     </button>
-                </form>
-                <?php endif; ?>
-
-                <!-- Equipment Table -->
-                <div class="table-responsive" style="overflow-x: auto; width: 100%;">
-                    <table>
-                        <thead>
-                            <tr>
-                                <th>ID</th>
-                                <th>Image</th>
-                                <th>Equipment Name</th>
-                                <th>Discipline</th>
-                                <th>Description</th>
-                                <th>Status</th>
-                                <th style="text-align: center;">Actions</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            <?php foreach($all_equipment as $eq): 
-                                $disc_badge = [
-                                    'gym' => ['bg' => '#eff6ff', 'color' => '#1d4ed8', 'label' => '🏋️‍♂️ GYM'],
-                                    'muay' => ['bg' => '#fef2f2', 'color' => '#b91c1c', 'label' => '🥊 MUAY THAI'],
-                                    'yoga' => ['bg' => '#f0fdf4', 'color' => '#15803d', 'label' => '🧘‍♀️ YOGA']
-                                ][$eq['discipline']] ?? ['bg' => '#f1f5f9', 'color' => '#475569', 'label' => strtoupper($eq['discipline'])];
-
-                                $st_badge = [
-                                    'active' => ['bg' => '#dcfce7', 'color' => '#16a34a', 'label' => '🟢 ACTIVE'],
-                                    'maintenance' => ['bg' => '#fef3c7', 'color' => '#d97706', 'label' => '🟡 MAINTENANCE'],
-                                    'retired' => ['bg' => '#fee2e2', 'color' => '#ef4444', 'label' => '🔴 RETIRED']
-                                ][$eq['status']] ?? ['bg' => '#f1f5f9', 'color' => '#64748b', 'label' => strtoupper($eq['status'])];
-                            ?>
-                            <tr style="box-shadow: 0 2px 10px rgba(0,0,0,0.02);">
-                                <td style="padding: 1.2rem; background: white; border-radius: 15px 0 0 15px; font-weight: 600;">#<?php echo $eq['id']; ?></td>
-                                <td style="padding: 1.2rem; background: white;">
-                                    <img src="<?php echo htmlspecialchars($eq['image'] ?: '/Gym Manager/assets/img/equipment/treadmills.png'); ?>" style="width: 55px; height: 55px; object-fit: cover; border-radius: 12px; border: 1px solid var(--border);">
-                                </td>
-                                <td style="padding: 1.2rem; background: white; font-weight: 700; color: var(--text-main);">
-                                    <?php echo htmlspecialchars($eq['name']); ?>
-                                </td>
-                                <td style="padding: 1.2rem; background: white;">
-                                    <span style="background:<?php echo $disc_badge['bg']; ?>; color:<?php echo $disc_badge['color']; ?>; padding: 4px 10px; border-radius: 8px; font-weight: 800; font-size: 0.72rem;">
-                                        <?php echo $disc_badge['label']; ?>
-                                    </span>
-                                </td>
-                                <td style="padding: 1.2rem; background: white; color: var(--text-muted); font-size: 0.9rem; max-width: 300px;">
-                                    <?php echo htmlspecialchars($eq['description']); ?>
-                                </td>
-                                <td style="padding: 1.2rem; background: white;">
-                                    <span style="background:<?php echo $st_badge['bg']; ?>; color:<?php echo $st_badge['color']; ?>; padding: 4px 12px; border-radius: 20px; font-weight: 800; font-size: 0.72rem;">
-                                        <?php echo $st_badge['label']; ?>
-                                    </span>
-                                </td>
-                                <td style="padding: 1.2rem; background: white; border-radius: 0 15px 15px 0; text-align: center; white-space: nowrap;">
-                                    <div style="display: flex; gap: 8px; justify-content: center;">
-                                        <a href="/Gym Manager/dashboards/manager.php?page=equipment&edit_equipment=<?php echo $eq['id']; ?>" class="action-btn btn-edit" title="Edit Equipment">
-                                            <i class="fas fa-edit"></i>
-                                        </a>
-                                        <a href="/Gym Manager/dashboards/manager.php?page=equipment&delete_equipment=<?php echo $eq['id']; ?>" class="action-btn btn-delete" onclick="return confirmLinkCustom(event, this, '<?php echo $current_lang === 'vi' ? 'Bạn có chắc chắn muốn XÓA thiết bị này?' : 'Are you sure you want to DELETE this equipment?'; ?>', '<?php echo $current_lang === 'vi' ? 'Xóa Thiết Bị' : 'Delete Equipment'; ?>', '🗑️');" title="Delete Equipment">
-                                            <i class="fas fa-trash-alt"></i>
-                                        </a>
-                                    </div>
-                                </td>
-                            </tr>
-                            <?php endforeach; ?>
-                            <?php if (empty($all_equipment)): ?>
-                            <tr><td colspan="7" style="text-align:center; padding: 2rem; color: var(--text-muted);">No equipment found.</td></tr>
-                            <?php endif; ?>
-                        </tbody>
-                    </table>
+                    <button type="button" class="eq-nav-tab <?php echo $initial_tab === 'details' ? 'active' : ''; ?>" id="btn-tab-details" onclick="switchEquipmentTab('details')">
+                        <i class="fas fa-sliders-h"></i> <?php echo $lang['eq_tab_details'] ?? ($current_lang === 'vi' ? 'Chi Tiết & Bảo Hành' : 'Details & Warranty'); ?>
+                        <span id="nav-selected-eq-badge" style="<?php echo $selected_eq ? '' : 'display:none;'; ?> font-size: 0.74rem; background: var(--primary); color: white; padding: 2px 8px; border-radius: 10px; font-weight: 700; margin-left: 4px;">
+                            #<?php echo $selected_eq ? $selected_eq['id'] : ''; ?>
+                        </span>
+                    </button>
+                    <button type="button" class="eq-nav-tab <?php echo $initial_tab === 'add' ? 'active' : ''; ?>" id="btn-tab-add" onclick="switchEquipmentTab('add')">
+                        <i class="fas fa-plus-circle"></i> <?php echo $lang['eq_tab_add'] ?? ($current_lang === 'vi' ? 'Thêm Thiết Bị Mới' : 'Add New Equipment'); ?>
+                    </button>
                 </div>
+
+                <!-- ==================== PANE 1: BẢNG TỔNG THỂ (OVERVIEW) ==================== -->
+                <div id="eq-pane-overview" style="<?php echo $initial_tab === 'overview' ? '' : 'display:none;'; ?>">
+                    <!-- Stats summary cards -->
+                    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 1.2rem; margin-bottom: 2rem;">
+                        <div style="background: white; padding: 1.3rem; border-radius: 20px; box-shadow: var(--shadow-premium); border: 1px solid var(--border); display: flex; align-items: center; gap: 1.1rem;">
+                            <div style="width: 50px; height: 50px; border-radius: 14px; background: rgba(37,99,235,0.1); color: var(--primary); display: flex; align-items: center; justify-content: center; font-size: 1.35rem;">
+                                <i class="fas fa-boxes"></i>
+                            </div>
+                            <div>
+                                <span style="font-size: 1.75rem; font-weight: 800; color: var(--text-main); line-height: 1;"><?php echo $total_eq; ?></span>
+                                <div style="color: var(--text-muted); font-size: 0.8rem; font-weight: 700; text-transform: uppercase; margin-top: 4px;"><?php echo $current_lang === 'vi' ? 'Tổng Thiết Bị' : 'Total Equipment'; ?></div>
+                            </div>
+                        </div>
+
+                        <div style="background: white; padding: 1.3rem; border-radius: 20px; box-shadow: var(--shadow-premium); border: 1px solid var(--border); display: flex; align-items: center; gap: 1.1rem;">
+                            <div style="width: 50px; height: 50px; border-radius: 14px; background: rgba(22,163,74,0.1); color: #16a34a; display: flex; align-items: center; justify-content: center; font-size: 1.35rem;">
+                                <i class="fas fa-check-circle"></i>
+                            </div>
+                            <div>
+                                <span style="font-size: 1.75rem; font-weight: 800; color: #16a34a; line-height: 1;"><?php echo $active_eq; ?></span>
+                                <div style="color: var(--text-muted); font-size: 0.8rem; font-weight: 700; text-transform: uppercase; margin-top: 4px;"><?php echo $current_lang === 'vi' ? 'Đang Hoạt Động' : 'Active Status'; ?></div>
+                            </div>
+                        </div>
+
+                        <div style="background: white; padding: 1.3rem; border-radius: 20px; box-shadow: var(--shadow-premium); border: 1px solid var(--border); display: flex; align-items: center; gap: 1.1rem;">
+                            <div style="width: 50px; height: 50px; border-radius: 14px; background: rgba(217,119,6,0.1); color: #d97706; display: flex; align-items: center; justify-content: center; font-size: 1.35rem;">
+                                <i class="fas fa-tools"></i>
+                            </div>
+                            <div>
+                                <span style="font-size: 1.75rem; font-weight: 800; color: #d97706; line-height: 1;"><?php echo $maint_eq; ?></span>
+                                <div style="color: var(--text-muted); font-size: 0.8rem; font-weight: 700; text-transform: uppercase; margin-top: 4px;"><?php echo $current_lang === 'vi' ? 'Đang Sửa Chữa' : 'In Repair'; ?></div>
+                            </div>
+                        </div>
+
+                        <div style="background: white; padding: 1.3rem; border-radius: 20px; box-shadow: var(--shadow-premium); border: 1px solid <?php echo ($overdue_eq > 0 || $upcoming_eq > 0) ? '#fecaca' : 'var(--border)'; ?>; display: flex; align-items: center; gap: 1.1rem;">
+                            <div style="width: 50px; height: 50px; border-radius: 14px; background: rgba(239,68,68,0.1); color: #ef4444; display: flex; align-items: center; justify-content: center; font-size: 1.35rem;">
+                                <i class="fas fa-exclamation-triangle"></i>
+                            </div>
+                            <div>
+                                <span style="font-size: 1.75rem; font-weight: 800; color: #ef4444; line-height: 1;"><?php echo ($overdue_eq + $upcoming_eq); ?></span>
+                                <div style="color: var(--text-muted); font-size: 0.8rem; font-weight: 700; text-transform: uppercase; margin-top: 4px;"><?php echo $current_lang === 'vi' ? 'Cần Bảo Trì (Hạn ≤ 15d)' : 'Needs Maintenance'; ?></div>
+                            </div>
+                        </div>
+
+                        <div style="background: white; padding: 1.3rem; border-radius: 20px; box-shadow: var(--shadow-premium); border: 1px solid var(--border); display: flex; align-items: center; gap: 1.1rem;">
+                            <div style="width: 50px; height: 50px; border-radius: 14px; background: rgba(79,70,229,0.1); color: #4f46e5; display: flex; align-items: center; justify-content: center; font-size: 1.35rem;">
+                                <i class="fas fa-shield-alt"></i>
+                            </div>
+                            <div>
+                                <span style="font-size: 1.75rem; font-weight: 800; color: #4f46e5; line-height: 1;"><?php echo $in_warranty_eq; ?></span>
+                                <div style="color: var(--text-muted); font-size: 0.8rem; font-weight: 700; text-transform: uppercase; margin-top: 4px;"><?php echo $current_lang === 'vi' ? 'Còn Bảo Hành' : 'In Warranty'; ?></div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Interactive Filter & Search Toolbar -->
+                    <div style="background: white; padding: 1.3rem; border-radius: 20px; box-shadow: var(--shadow-premium); border: 1px solid var(--border); margin-bottom: 1.5rem; display: flex; flex-wrap: wrap; gap: 1rem; align-items: center; justify-content: space-between;">
+                        <div style="flex: 2; min-width: 240px; position: relative;">
+                            <i class="fas fa-search" style="position: absolute; left: 16px; top: 50%; transform: translateY(-50%); color: #94a3b8; font-size: 0.95rem;"></i>
+                            <input type="text" id="eqSearchInput" placeholder="<?php echo $lang['eq_search_placeholder'] ?? ($current_lang === 'vi' ? 'Tìm theo tên thiết bị, mã máy...' : 'Search equipment by name, ID...'); ?>" onkeyup="filterEquipmentTable()" style="width: 100%; padding: 0.8rem 1rem 0.8rem 2.6rem; border-radius: 12px; border: 1.5px solid var(--border); outline: none; font-size: 0.92rem;">
+                        </div>
+                        
+                        <div style="display: flex; gap: 0.8rem; flex-wrap: wrap; flex: 3; justify-content: flex-end;">
+                            <select id="eqDisciplineFilter" onchange="filterEquipmentTable()" style="padding: 0.8rem 1rem; border-radius: 12px; border: 1.5px solid var(--border); background: #f8fafc; font-weight: 600; outline: none; font-size: 0.88rem;">
+                                <option value=""><?php echo $current_lang === 'vi' ? '🏋️ Tất Cả Bộ Môn' : '🏋️ All Disciplines'; ?></option>
+                                <option value="gym">🏋️ Gym Fitness</option>
+                                <option value="muay">🥊 Muay Thai</option>
+                                <option value="yoga">🧘‍♀️ Yoga</option>
+                            </select>
+
+                            <select id="eqStatusFilter" onchange="filterEquipmentTable()" style="padding: 0.8rem 1rem; border-radius: 12px; border: 1.5px solid var(--border); background: #f8fafc; font-weight: 600; outline: none; font-size: 0.88rem;">
+                                <option value=""><?php echo $current_lang === 'vi' ? '⚙️ Trạng Thái Máy' : '⚙️ Machine Status'; ?></option>
+                                <option value="active">🟢 <?php echo $current_lang === 'vi' ? 'Hoạt Động' : 'Active'; ?></option>
+                                <option value="maintenance">🟡 <?php echo $current_lang === 'vi' ? 'Đang Bảo Trì' : 'Maintenance'; ?></option>
+                                <option value="retired">🔴 <?php echo $current_lang === 'vi' ? 'Ngưng Dùng' : 'Retired'; ?></option>
+                            </select>
+
+                            <select id="eqMaintFilter" onchange="filterEquipmentTable()" style="padding: 0.8rem 1rem; border-radius: 12px; border: 1.5px solid var(--border); background: #f8fafc; font-weight: 600; outline: none; font-size: 0.88rem;">
+                                <option value=""><?php echo $current_lang === 'vi' ? '🔔 Lịch Bảo Trì & Bảo Hành' : '🔔 Maintenance & Warranty'; ?></option>
+                                <option value="overdue">⚠️ <?php echo $current_lang === 'vi' ? 'Quá Hạn Bảo Trì' : 'Overdue Maintenance'; ?></option>
+                                <option value="upcoming">⏰ <?php echo $current_lang === 'vi' ? 'Sắp Tới Hạn (≤ 15 ngày)' : 'Upcoming (≤ 15 days)'; ?></option>
+                                <option value="warranty_valid">🛡️ <?php echo $current_lang === 'vi' ? 'Còn Hạn Bảo Hành' : 'In Warranty'; ?></option>
+                                <option value="warranty_expired">⚪ <?php echo $current_lang === 'vi' ? 'Hết Hạn Bảo Hành' : 'Warranty Expired'; ?></option>
+                            </select>
+
+                            <button type="button" onclick="resetEquipmentFilters()" style="padding: 0.8rem 1.1rem; border-radius: 12px; border: 1.5px solid var(--border); background: white; color: var(--text-muted); cursor: pointer; font-weight: 700; transition: all 0.2s;" title="<?php echo $current_lang === 'vi' ? 'Đặt lại bộ lọc' : 'Reset filters'; ?>">
+                                <i class="fas fa-undo"></i>
+                            </button>
+                        </div>
+                    </div>
+
+                    <!-- Clean Overview Table (Thông Tin Sơ Bộ) -->
+                    <div class="table-responsive" style="overflow-x: auto; width: 100%; border-radius: 20px; box-shadow: var(--shadow-premium);">
+                        <table style="width: 100%; border-collapse: separate; border-spacing: 0 8px;">
+                            <thead>
+                                <tr style="background: transparent;">
+                                    <th style="padding: 1rem 1.2rem; font-size: 0.82rem; text-transform: uppercase; color: var(--text-muted); font-weight: 800; border: none;">ID & <?php echo $current_lang === 'vi' ? 'Ảnh' : 'Image'; ?></th>
+                                    <th style="padding: 1rem 1.2rem; font-size: 0.82rem; text-transform: uppercase; color: var(--text-muted); font-weight: 800; border: none;"><?php echo $current_lang === 'vi' ? 'Thiết Bị & Bộ Môn' : 'Equipment & Discipline'; ?></th>
+                                    <th style="padding: 1rem 1.2rem; font-size: 0.82rem; text-transform: uppercase; color: var(--text-muted); font-weight: 800; border: none;"><?php echo $current_lang === 'vi' ? 'Trạng Thái' : 'Status'; ?></th>
+                                    <th style="padding: 1rem 1.2rem; font-size: 0.82rem; text-transform: uppercase; color: var(--text-muted); font-weight: 800; border: none;"><?php echo $lang['eq_next_maintenance'] ?? ($current_lang === 'vi' ? 'Kỳ Bảo Trì Tiếp Theo' : 'Next Maintenance'); ?></th>
+                                    <th style="padding: 1rem 1.2rem; font-size: 0.82rem; text-transform: uppercase; color: var(--text-muted); font-weight: 800; border: none;"><?php echo $lang['eq_warranty'] ?? ($current_lang === 'vi' ? 'Bảo Hành' : 'Warranty'); ?></th>
+                                    <th style="padding: 1rem 1.2rem; font-size: 0.82rem; text-transform: uppercase; color: var(--text-muted); font-weight: 800; border: none; text-align: center;"><?php echo $current_lang === 'vi' ? 'Thao Tác' : 'Actions'; ?></th>
+                                </tr>
+                            </thead>
+                            <tbody id="equipmentTableBody">
+                                <?php foreach($all_equipment as $eq): 
+                                    $disc_badge = [
+                                        'gym' => ['bg' => '#eff6ff', 'color' => '#1d4ed8', 'label' => '🏋️‍♂️ GYM'],
+                                        'muay' => ['bg' => '#fef2f2', 'color' => '#b91c1c', 'label' => '🥊 MUAY THAI'],
+                                        'yoga' => ['bg' => '#f0fdf4', 'color' => '#15803d', 'label' => '🧘‍♀️ YOGA']
+                                    ][$eq['discipline']] ?? ['bg' => '#f1f5f9', 'color' => '#475569', 'label' => strtoupper($eq['discipline'])];
+
+                                    $st_badge = [
+                                        'active' => ['bg' => '#dcfce7', 'color' => '#16a34a', 'label' => '🟢 ACTIVE'],
+                                        'maintenance' => ['bg' => '#fef3c7', 'color' => '#d97706', 'label' => '🟡 MAINTENANCE'],
+                                        'retired' => ['bg' => '#fee2e2', 'color' => '#ef4444', 'label' => '🔴 RETIRED']
+                                    ][$eq['status']] ?? ['bg' => '#f1f5f9', 'color' => '#64748b', 'label' => strtoupper($eq['status'])];
+
+                                    // Warranty calculation
+                                    $warranty_dt = !empty($eq['warranty_expiry_date']) ? new DateTime($eq['warranty_expiry_date']) : null;
+                                    $maint_dt = !empty($eq['next_maintenance_date']) ? new DateTime($eq['next_maintenance_date']) : null;
+
+                                    $is_warranty_valid = false;
+                                    $concise_warranty_badge = '';
+                                    if ($warranty_dt) {
+                                        if ($warranty_dt >= $today_dt) {
+                                            $is_warranty_valid = true;
+                                            $concise_warranty_badge = '<span style="background: #dcfce7; color: #15803d; border: 1px solid #bbf7d0; padding: 4px 10px; border-radius: 8px; font-weight: 700; font-size: 0.74rem; display: inline-flex; align-items: center; gap: 5px;"><i class="fas fa-shield-alt"></i> ' . ($current_lang === 'vi' ? 'Còn BH' : 'In Warranty') . '</span>';
+                                        } else {
+                                            $concise_warranty_badge = '<span style="background: #f1f5f9; color: #64748b; border: 1px solid #e2e8f0; padding: 4px 10px; border-radius: 8px; font-weight: 700; font-size: 0.74rem;">' . ($current_lang === 'vi' ? '⚪ Hết BH' : '⚪ Expired') . '</span>';
+                                        }
+                                    } else {
+                                        $concise_warranty_badge = '<span style="color: var(--text-muted); font-size: 0.78rem;">N/A</span>';
+                                    }
+
+                                    // Maintenance alert
+                                    $maint_filter_tag = 'ontime';
+                                    $maint_display_html = '';
+                                    if ($eq['status'] === 'maintenance') {
+                                        $maint_filter_tag = 'overdue';
+                                        $maint_display_html = '<span style="background: #fef3c7; color: #b45309; border: 1px solid #fde68a; padding: 4px 10px; border-radius: 8px; font-weight: 800; font-size: 0.74rem; display: inline-flex; align-items: center; gap: 5px;"><i class="fas fa-tools"></i> ' . ($current_lang === 'vi' ? 'Đang sửa chữa' : 'In Repair') . '</span>';
+                                    } elseif ($maint_dt) {
+                                        $date_formatted = $maint_dt->format('d/m/Y');
+                                        if ($maint_dt < $today_dt) {
+                                            $maint_filter_tag = 'overdue';
+                                            $overdue_days = $today_dt->diff($maint_dt)->days;
+                                            $maint_display_html = '<div style="font-weight: 700; font-size: 0.88rem; color: #b91c1c;">' . $date_formatted . '</div><span style="background: #fee2e2; color: #b91c1c; border: 1px solid #fecaca; padding: 2px 7px; border-radius: 6px; font-weight: 800; font-size: 0.7rem; display: inline-flex; align-items: center; gap: 4px; margin-top: 2px;"><i class="fas fa-exclamation-triangle"></i> ' . ($current_lang === 'vi' ? "Quá {$overdue_days} ngày" : "Overdue {$overdue_days}d") . '</span>';
+                                        } elseif ($today_dt->diff($maint_dt)->days <= 15) {
+                                            $maint_filter_tag = 'upcoming';
+                                            $due_in_days = $today_dt->diff($maint_dt)->days;
+                                            $maint_display_html = '<div style="font-weight: 700; font-size: 0.88rem; color: #d97706;">' . $date_formatted . '</div><span style="background: #fffbeb; color: #d97706; border: 1px solid #fef3c7; padding: 2px 7px; border-radius: 6px; font-weight: 800; font-size: 0.7rem; display: inline-flex; align-items: center; gap: 4px; margin-top: 2px;"><i class="fas fa-clock"></i> ' . ($current_lang === 'vi' ? "Còn {$due_in_days} ngày" : "Due in {$due_in_days}d") . '</span>';
+                                        } else {
+                                            $maint_filter_tag = 'ontime';
+                                            $maint_display_html = '<div style="font-weight: 700; font-size: 0.88rem; color: var(--text-main);">' . $date_formatted . '</div><span style="background: #f0fdf4; color: #16a34a; border: 1px solid #dcfce7; padding: 2px 7px; border-radius: 6px; font-weight: 700; font-size: 0.7rem; margin-top: 2px; display: inline-block;">' . ($current_lang === 'vi' ? '🟢 Đúng lịch' : '🟢 On schedule') . '</span>';
+                                        }
+                                    } else {
+                                        $maint_display_html = '<span style="color: var(--text-muted); font-size: 0.8rem;">N/A</span>';
+                                    }
+
+                                    $search_corpus = strtolower($eq['name'] . ' ' . ($eq['description'] ?? '') . ' #' . $eq['id']);
+                                ?>
+                                <tr class="eq-table-row" 
+                                    data-search="<?php echo htmlspecialchars($search_corpus); ?>" 
+                                    data-discipline="<?php echo htmlspecialchars($eq['discipline']); ?>" 
+                                    data-status="<?php echo htmlspecialchars($eq['status']); ?>" 
+                                    data-maint-status="<?php echo $maint_filter_tag; ?>" 
+                                    data-warranty-valid="<?php echo $is_warranty_valid ? '1' : '0'; ?>"
+                                    style="box-shadow: 0 2px 10px rgba(0,0,0,0.02); transition: transform 0.15s ease;">
+                                    
+                                    <!-- ID & Image -->
+                                    <td style="padding: 1rem 1.2rem; background: white; border-radius: 16px 0 0 16px; white-space: nowrap;">
+                                        <div style="display: flex; align-items: center; gap: 10px;">
+                                            <span style="font-weight: 800; color: var(--text-muted); font-size: 0.85rem;">#<?php echo $eq['id']; ?></span>
+                                            <img src="<?php echo htmlspecialchars($eq['image'] ?: '/Gym Manager/assets/img/equipment/treadmills.png'); ?>" style="width: 50px; height: 50px; object-fit: cover; border-radius: 12px; border: 1px solid var(--border); box-shadow: 0 2px 6px rgba(0,0,0,0.06);">
+                                        </div>
+                                    </td>
+
+                                    <!-- Equipment Name & Discipline -->
+                                    <td style="padding: 1rem 1.2rem; background: white; min-width: 200px;">
+                                        <div style="font-weight: 800; color: var(--text-main); font-size: 0.98rem; margin-bottom: 3px;">
+                                            <?php echo htmlspecialchars($eq['name']); ?>
+                                        </div>
+                                        <span style="background:<?php echo $disc_badge['bg']; ?>; color:<?php echo $disc_badge['color']; ?>; padding: 2px 8px; border-radius: 6px; font-weight: 800; font-size: 0.68rem;">
+                                            <?php echo $disc_badge['label']; ?>
+                                        </span>
+                                    </td>
+
+                                    <!-- Machine Status -->
+                                    <td style="padding: 1rem 1.2rem; background: white; white-space: nowrap;">
+                                        <span style="background:<?php echo $st_badge['bg']; ?>; color:<?php echo $st_badge['color']; ?>; padding: 4px 12px; border-radius: 20px; font-weight: 800; font-size: 0.72rem; letter-spacing: 0.3px;">
+                                            <?php echo $st_badge['label']; ?>
+                                        </span>
+                                    </td>
+
+                                    <!-- Scheduled Maintenance -->
+                                    <td style="padding: 1rem 1.2rem; background: white; white-space: nowrap;">
+                                        <?php echo $maint_display_html; ?>
+                                    </td>
+
+                                    <!-- Concise Warranty -->
+                                    <td style="padding: 1rem 1.2rem; background: white; white-space: nowrap;">
+                                        <?php echo $concise_warranty_badge; ?>
+                                    </td>
+
+                                    <!-- Actions: Details Button & Delete -->
+                                    <td style="padding: 1rem 1.2rem; background: white; border-radius: 0 16px 16px 0; text-align: center; white-space: nowrap;">
+                                        <div style="display: flex; gap: 8px; justify-content: center; align-items: center;">
+                                            <!-- DETAILS BUTTON TO OPEN SEPARATE TAB -->
+                                            <button type="button" 
+                                                class="btn-eq-details" 
+                                                onclick="openEquipmentDetailsTab(<?php echo $eq['id']; ?>)" 
+                                                title="<?php echo $current_lang === 'vi' ? 'Xem chi tiết, chỉnh sửa bảo hành & ghi chú' : 'View details, edit warranty & notes'; ?>"
+                                                style="background: linear-gradient(135deg, #1e40af, #2563eb); color: white; border: none; padding: 7px 15px; border-radius: 10px; font-weight: 700; font-size: 0.82rem; cursor: pointer; display: inline-flex; align-items: center; gap: 6px; box-shadow: 0 2px 8px rgba(37,99,235,0.25); transition: all 0.2s ease;">
+                                                <i class="fas fa-sliders-h"></i>
+                                                <?php echo $lang['eq_btn_details'] ?? ($current_lang === 'vi' ? 'Chi Tiết' : 'Details'); ?>
+                                            </button>
+
+                                            <!-- Delete Equipment -->
+                                            <a href="/Gym Manager/dashboards/manager.php?page=equipment&delete_equipment=<?php echo $eq['id']; ?>" class="action-btn btn-delete" onclick="return confirmLinkCustom(event, this, '<?php echo $current_lang === 'vi' ? 'Bạn có chắc chắn muốn XÓA thiết bị này khỏi hệ thống?' : 'Are you sure you want to DELETE this equipment?'; ?>', '<?php echo $current_lang === 'vi' ? 'Xóa Thiết Bị' : 'Delete Equipment'; ?>', '🗑️');" title="<?php echo $current_lang === 'vi' ? 'Xóa thiết bị' : 'Delete Equipment'; ?>" style="width: 32px; height: 32px; border-radius: 10px; display: inline-flex; align-items: center; justify-content: center;">
+                                                <i class="fas fa-trash-alt" style="font-size: 0.8rem;"></i>
+                                            </a>
+                                        </div>
+                                    </td>
+                                </tr>
+                                <?php endforeach; ?>
+                                
+                                <!-- Empty row state -->
+                                <tr id="eqEmptyRow" style="<?php echo empty($all_equipment) ? '' : 'display:none;'; ?>">
+                                    <td colspan="6" style="text-align:center; padding: 3rem 1rem; color: var(--text-muted); background: white; border-radius: 16px;">
+                                        <i class="fas fa-search" style="font-size: 2.2rem; color: #cbd5e1; margin-bottom: 0.8rem; display: block;"></i>
+                                        <div style="font-weight: 700; font-size: 1.05rem; color: var(--text-main);">
+                                            <?php echo $current_lang === 'vi' ? 'Không tìm thấy thiết bị phù hợp' : 'No matching equipment found'; ?>
+                                        </div>
+                                        <div style="font-size: 0.88rem; color: var(--text-muted); margin-top: 4px;">
+                                            <?php echo $current_lang === 'vi' ? 'Vui lòng kiểm tra lại từ khóa tìm kiếm hoặc các tiêu chí bộ lọc.' : 'Please try adjusting your search terms or filter criteria.'; ?>
+                                        </div>
+                                    </td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+
+                <!-- ==================== PANE 2: TAB RIÊNG - CHI TIẾT & BẢO HÀNH (DETAILS) ==================== -->
+                <div id="eq-pane-details" style="<?php echo $initial_tab === 'details' ? '' : 'display:none;'; ?>">
+                    <?php
+                        $sel_warranty_dt = !empty($selected_eq['warranty_expiry_date']) ? new DateTime($selected_eq['warranty_expiry_date']) : null;
+                        $sel_maint_dt = !empty($selected_eq['next_maintenance_date']) ? new DateTime($selected_eq['next_maintenance_date']) : null;
+                        
+                        $sel_warranty_badge_html = '';
+                        if ($sel_warranty_dt) {
+                            if ($sel_warranty_dt >= $today_dt) {
+                                $diff_w = $today_dt->diff($sel_warranty_dt)->days;
+                                $sel_warranty_badge_html = '<span style="background: #dcfce7; color: #15803d; border: 1px solid #bbf7d0; padding: 3px 8px; border-radius: 6px; font-weight: 700; font-size: 0.75rem; display: inline-flex; align-items: center; gap: 5px;"><i class="fas fa-shield-alt"></i> ' . ($current_lang === 'vi' ? "Còn hạn: {$diff_w} ngày" : "Valid: {$diff_w}d left") . '</span>';
+                            } else {
+                                $sel_warranty_badge_html = '<span style="background: #f1f5f9; color: #64748b; border: 1px solid #e2e8f0; padding: 3px 8px; border-radius: 6px; font-weight: 700; font-size: 0.75rem;"><i class="fas fa-history"></i> ' . ($current_lang === 'vi' ? 'Hết hạn bảo hành' : 'Warranty Expired') . '</span>';
+                            }
+                        } else {
+                            $sel_warranty_badge_html = '<span style="color: #94a3b8; font-size: 0.75rem;">N/A</span>';
+                        }
+
+                        $sel_maint_badge_html = '';
+                        if (($selected_eq['status'] ?? '') === 'maintenance') {
+                            $sel_maint_badge_html = '<span style="background: #fef3c7; color: #b45309; border: 1px solid #fde68a; padding: 3px 8px; border-radius: 6px; font-weight: 800; font-size: 0.75rem; display: inline-flex; align-items: center; gap: 5px;"><i class="fas fa-tools"></i> ' . ($current_lang === 'vi' ? 'Đang sửa chữa' : 'In repair') . '</span>';
+                        } elseif ($sel_maint_dt) {
+                            $diff_m = $today_dt->diff($sel_maint_dt)->days;
+                            if ($sel_maint_dt < $today_dt) {
+                                $sel_maint_badge_html = '<span style="background: #fee2e2; color: #b91c1c; border: 1px solid #fecaca; padding: 3px 8px; border-radius: 6px; font-weight: 800; font-size: 0.75rem; display: inline-flex; align-items: center; gap: 5px;"><i class="fas fa-exclamation-triangle"></i> ' . ($current_lang === 'vi' ? "Quá hạn {$diff_m} ngày" : "Overdue {$diff_m}d") . '</span>';
+                            } elseif ($diff_m <= 15) {
+                                $sel_maint_badge_html = '<span style="background: #fffbeb; color: #d97706; border: 1px solid #fef3c7; padding: 3px 8px; border-radius: 6px; font-weight: 800; font-size: 0.75rem; display: inline-flex; align-items: center; gap: 5px;"><i class="fas fa-clock"></i> ' . ($current_lang === 'vi' ? "Sắp tới hạn ({$diff_m} ngày)" : "Due in {$diff_m}d") . '</span>';
+                            } else {
+                                $sel_maint_badge_html = '<span style="background: #f0fdf4; color: #16a34a; border: 1px solid #dcfce7; padding: 3px 8px; border-radius: 6px; font-weight: 700; font-size: 0.75rem; display: inline-flex; align-items: center; gap: 5px;"><i class="fas fa-check-circle"></i> ' . ($current_lang === 'vi' ? 'Đúng định kỳ' : 'On schedule') . '</span>';
+                            }
+                        } else {
+                            $sel_maint_badge_html = '<span style="color: #94a3b8; font-size: 0.75rem;">N/A</span>';
+                        }
+                    ?>
+
+                    <!-- Top control row: Back button, Quick switcher, Subview switchers -->
+                    <div style="background: white; padding: 0.9rem 1.4rem; border-radius: 16px; box-shadow: var(--shadow-premium); border: 1px solid var(--border); margin-bottom: 1.5rem; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 1rem;">
+                        <button type="button" onclick="switchEquipmentTab('overview')" style="background: #f1f5f9; color: var(--text-muted); border: 1.5px solid var(--border); padding: 0.65rem 1.2rem; border-radius: 10px; font-weight: 700; font-size: 0.88rem; cursor: pointer; display: inline-flex; align-items: center; gap: 8px; transition: all 0.2s;" onmouseover="this.style.background='#e2e8f0'" onmouseout="this.style.background='#f1f5f9'">
+                            <i class="fas fa-arrow-left"></i> <?php echo $lang['eq_back_to_overview'] ?? ($current_lang === 'vi' ? 'Quay lại Bảng' : 'Back to Table'); ?>
+                        </button>
+
+                        <div style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
+                            <label style="font-weight: 700; font-size: 0.84rem; color: var(--text-muted);">
+                                <i class="fas fa-random" style="color: var(--primary);"></i> <?php echo $current_lang === 'vi' ? 'Chọn máy:' : 'Select eq:'; ?>
+                            </label>
+                            <select id="detailsEquipmentSelector" onchange="openEquipmentDetailsTab(this.value)" style="padding: 0.6rem 0.9rem; border-radius: 10px; border: 1.5px solid var(--border); font-weight: 700; background: #f8fafc; font-size: 0.86rem; outline: none; min-width: 220px;">
+                                <?php foreach($all_equipment as $item): ?>
+                                    <option value="<?php echo $item['id']; ?>" <?php echo ($selected_eq && $selected_eq['id'] == $item['id']) ? 'selected' : ''; ?>>
+                                        #<?php echo $item['id']; ?> - <?php echo htmlspecialchars($item['name']); ?> (<?php echo strtoupper($item['discipline']); ?>)
+                                    </option>
+                                <?php endforeach; ?>
+                            </select>
+                        </div>
+
+                        <!-- Mode Switch Buttons -->
+                        <div style="display: flex; gap: 6px; background: #f1f5f9; padding: 4px; border-radius: 10px; border: 1px solid var(--border);">
+                            <button type="button" id="btn-mode-report" onclick="toggleDetailsSubMode('report')" style="padding: 0.5rem 1rem; border-radius: 8px; border: none; font-weight: 800; font-size: 0.82rem; cursor: pointer; display: inline-flex; align-items: center; gap: 6px; background: var(--primary); color: white; transition: all 0.2s;">
+                                <i class="fas fa-camera"></i> <?php echo $current_lang === 'vi' ? 'Phiếu Chụp Word' : 'Word Report View'; ?>
+                            </button>
+                            <button type="button" id="btn-mode-edit" onclick="toggleDetailsSubMode('edit')" style="padding: 0.5rem 1rem; border-radius: 8px; border: none; font-weight: 700; font-size: 0.82rem; cursor: pointer; display: inline-flex; align-items: center; gap: 6px; background: transparent; color: var(--text-muted); transition: all 0.2s;">
+                                <i class="fas fa-edit"></i> <?php echo $current_lang === 'vi' ? 'Chỉnh Sửa' : 'Edit Mode'; ?>
+                            </button>
+                        </div>
+                    </div>
+
+                    <!-- 1. WORD SCREENSHOT CARD: PHIẾU THÔNG TIN BẢO HÀNH & BẢO TRÌ (GỌN GÀNG, VỪA VẶN 1 MÀN HÌNH ĐỂ CHỤP WORD) -->
+                    <div id="eq-subview-report" style="max-width: 840px; margin: 0 auto; background: #ffffff; border: 2px solid #334155; border-radius: 16px; padding: 1.8rem 2.2rem; box-shadow: 0 10px 30px rgba(0,0,0,0.08); font-family: inherit;">
+                        
+                        <!-- Official Sheet Header -->
+                        <div style="display: flex; justify-content: space-between; align-items: flex-start; padding-bottom: 0.9rem; border-bottom: 2px solid #0f172a; margin-bottom: 1.2rem;">
+                            <div>
+                                <div style="font-size: 0.78rem; font-weight: 800; letter-spacing: 1.5px; color: #2563eb; text-transform: uppercase;">
+                                    GYM MASTER FITNESS & MANAGEMENT
+                                </div>
+                                <h3 style="margin: 4px 0 0 0; font-size: 1.32rem; font-weight: 800; color: #0f172a; letter-spacing: -0.5px;">
+                                    <?php echo $current_lang === 'vi' ? 'PHIẾU QUẢN LÝ BẢO HÀNH & BẢO TRÌ THIẾT BỊ' : 'EQUIPMENT WARRANTY & MAINTENANCE RECORD'; ?>
+                                </h3>
+                                <div style="font-size: 0.78rem; color: #64748b; margin-top: 3px;">
+                                    <?php echo $current_lang === 'vi' ? 'Hồ sơ kỹ thuật thiết bị phòng tập' : 'Gym Equipment Specification & Maintenance Sheet'; ?>
+                                </div>
+                            </div>
+                            <div style="text-align: right;">
+                                <span id="rc_id_badge" style="background: #eff6ff; color: #1d4ed8; border: 1.5px solid #bfdbfe; padding: 4px 14px; border-radius: 8px; font-weight: 800; font-size: 0.95rem; display: inline-block;">
+                                    #<?php echo $selected_eq['id'] ?? '0'; ?>
+                                </span>
+                                <div style="font-size: 0.78rem; color: #64748b; margin-top: 5px;">
+                                    <?php echo $current_lang === 'vi' ? 'Ngày xem:' : 'Date:'; ?> <strong><?php echo date('d/m/Y'); ?></strong>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Equipment Identity Bar -->
+                        <div style="display: flex; align-items: center; gap: 1.4rem; background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 14px; padding: 1rem 1.4rem; margin-bottom: 1.2rem;">
+                            <img id="rc_img" src="<?php echo htmlspecialchars($selected_eq['image'] ?? '/Gym Manager/assets/img/equipment/treadmills.png'); ?>" style="width: 80px; height: 80px; object-fit: cover; border-radius: 12px; border: 1.5px solid #cbd5e1; background: white;">
+                            <div style="flex: 1;">
+                                <div style="display: flex; gap: 8px; align-items: center; margin-bottom: 6px; flex-wrap: wrap;">
+                                    <span id="rc_disc_badge" style="font-weight: 800; font-size: 0.75rem; padding: 3px 10px; border-radius: 6px; background: #eff6ff; color: #1d4ed8; text-transform: uppercase;">
+                                        <?php 
+                                            $d = $selected_eq['discipline'] ?? 'gym';
+                                            echo ($d === 'gym' ? '🏋️ GYM' : ($d === 'muay' ? '🥊 MUAY THAI' : '🧘 YOGA'));
+                                        ?>
+                                    </span>
+                                    <span id="rc_status_badge" style="font-weight: 800; font-size: 0.75rem; padding: 3px 10px; border-radius: 6px; background: #dcfce7; color: #15803d; text-transform: uppercase;">
+                                        <?php 
+                                            $st = $selected_eq['status'] ?? 'active';
+                                            echo ($st === 'active' ? '🟢 ' . ($current_lang === 'vi' ? 'HOẠT ĐỘNG' : 'ACTIVE') : ($st === 'maintenance' ? '🟡 ' . ($current_lang === 'vi' ? 'BẢO TRÌ' : 'MAINTENANCE') : '🔴 ' . ($current_lang === 'vi' ? 'NGƯNG DÙNG' : 'RETIRED')));
+                                        ?>
+                                    </span>
+                                </div>
+                                <h4 id="rc_name" style="margin: 0; font-size: 1.25rem; font-weight: 800; color: #0f172a;">
+                                    <?php echo htmlspecialchars($selected_eq['name'] ?? ''); ?>
+                                </h4>
+                            </div>
+                        </div>
+
+                        <!-- 4 Core Parameters (Lưới 4 thông số cốt lõi) -->
+                        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; margin-bottom: 1.2rem;">
+                            <!-- 1. Thời Gian Mua -->
+                            <div style="border: 1px solid #e2e8f0; border-radius: 12px; padding: 0.9rem 1.1rem; background: #ffffff;">
+                                <div style="font-size: 0.75rem; font-weight: 800; color: #64748b; text-transform: uppercase; margin-bottom: 4px; display: flex; align-items: center; gap: 6px;">
+                                    <i class="fas fa-calendar-alt" style="color: #2563eb;"></i> <?php echo $current_lang === 'vi' ? 'Thời Gian Mua Máy' : 'Purchase Date'; ?>
+                                </div>
+                                <div id="rc_purchase_date" style="font-size: 1.15rem; font-weight: 800; color: #0f172a;">
+                                    <?php echo !empty($selected_eq['purchase_date']) ? date('d/m/Y', strtotime($selected_eq['purchase_date'])) : 'N/A'; ?>
+                                </div>
+                                <div style="font-size: 0.78rem; color: #64748b; margin-top: 3px;">
+                                    <?php echo $current_lang === 'vi' ? 'Ngày ghi nhận nhập kho' : 'Inventory entry date'; ?>
+                                </div>
+                            </div>
+
+                            <!-- 2. Bảo Hành Chính Hãng -->
+                            <div style="border: 1px solid #e2e8f0; border-radius: 12px; padding: 0.9rem 1.1rem; background: #ffffff;">
+                                <div style="font-size: 0.75rem; font-weight: 800; color: #64748b; text-transform: uppercase; margin-bottom: 4px; display: flex; align-items: center; gap: 6px;">
+                                    <i class="fas fa-shield-alt" style="color: #16a34a;"></i> <?php echo $current_lang === 'vi' ? 'Bảo Hành Chính Hãng' : 'Warranty Status'; ?>
+                                </div>
+                                <div style="display: flex; align-items: baseline; gap: 8px;">
+                                    <span id="rc_warranty_period" style="font-size: 1.15rem; font-weight: 800; color: #0f172a;">
+                                        <?php echo intval($selected_eq['warranty_months'] ?? 12); ?> <?php echo $current_lang === 'vi' ? 'Tháng' : 'Months'; ?>
+                                    </span>
+                                    <span style="font-size: 0.82rem; color: #64748b;">(HSD: <strong id="rc_warranty_expiry"><?php echo !empty($selected_eq['warranty_expiry_date']) ? date('d/m/Y', strtotime($selected_eq['warranty_expiry_date'])) : 'N/A'; ?></strong>)</span>
+                                </div>
+                                <div id="rc_warranty_badge_container" style="margin-top: 5px;">
+                                    <?php echo $sel_warranty_badge_html; ?>
+                                </div>
+                            </div>
+
+                            <!-- 3. Dự Kiến Ngày Bảo Trì -->
+                            <div style="border: 1px solid #e2e8f0; border-radius: 12px; padding: 0.9rem 1.1rem; background: #ffffff;">
+                                <div style="font-size: 0.75rem; font-weight: 800; color: #64748b; text-transform: uppercase; margin-bottom: 4px; display: flex; align-items: center; gap: 6px;">
+                                    <i class="fas fa-tools" style="color: #d97706;"></i> <?php echo $current_lang === 'vi' ? 'Dự Kiến Ngày Bảo Trì' : 'Scheduled Maintenance'; ?>
+                                </div>
+                                <div id="rc_next_maintenance" style="font-size: 1.15rem; font-weight: 800; color: #0f172a;">
+                                    <?php echo !empty($selected_eq['next_maintenance_date']) ? date('d/m/Y', strtotime($selected_eq['next_maintenance_date'])) : 'N/A'; ?>
+                                </div>
+                                <div id="rc_maint_badge_container" style="margin-top: 5px;">
+                                    <?php echo $sel_maint_badge_html; ?>
+                                </div>
+                            </div>
+
+                            <!-- 4. Tình Trạng Thiết Bị -->
+                            <div style="border: 1px solid #e2e8f0; border-radius: 12px; padding: 0.9rem 1.1rem; background: #ffffff;">
+                                <div style="font-size: 0.75rem; font-weight: 800; color: #64748b; text-transform: uppercase; margin-bottom: 4px; display: flex; align-items: center; gap: 6px;">
+                                    <i class="fas fa-heartbeat" style="color: #e11d48;"></i> <?php echo $current_lang === 'vi' ? 'Tình Trạng Vận Hành' : 'Operation Condition'; ?>
+                                </div>
+                                <div id="rc_op_status" style="font-size: 1.15rem; font-weight: 800; color: #0f172a;">
+                                    <?php 
+                                    echo ($selected_eq['status'] ?? 'active') === 'active' 
+                                        ? '<span style="color: #16a34a;">🟢 ' . ($current_lang === 'vi' ? 'Sẵn Sàng Phục Vụ' : 'Operational') . '</span>' 
+                                        : (($selected_eq['status'] ?? '') === 'maintenance' 
+                                            ? '<span style="color: #d97706;">🟡 ' . ($current_lang === 'vi' ? 'Đang Sửa Chữa / Bảo Trì' : 'In Repair') . '</span>' 
+                                            : '<span style="color: #ef4444;">🔴 ' . ($current_lang === 'vi' ? 'Ngưng Sử Dụng' : 'Out of Order') . '</span>');
+                                    ?>
+                                </div>
+                                <div style="font-size: 0.78rem; color: #64748b; margin-top: 3px;">
+                                    <?php echo $current_lang === 'vi' ? 'Kiểm tra kỹ thuật định kỳ tại sàn tập' : 'Inspected periodically at gym floor'; ?>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Technical Notes (Note) -->
+                        <div style="border: 1px solid #cbd5e1; border-radius: 12px; padding: 1rem 1.2rem; background: #f8fafc; margin-bottom: 1.2rem;">
+                            <div style="font-size: 0.8rem; font-weight: 800; color: #334155; text-transform: uppercase; margin-bottom: 6px; display: flex; align-items: center; gap: 6px;">
+                                <i class="fas fa-clipboard-list" style="color: #2563eb;"></i> <?php echo $current_lang === 'vi' ? 'Ghi Chú Kỹ Thuật, Số Serial & Phụ Tùng (Note):' : 'Technical Notes, Serial & Spare Parts:'; ?>
+                            </div>
+                            <div id="rc_notes_content" style="font-size: 0.92rem; color: #1e293b; line-height: 1.6; white-space: pre-wrap; font-family: inherit; min-height: 48px;">
+                                <?php echo !empty($selected_eq['notes']) ? htmlspecialchars($selected_eq['notes']) : ($current_lang === 'vi' ? 'Chưa có ghi chú kỹ thuật cho thiết bị này.' : 'No notes recorded.'); ?>
+                            </div>
+                        </div>
+
+                        <!-- Verification Footer -->
+                        <div style="display: flex; justify-content: space-between; align-items: center; padding-top: 0.8rem; border-top: 1px dashed #cbd5e1; font-size: 0.76rem; color: #64748b;">
+                            <div>
+                                <i class="fas fa-check-circle" style="color: #16a34a;"></i> <?php echo $current_lang === 'vi' ? 'Xác nhận kiểm tra bởi Quản lý Thiết Bị' : 'Verified by Equipment Manager'; ?>
+                            </div>
+                            <div style="font-weight: 600; font-style: italic;">
+                                Gym Manager System &bull; <?php echo date('Y'); ?>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Action Bar beneath the Word Report Card (Outside screenshot area) -->
+                    <div style="max-width: 840px; margin: 1.2rem auto 0 auto; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px;">
+                        <div style="display: flex; gap: 8px; flex-wrap: wrap;">
+                            <button type="button" onclick="toggleDetailsSubMode('edit')" style="background: var(--primary); color: white; border: none; padding: 0.75rem 1.4rem; border-radius: 12px; font-weight: 800; font-size: 0.88rem; cursor: pointer; display: inline-flex; align-items: center; gap: 8px; box-shadow: 0 4px 14px rgba(37,99,235,0.25);">
+                                <i class="fas fa-edit"></i> <?php echo $current_lang === 'vi' ? 'Chỉnh Sửa Thông Tin & Note' : 'Edit Info & Notes'; ?>
+                            </button>
+                            <button type="button" onclick="openMaintenanceModalFromDetails()" style="background: #16a34a; color: white; border: none; padding: 0.75rem 1.4rem; border-radius: 12px; font-weight: 800; font-size: 0.88rem; cursor: pointer; display: inline-flex; align-items: center; gap: 8px; box-shadow: 0 4px 14px rgba(22,163,74,0.25);">
+                                <i class="fas fa-wrench"></i> <?php echo $current_lang === 'vi' ? 'Ghi Nhận Bảo Trì Hôm Nay' : 'Log Maintenance Today'; ?>
+                            </button>
+                        </div>
+                        <div>
+                            <button type="button" onclick="switchEquipmentTab('overview')" style="background: #f1f5f9; color: var(--text-muted); border: 1.5px solid var(--border); padding: 0.75rem 1.4rem; border-radius: 12px; font-weight: 700; font-size: 0.88rem; cursor: pointer;">
+                                <i class="fas fa-arrow-left"></i> <?php echo $current_lang === 'vi' ? 'Quay Lại Bảng' : 'Back to Table'; ?>
+                            </button>
+                        </div>
+                    </div>
+
+                    <!-- 2. EDIT VIEW (FORM CHỈNH SỬA GỌN NHẸ CHỈ VỚI NHỮNG TRƯỜNG QUAN TRỌNG) -->
+                    <div id="eq-subview-edit" style="display: none; max-width: 840px; margin: 0 auto; background: white; border-radius: 18px; padding: 2rem; border: 1px solid var(--border); box-shadow: var(--shadow-premium);">
+                        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.4rem; border-bottom: 1px solid var(--border); padding-bottom: 0.8rem;">
+                            <h4 style="margin: 0; font-size: 1.2rem; font-weight: 800; color: var(--primary); display: flex; align-items: center; gap: 8px;">
+                                <i class="fas fa-edit"></i> <?php echo $current_lang === 'vi' ? 'Chỉnh Sửa Bảo Hành, Bảo Trì & Ghi Chú' : 'Edit Warranty, Maintenance & Notes'; ?>
+                            </h4>
+                            <button type="button" onclick="toggleDetailsSubMode('report')" style="background: none; border: none; color: var(--text-muted); font-weight: 700; cursor: pointer; font-size: 0.95rem;">
+                                <i class="fas fa-times"></i> <?php echo $current_lang === 'vi' ? 'Hủy' : 'Cancel'; ?>
+                            </button>
+                        </div>
+
+                        <form method="POST" id="detailsEquipmentForm" enctype="multipart/form-data">
+                            <input type="hidden" name="equipment_id" id="det_eq_id" value="<?php echo $selected_eq['id'] ?? '0'; ?>">
+                            <input type="hidden" name="description" id="det_description" value="<?php echo htmlspecialchars($selected_eq['description'] ?? ''); ?>">
+                            <input type="hidden" name="custom_image_url" id="det_custom_image_url" value="<?php echo htmlspecialchars($selected_eq['image'] ?? ''); ?>">
+
+                            <!-- Row 1: Name, Discipline, Status -->
+                            <div style="display: grid; grid-template-columns: 2fr 1fr 1fr; gap: 1rem; margin-bottom: 1.2rem;">
+                                <div>
+                                    <label style="font-weight: 700; font-size: 0.85rem; margin-bottom: 0.35rem; display: block;">
+                                        <?php echo $current_lang === 'vi' ? 'Tên Thiết Bị' : 'Equipment Name'; ?>
+                                    </label>
+                                    <input type="text" name="name" id="det_name" value="<?php echo htmlspecialchars($selected_eq['name'] ?? ''); ?>" required style="width: 100%; padding: 0.75rem 0.9rem; border-radius: 10px; border: 1.5px solid var(--border); font-weight: 700;">
+                                </div>
+                                <div>
+                                    <label style="font-weight: 700; font-size: 0.85rem; margin-bottom: 0.35rem; display: block;">
+                                        <?php echo $current_lang === 'vi' ? 'Bộ Môn' : 'Discipline'; ?>
+                                    </label>
+                                    <select name="discipline" id="det_discipline" style="width: 100%; padding: 0.75rem 0.9rem; border-radius: 10px; border: 1.5px solid var(--border); font-weight: 700; background: #f8fafc;">
+                                        <option value="gym" <?php echo ($selected_eq['discipline'] ?? '') == 'gym' ? 'selected' : ''; ?>>🏋️ Gym</option>
+                                        <option value="muay" <?php echo ($selected_eq['discipline'] ?? '') == 'muay' ? 'selected' : ''; ?>>🥊 Muay</option>
+                                        <option value="yoga" <?php echo ($selected_eq['discipline'] ?? '') == 'yoga' ? 'selected' : ''; ?>>🧘 Yoga</option>
+                                    </select>
+                                </div>
+                                <div>
+                                    <label style="font-weight: 700; font-size: 0.85rem; margin-bottom: 0.35rem; display: block;">
+                                        <?php echo $current_lang === 'vi' ? 'Trạng Thái' : 'Status'; ?>
+                                    </label>
+                                    <select name="status" id="det_status" style="width: 100%; padding: 0.75rem 0.9rem; border-radius: 10px; border: 1.5px solid var(--border); font-weight: 700; background: #f8fafc;">
+                                        <option value="active" <?php echo ($selected_eq['status'] ?? '') == 'active' ? 'selected' : ''; ?>>🟢 <?php echo $current_lang === 'vi' ? 'Hoạt Động' : 'Active'; ?></option>
+                                        <option value="maintenance" <?php echo ($selected_eq['status'] ?? '') == 'maintenance' ? 'selected' : ''; ?>>🟡 <?php echo $current_lang === 'vi' ? 'Bảo Trì' : 'Maintenance'; ?></option>
+                                        <option value="retired" <?php echo ($selected_eq['status'] ?? '') == 'retired' ? 'selected' : ''; ?>>🔴 <?php echo $current_lang === 'vi' ? 'Ngưng Dùng' : 'Retired'; ?></option>
+                                    </select>
+                                </div>
+                            </div>
+
+                            <!-- Row 2: Purchase, Warranty, Maintenance Dates -->
+                            <div style="background: #f8fafc; border: 1px solid var(--border); border-radius: 14px; padding: 1.2rem; margin-bottom: 1.2rem;">
+                                <div style="font-weight: 800; font-size: 0.85rem; color: var(--primary); margin-bottom: 0.8rem; text-transform: uppercase;">
+                                    <i class="fas fa-calendar-alt"></i> <?php echo $current_lang === 'vi' ? 'Thông Tin Bảo Hành & Lịch Bảo Trì' : 'Warranty & Maintenance Schedule'; ?>
+                                </div>
+                                <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 1rem;">
+                                    <div>
+                                        <label style="font-weight: 700; font-size: 0.82rem; margin-bottom: 0.3rem; display: block;">
+                                            <?php echo $current_lang === 'vi' ? 'Ngày Mua Máy' : 'Purchase Date'; ?>
+                                        </label>
+                                        <input type="date" name="purchase_date" id="det_purchase_date" value="<?php echo htmlspecialchars($selected_eq['purchase_date'] ?? date('Y-m-d')); ?>" onchange="calcWarrantyDates('detailsEquipmentForm')" style="width: 100%; padding: 0.75rem; border-radius: 10px; border: 1.5px solid var(--border); background: white;">
+                                    </div>
+                                    <div>
+                                        <label style="font-weight: 700; font-size: 0.82rem; margin-bottom: 0.3rem; display: block;">
+                                            <?php echo $current_lang === 'vi' ? 'Thời Hạn BH' : 'Warranty Period'; ?>
+                                        </label>
+                                        <select name="warranty_months" id="det_warranty_months" onchange="calcWarrantyDates('detailsEquipmentForm')" style="width: 100%; padding: 0.75rem; border-radius: 10px; border: 1.5px solid var(--border); background: white; font-weight: 600;">
+                                            <?php foreach([3, 6, 12, 18, 24, 36, 48, 60] as $m_cnt): ?>
+                                                <option value="<?php echo $m_cnt; ?>" <?php echo intval($selected_eq['warranty_months'] ?? 12) === $m_cnt ? 'selected' : ''; ?>>
+                                                    <?php echo $m_cnt; ?> <?php echo $current_lang === 'vi' ? 'tháng' : 'months'; ?>
+                                                </option>
+                                            <?php endforeach; ?>
+                                        </select>
+                                    </div>
+                                    <div>
+                                        <label style="font-weight: 700; font-size: 0.82rem; margin-bottom: 0.3rem; display: block;">
+                                            <?php echo $current_lang === 'vi' ? 'Ngày Hết Hạn BH' : 'Expiry Date'; ?>
+                                        </label>
+                                        <input type="date" name="warranty_expiry_date" id="det_warranty_expiry_date" value="<?php echo htmlspecialchars($selected_eq['warranty_expiry_date'] ?? ''); ?>" style="width: 100%; padding: 0.75rem; border-radius: 10px; border: 1.5px solid var(--border); background: white;">
+                                    </div>
+                                    <div>
+                                        <label style="font-weight: 700; font-size: 0.82rem; margin-bottom: 0.3rem; display: block;">
+                                            <?php echo $current_lang === 'vi' ? 'Dự Kiến Bảo Trì' : 'Next Maintenance'; ?>
+                                        </label>
+                                        <input type="date" name="next_maintenance_date" id="det_next_maintenance_date" value="<?php echo htmlspecialchars($selected_eq['next_maintenance_date'] ?? ''); ?>" style="width: 100%; padding: 0.75rem; border-radius: 10px; border: 1.5px solid var(--border); background: white;">
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- Row 3: Technical Notes -->
+                            <div style="margin-bottom: 1.4rem;">
+                                <label style="font-weight: 700; font-size: 0.85rem; margin-bottom: 0.35rem; display: block;">
+                                    <?php echo $current_lang === 'vi' ? 'Ghi Chú Kỹ Thuật, Số Serial & Phụ Tùng (Note)' : 'Technical Notes & Spare Parts (Note)'; ?>
+                                </label>
+                                <textarea name="notes" id="det_notes" rows="4" placeholder="<?php echo $current_lang === 'vi' ? 'Nhập ghi chú kỹ thuật, serial, lưu ý bảo dưỡng...' : 'Enter technical notes, serial number, maintenance notes...'; ?>" style="width: 100%; padding: 0.85rem 1rem; border-radius: 12px; border: 1.5px solid var(--border); font-family: inherit; font-size: 0.9rem; line-height: 1.5; outline: none;"><?php echo htmlspecialchars($selected_eq['notes'] ?? ''); ?></textarea>
+                            </div>
+
+                            <!-- Save button bar -->
+                            <div style="display: flex; gap: 10px; align-items: center;">
+                                <button type="submit" name="update_equipment" style="background: var(--primary); color: white; border: none; padding: 0.85rem 2rem; border-radius: 12px; font-weight: 800; font-size: 0.95rem; cursor: pointer; display: inline-flex; align-items: center; gap: 8px; box-shadow: 0 4px 15px rgba(37,99,235,0.3);">
+                                    <i class="fas fa-save"></i> <?php echo $current_lang === 'vi' ? 'Lưu Thay Đổi' : 'Save Changes'; ?>
+                                </button>
+                                <button type="button" onclick="toggleDetailsSubMode('report')" style="background: #f1f5f9; color: var(--text-muted); border: 1.5px solid var(--border); padding: 0.85rem 1.5rem; border-radius: 12px; font-weight: 700; font-size: 0.9rem; cursor: pointer;">
+                                    <?php echo $current_lang === 'vi' ? 'Hủy' : 'Cancel'; ?>
+                                </button>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+
+                <!-- ==================== PANE 3: THÊM THIẾT BỊ MỚI (ADD) ==================== -->
+                <div id="eq-pane-add" style="<?php echo $initial_tab === 'add' ? '' : 'display:none;'; ?>">
+                    <form method="POST" id="addEquipmentForm" enctype="multipart/form-data" style="background: white; padding: 2.2rem; border-radius: 24px; margin-bottom: 2.5rem; box-shadow: var(--shadow-premium); border: 1px solid var(--border);">
+                        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.5rem; border-bottom: 1px solid var(--border); padding-bottom: 1rem;">
+                            <h3 style="margin: 0; color: var(--primary); font-size: 1.3rem; display: flex; align-items: center; gap: 10px;">
+                                <i class="fas fa-plus-circle"></i> <?php echo $lang['eq_add_title'] ?? ($current_lang === 'vi' ? 'Thêm Thiết Bị Mới Vào Hệ Thống' : 'Add New Equipment'); ?>
+                            </h3>
+                            <button type="button" onclick="switchEquipmentTab('overview')" style="background: none; border: none; color: var(--text-muted); font-weight: 700; cursor: pointer;">
+                                <i class="fas fa-times"></i> <?php echo $current_lang === 'vi' ? 'Đóng' : 'Close'; ?>
+                            </button>
+                        </div>
+                        
+                        <!-- Row 1: Basic Information -->
+                        <div style="display: grid; grid-template-columns: 2fr 1fr 1fr; gap: 1.2rem; margin-bottom: 1.2rem;">
+                            <div class="form-group" style="margin-bottom: 0;">
+                                <label style="font-weight: 700; font-size: 0.9rem; margin-bottom: 0.4rem; display: block; color: var(--text-main);">
+                                    <?php echo $current_lang === 'vi' ? 'Tên Thiết Bị' : 'Equipment Name'; ?> <span style="color: #ef4444;">*</span>
+                                </label>
+                                <input type="text" name="name" required placeholder="<?php echo $current_lang === 'vi' ? 'Ví dụ: Máy Chạy Bộ Matrix T70, Ghế Đẩy Tạ Impulse...' : 'e.g. Matrix T70 Treadmill, Impulse Bench Press...'; ?>" style="padding: 0.9rem 1.1rem; border-radius: 14px; border: 1.5px solid var(--border); width: 100%; outline: none; font-size: 0.95rem;">
+                            </div>
+                            <div class="form-group" style="margin-bottom: 0;">
+                                <label style="font-weight: 700; font-size: 0.9rem; margin-bottom: 0.4rem; display: block; color: var(--text-main);">
+                                    <?php echo $current_lang === 'vi' ? 'Bộ Môn / Phân Loại' : 'Discipline'; ?> <span style="color: #ef4444;">*</span>
+                                </label>
+                                <select name="discipline" required style="padding: 0.9rem 1.1rem; border-radius: 14px; background: #f8fafc; border: 1.5px solid var(--border); width: 100%; outline: none; font-weight: 600;">
+                                    <option value="gym">🏋️‍♂️ Gym Fitness</option>
+                                    <option value="muay">🥊 Muay Thai / Boxing</option>
+                                    <option value="yoga">🧘‍♀️ Yoga & Pilates</option>
+                                </select>
+                            </div>
+                            <div class="form-group" style="margin-bottom: 0;">
+                                <label style="font-weight: 700; font-size: 0.9rem; margin-bottom: 0.4rem; display: block; color: var(--text-main);">
+                                    <?php echo $current_lang === 'vi' ? 'Trạng Thái Máy' : 'Status'; ?> <span style="color: #ef4444;">*</span>
+                                </label>
+                                <select name="status" required style="padding: 0.9rem 1.1rem; border-radius: 14px; background: #f8fafc; border: 1.5px solid var(--border); width: 100%; outline: none; font-weight: 600;">
+                                    <option value="active">🟢 <?php echo $current_lang === 'vi' ? 'Hoạt Động Tốt' : 'Active'; ?></option>
+                                    <option value="maintenance">🟡 <?php echo $current_lang === 'vi' ? 'Đang Bảo Trì' : 'Under Maintenance'; ?></option>
+                                    <option value="retired">🔴 <?php echo $current_lang === 'vi' ? 'Ngưng Sử Dụng' : 'Retired'; ?></option>
+                                </select>
+                            </div>
+                        </div>
+
+                        <!-- Row 2: Purchase, Warranty & Maintenance Dates -->
+                        <div style="background: #f8fafc; padding: 1.4rem; border-radius: 18px; border: 1px solid var(--border); margin-bottom: 1.2rem;">
+                            <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 1rem; color: var(--primary); font-weight: 700; font-size: 0.95rem;">
+                                <i class="fas fa-calendar-alt"></i>
+                                <?php echo $current_lang === 'vi' ? 'Thời Gian Mua, Hạn Bảo Hành & Lịch Bảo Trì Dự Kiến' : 'Purchase, Warranty & Scheduled Maintenance'; ?>
+                            </div>
+                            <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap: 1.2rem;">
+                                <div class="form-group" style="margin-bottom: 0;">
+                                    <label style="font-weight: 700; font-size: 0.85rem; margin-bottom: 0.35rem; display: block; color: var(--text-main);">
+                                        <?php echo $lang['eq_purchase_date_label'] ?? ($current_lang === 'vi' ? 'Thời Gian Mua' : 'Purchase Date'); ?>
+                                    </label>
+                                    <input type="date" name="purchase_date" id="add_purchase_date" value="<?php echo date('Y-m-d'); ?>" onchange="calcWarrantyDates('addEquipmentForm')" style="padding: 0.85rem 1rem; border-radius: 12px; border: 1.5px solid var(--border); width: 100%; outline: none; background: white;">
+                                </div>
+                                <div class="form-group" style="margin-bottom: 0;">
+                                    <label style="font-weight: 700; font-size: 0.85rem; margin-bottom: 0.35rem; display: block; color: var(--text-main);">
+                                        <?php echo $lang['eq_warranty_months'] ?? ($current_lang === 'vi' ? 'Thời Hạn Bảo Hành' : 'Warranty Period'); ?>
+                                    </label>
+                                    <select name="warranty_months" id="add_warranty_months" onchange="calcWarrantyDates('addEquipmentForm')" style="padding: 0.85rem 1rem; border-radius: 12px; border: 1.5px solid var(--border); width: 100%; outline: none; background: white; font-weight: 600;">
+                                        <option value="3">3 <?php echo $current_lang === 'vi' ? 'tháng' : 'months'; ?></option>
+                                        <option value="6">6 <?php echo $current_lang === 'vi' ? 'tháng' : 'months'; ?></option>
+                                        <option value="12" selected>12 <?php echo $current_lang === 'vi' ? 'tháng (1 năm)' : 'months (1 yr)'; ?></option>
+                                        <option value="18">18 <?php echo $current_lang === 'vi' ? 'tháng' : 'months'; ?></option>
+                                        <option value="24">24 <?php echo $current_lang === 'vi' ? 'tháng (2 năm)' : 'months (2 yrs)'; ?></option>
+                                        <option value="36">36 <?php echo $current_lang === 'vi' ? 'tháng (3 năm)' : 'months (3 yrs)'; ?></option>
+                                        <option value="48">48 <?php echo $current_lang === 'vi' ? 'tháng (4 năm)' : 'months (4 yrs)'; ?></option>
+                                        <option value="60">60 <?php echo $current_lang === 'vi' ? 'tháng (5 năm)' : 'months (5 yrs)'; ?></option>
+                                    </select>
+                                </div>
+                                <div class="form-group" style="margin-bottom: 0;">
+                                    <label style="font-weight: 700; font-size: 0.85rem; margin-bottom: 0.35rem; display: block; color: var(--text-main);">
+                                        <?php echo $lang['eq_warranty_expiry'] ?? ($current_lang === 'vi' ? 'Ngày Hết Hạn Bảo Hành' : 'Warranty Expiry Date'); ?>
+                                    </label>
+                                    <input type="date" name="warranty_expiry_date" id="add_warranty_expiry_date" value="<?php echo date('Y-m-d', strtotime('+12 months')); ?>" style="padding: 0.85rem 1rem; border-radius: 12px; border: 1.5px solid var(--border); width: 100%; outline: none; background: white;">
+                                </div>
+                                <div class="form-group" style="margin-bottom: 0;">
+                                    <label style="font-weight: 700; font-size: 0.85rem; margin-bottom: 0.35rem; display: block; color: var(--text-main);">
+                                        <?php echo $lang['eq_next_maintenance'] ?? ($current_lang === 'vi' ? 'Dự Kiến Ngày Bảo Trì' : 'Next Maintenance Date'); ?>
+                                    </label>
+                                    <input type="date" name="next_maintenance_date" id="add_next_maintenance_date" value="<?php echo date('Y-m-d', strtotime('+3 months')); ?>" style="padding: 0.85rem 1rem; border-radius: 12px; border: 1.5px solid var(--border); width: 100%; outline: none; background: white;">
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Row 3: Image -->
+                        <div class="form-group" style="margin-bottom: 1.2rem;">
+                            <label style="font-weight: 700; font-size: 0.9rem; margin-bottom: 0.4rem; display: block; color: var(--text-main);">
+                                <?php echo $current_lang === 'vi' ? 'Hình Ảnh Thiết Bị' : 'Equipment Image'; ?>
+                            </label>
+                            <input type="file" name="image" accept="image/*" style="padding: 0.65rem; background: #f8fafc; border-radius: 12px; border: 1.5px solid var(--border); width: 100%;">
+                            <input type="text" name="custom_image_url" placeholder="<?php echo $current_lang === 'vi' ? 'Hoặc dán URL hình ảnh trực tiếp (tùy chọn)...' : 'Or paste absolute image URL here (optional)...'; ?>" style="margin-top: 8px; padding: 0.75rem 1rem; border-radius: 12px; border: 1.5px solid var(--border); width: 100%; outline: none;">
+                        </div>
+
+                        <!-- Row 4: Description & Notes -->
+                        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1.2rem; margin-bottom: 1.5rem;">
+                            <div class="form-group" style="margin-bottom: 0;">
+                                <label style="font-weight: 700; font-size: 0.9rem; margin-bottom: 0.4rem; display: block; color: var(--text-main);">
+                                    <?php echo $current_lang === 'vi' ? 'Mô Tả Kỹ Thuật / Công Năng' : 'Description / Features'; ?> <span style="color: #ef4444;">*</span>
+                                </label>
+                                <textarea name="description" required placeholder="<?php echo $current_lang === 'vi' ? 'Nhập thông số, tính năng chính của máy...' : 'Enter equipment specifications, features, key exercises...'; ?>" style="width: 100%; padding: 0.9rem 1.1rem; border-radius: 14px; border: 1.5px solid var(--border); outline: none; min-height: 100px; resize: vertical;"></textarea>
+                            </div>
+                            <div class="form-group" style="margin-bottom: 0;">
+                                <label style="font-weight: 700; font-size: 0.9rem; margin-bottom: 0.4rem; display: block; color: var(--text-main);">
+                                    <i class="fas fa-clipboard-list" style="color: var(--primary);"></i>
+                                    <?php echo $lang['eq_notes'] ?? ($current_lang === 'vi' ? 'Ghi Chú & Nhật Ký Kỹ Thuật' : 'Notes & Technical Log'); ?>
+                                </label>
+                                <textarea name="notes" placeholder="<?php echo $current_lang === 'vi' ? 'Ghi chú số serial, nhà phân phối bảo hành, phụ tùng dự phòng...' : 'Enter serial number, warranty provider, spare parts, initial condition...'; ?>" style="width: 100%; padding: 0.9rem 1.1rem; border-radius: 14px; border: 1.5px solid var(--border); outline: none; min-height: 100px; resize: vertical;"></textarea>
+                            </div>
+                        </div>
+
+                        <div style="display: flex; gap: 1rem;">
+                            <button type="submit" name="add_equipment" class="btn-auth" style="margin: 0; width: auto; padding: 0.95rem 2.2rem; border-radius: 14px; font-weight: 700; display: inline-flex; align-items: center; gap: 8px;">
+                                <i class="fas fa-plus"></i>
+                                <?php echo $current_lang === 'vi' ? 'Thêm Thiết Bị Vào Hệ Thống' : 'Add Equipment to System'; ?>
+                            </button>
+                            <button type="button" onclick="switchEquipmentTab('overview')" class="action-btn" style="background: #f1f5f9; color: var(--text-muted); border-radius: 14px; padding: 0.95rem 1.6rem; height: auto; text-decoration: none; font-weight: 700; border: none; cursor: pointer;">
+                                <?php echo $current_lang === 'vi' ? 'Hủy' : 'Cancel'; ?>
+                            </button>
+                        </div>
+                    </form>
+                </div>
+
+                <!-- Quick Log Maintenance Modal Shell -->
+                <div id="maintenanceLogModalShell" style="display: none; position: fixed; inset: 0; background: rgba(15, 23, 42, 0.65); backdrop-filter: blur(8px); z-index: 99999; align-items: center; justify-content: center; padding: 1.5rem;" onclick="if(event.target===this) closeMaintenanceModal();">
+                    <div style="background: #ffffff; width: 100%; max-width: 540px; border-radius: 24px; box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.25); overflow: hidden; animation: euModalPop 0.25s ease forwards;">
+                        <form method="POST" style="margin: 0;">
+                            <input type="hidden" name="equipment_id" id="maint_modal_eq_id" value="">
+                            
+                            <!-- Header -->
+                            <div style="background: linear-gradient(135deg, #059669, #10b981); padding: 1.3rem 1.6rem; color: white; display: flex; justify-content: space-between; align-items: center;">
+                                <div style="display: flex; align-items: center; gap: 10px; font-weight: 800; font-size: 1.15rem;">
+                                    <i class="fas fa-tools"></i>
+                                    <span><?php echo $lang['eq_log_maintenance_modal_title'] ?? ($current_lang === 'vi' ? 'Ghi Nhận Hoàn Tất Bảo Trì' : 'Log Maintenance Completion'); ?></span>
+                                </div>
+                                <button type="button" onclick="closeMaintenanceModal()" style="background: rgba(255,255,255,0.2); border: none; color: white; width: 32px; height: 32px; border-radius: 50%; cursor: pointer; font-size: 1rem; display: flex; align-items: center; justify-content: center;">
+                                    <i class="fas fa-times"></i>
+                                </button>
+                            </div>
+
+                            <!-- Body -->
+                            <div style="padding: 1.6rem;">
+                                <div style="background: #f0fdf4; border: 1px solid #bbf7d0; border-radius: 14px; padding: 1rem; margin-bottom: 1.2rem;">
+                                    <div style="font-size: 0.8rem; text-transform: uppercase; font-weight: 800; color: #15803d;"><?php echo $current_lang === 'vi' ? 'Thiết Bị Đang Bảo Dưỡng' : 'Equipment under service'; ?></div>
+                                    <div id="maint_modal_eq_name" style="font-size: 1.1rem; font-weight: 800; color: var(--text-main); margin-top: 2px;"></div>
+                                    <div style="font-size: 0.82rem; color: #166534; margin-top: 4px;">
+                                        <?php echo $current_lang === 'vi' ? 'Lịch bảo trì hiện tại:' : 'Current scheduled date:'; ?> 
+                                        <strong id="maint_modal_current_date"></strong>
+                                    </div>
+                                </div>
+
+                                <div class="form-group" style="margin-bottom: 1.2rem;">
+                                    <label style="font-weight: 700; font-size: 0.9rem; margin-bottom: 0.4rem; display: block; color: var(--text-main);">
+                                        <i class="fas fa-calendar-plus" style="color: #10b981;"></i>
+                                        <?php echo $lang['eq_maintenance_interval'] ?? ($current_lang === 'vi' ? 'Kỳ Bảo Trì Tiếp Theo' : 'Next Maintenance Cycle'); ?>
+                                    </label>
+                                    <select name="next_interval_months" style="padding: 0.85rem 1rem; border-radius: 12px; border: 1.5px solid var(--border); width: 100%; outline: none; background: white; font-weight: 600;">
+                                        <option value="1">1 <?php echo $current_lang === 'vi' ? 'tháng tới' : 'month (+1 mo)'; ?></option>
+                                        <option value="2">2 <?php echo $current_lang === 'vi' ? 'tháng tới' : 'months (+2 mos)'; ?></option>
+                                        <option value="3" selected>3 <?php echo $current_lang === 'vi' ? 'tháng tới (Khuyến nghị định kỳ)' : 'months (Recommended)'; ?></option>
+                                        <option value="6">6 <?php echo $current_lang === 'vi' ? 'tháng tới (Bán niên)' : 'months (Semi-annual)'; ?></option>
+                                        <option value="12">12 <?php echo $current_lang === 'vi' ? 'tháng tới (1 năm)' : 'months (1 year)'; ?></option>
+                                    </select>
+                                    <small style="color: var(--text-muted); font-size: 0.78rem; margin-top: 4px; display: block;">
+                                        <?php echo $current_lang === 'vi' ? 'Hệ thống sẽ tự động cập nhật ngày bảo trì kế tiếp và đổi trạng thái máy sang Hoạt Động Tốt.' : 'System will automatically update the next maintenance date and reset status to Active.'; ?>
+                                    </small>
+                                </div>
+
+                                <div class="form-group" style="margin-bottom: 1.2rem;">
+                                    <label style="font-weight: 700; font-size: 0.9rem; margin-bottom: 0.4rem; display: block; color: var(--text-main);">
+                                        <i class="fas fa-clipboard-check" style="color: #10b981;"></i>
+                                        <?php echo $current_lang === 'vi' ? 'Nội Dung Kiểm Tra & Bảo Dưỡng' : 'Maintenance Details & Replaced Parts'; ?>
+                                    </label>
+                                    <textarea name="maintenance_note" rows="3" placeholder="<?php echo $current_lang === 'vi' ? 'Ví dụ: Đã tra dầu bạc đạn, căng lại băng tải, kiểm tra sensor nhịp tim đạt chuẩn an toàn...' : 'e.g. Lubricated bearings, adjusted running belt tension, safety sensors checked...'; ?>" style="width: 100%; padding: 0.85rem 1rem; border-radius: 12px; border: 1.5px solid var(--border); outline: none; resize: vertical;"></textarea>
+                                </div>
+
+                                <div style="display: flex; gap: 0.8rem; justify-content: flex-end; margin-top: 1.5rem;">
+                                    <button type="button" onclick="closeMaintenanceModal()" class="action-btn" style="background: #f1f5f9; color: var(--text-muted); border-radius: 12px; padding: 0.8rem 1.4rem; height: auto; text-decoration: none; font-weight: 700; border: none; cursor: pointer;">
+                                        <?php echo $current_lang === 'vi' ? 'Hủy' : 'Cancel'; ?>
+                                    </button>
+                                    <button type="submit" name="log_maintenance" class="btn-auth" style="margin: 0; width: auto; padding: 0.8rem 1.8rem; border-radius: 12px; font-weight: 700; background: linear-gradient(135deg, #059669, #10b981); box-shadow: 0 4px 15px rgba(16,185,129,0.3);">
+                                        <i class="fas fa-check" style="margin-right: 6px;"></i>
+                                        <?php echo $current_lang === 'vi' ? 'Xác Nhận Hoàn Tất' : 'Confirm Complete'; ?>
+                                    </button>
+                                </div>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+
+                <style>
+                .eq-nav-tab {
+                    padding: 0.85rem 1.6rem;
+                    border-radius: 14px;
+                    font-weight: 700;
+                    font-size: 0.95rem;
+                    border: 1.5px solid transparent;
+                    background: transparent;
+                    color: var(--text-muted);
+                    cursor: pointer;
+                    display: inline-flex;
+                    align-items: center;
+                    gap: 8px;
+                    transition: all 0.2s ease;
+                }
+                .eq-nav-tab:hover {
+                    color: var(--primary);
+                    background: rgba(37, 99, 235, 0.05);
+                }
+                .eq-nav-tab.active {
+                    background: white;
+                    color: var(--primary);
+                    border-color: var(--border);
+                    box-shadow: var(--shadow-premium);
+                }
+                .btn-eq-details:hover {
+                    transform: translateY(-1px);
+                    box-shadow: 0 4px 14px rgba(37,99,235,0.4) !important;
+                }
+                </style>
+
+                <!-- Client-Side Scripts for Tabs, Details View, Warranty Calculation & Filtering -->
+                <script>
+                const allEquipmentData = <?php echo $all_equipment_json ?: '[]'; ?>;
+                const currentLanguage = '<?php echo $current_lang; ?>';
+
+                function switchEquipmentTab(tabName) {
+                    const overviewPane = document.getElementById('eq-pane-overview');
+                    const detailsPane = document.getElementById('eq-pane-details');
+                    const addPane = document.getElementById('eq-pane-add');
+
+                    if (overviewPane) overviewPane.style.display = (tabName === 'overview') ? 'block' : 'none';
+                    if (detailsPane) detailsPane.style.display = (tabName === 'details') ? 'block' : 'none';
+                    if (addPane) addPane.style.display = (tabName === 'add') ? 'block' : 'none';
+
+                    document.querySelectorAll('.eq-nav-tab').forEach(btn => btn.classList.remove('active'));
+                    const activeBtn = document.getElementById('btn-tab-' + tabName);
+                    if (activeBtn) activeBtn.classList.add('active');
+
+                    if (history.replaceState) {
+                        history.replaceState(null, null, '#tab-' + tabName);
+                    }
+                }
+
+                function toggleDetailsSubMode(mode) {
+                    const reportView = document.getElementById('eq-subview-report');
+                    const editView = document.getElementById('eq-subview-edit');
+                    const btnReport = document.getElementById('btn-mode-report');
+                    const btnEdit = document.getElementById('btn-mode-edit');
+
+                    if (mode === 'edit') {
+                        if (reportView) reportView.style.display = 'none';
+                        if (editView) editView.style.display = 'block';
+                        if (btnEdit) { btnEdit.style.background = 'var(--primary)'; btnEdit.style.color = 'white'; }
+                        if (btnReport) { btnReport.style.background = 'transparent'; btnReport.style.color = 'var(--text-muted)'; }
+                    } else {
+                        if (reportView) reportView.style.display = 'block';
+                        if (editView) editView.style.display = 'none';
+                        if (btnReport) { btnReport.style.background = 'var(--primary)'; btnReport.style.color = 'white'; }
+                        if (btnEdit) { btnEdit.style.background = 'transparent'; btnEdit.style.color = 'var(--text-muted)'; }
+                    }
+                }
+
+                function openEquipmentDetailsTab(eqId) {
+                    const eq = allEquipmentData.find(e => parseInt(e.id) === parseInt(eqId));
+                    if (!eq) return;
+
+                    // 1. Populate form fields (for edit subview)
+                    if (document.getElementById('det_eq_id')) document.getElementById('det_eq_id').value = eq.id;
+                    if (document.getElementById('det_name')) document.getElementById('det_name').value = eq.name || '';
+                    if (document.getElementById('det_discipline')) document.getElementById('det_discipline').value = eq.discipline || 'gym';
+                    if (document.getElementById('det_status')) document.getElementById('det_status').value = eq.status || 'active';
+                    if (document.getElementById('det_purchase_date')) document.getElementById('det_purchase_date').value = eq.purchase_date || '';
+                    if (document.getElementById('det_warranty_months')) document.getElementById('det_warranty_months').value = eq.warranty_months || 12;
+                    if (document.getElementById('det_warranty_expiry_date')) document.getElementById('det_warranty_expiry_date').value = eq.warranty_expiry_date || '';
+                    if (document.getElementById('det_next_maintenance_date')) document.getElementById('det_next_maintenance_date').value = eq.next_maintenance_date || '';
+                    if (document.getElementById('det_notes')) document.getElementById('det_notes').value = eq.notes || '';
+                    if (document.getElementById('det_description')) document.getElementById('det_description').value = eq.description || '';
+                    if (document.getElementById('det_custom_image_url')) document.getElementById('det_custom_image_url').value = eq.image || '';
+
+                    // 2. Update quick selector dropdown
+                    const sel = document.getElementById('detailsEquipmentSelector');
+                    if (sel) sel.value = eq.id;
+
+                    // 3. Update Word Report Card fields
+                    if (document.getElementById('rc_img')) document.getElementById('rc_img').src = eq.image || '/Gym Manager/assets/img/equipment/treadmills.png';
+                    if (document.getElementById('rc_name')) document.getElementById('rc_name').textContent = eq.name || '';
+                    if (document.getElementById('rc_id_badge')) document.getElementById('rc_id_badge').textContent = '#' + eq.id;
+                    
+                    // Discipline badge
+                    const discBadge = document.getElementById('rc_disc_badge');
+                    if (discBadge) {
+                        discBadge.textContent = (eq.discipline === 'gym' ? '🏋️ GYM' : (eq.discipline === 'muay' ? '🥊 MUAY THAI' : '🧘 YOGA'));
+                        if (eq.discipline === 'gym') {
+                            discBadge.style.background = '#eff6ff'; discBadge.style.color = '#1d4ed8';
+                        } else if (eq.discipline === 'muay') {
+                            discBadge.style.background = '#fef2f2'; discBadge.style.color = '#b91c1c';
+                        } else {
+                            discBadge.style.background = '#f0fdf4'; discBadge.style.color = '#15803d';
+                        }
+                    }
+
+                    // Status badge & operational status text
+                    const stBadge = document.getElementById('rc_status_badge');
+                    const opStatus = document.getElementById('rc_op_status');
+                    if (stBadge) {
+                        if (eq.status === 'active') {
+                            stBadge.textContent = '🟢 ' + (currentLanguage === 'vi' ? 'HOẠT ĐỘNG' : 'ACTIVE');
+                            stBadge.style.background = '#dcfce7'; stBadge.style.color = '#15803d';
+                            if (opStatus) opStatus.innerHTML = '<span style="color: #16a34a;">🟢 ' + (currentLanguage === 'vi' ? 'Sẵn Sàng Phục Vụ' : 'Operational') + '</span>';
+                        } else if (eq.status === 'maintenance') {
+                            stBadge.textContent = '🟡 ' + (currentLanguage === 'vi' ? 'BẢO TRÌ' : 'MAINTENANCE');
+                            stBadge.style.background = '#fef3c7'; stBadge.style.color = '#d97706';
+                            if (opStatus) opStatus.innerHTML = '<span style="color: #d97706;">🟡 ' + (currentLanguage === 'vi' ? 'Đang Sửa Chữa / Bảo Trì' : 'In Repair') + '</span>';
+                        } else {
+                            stBadge.textContent = '🔴 ' + (currentLanguage === 'vi' ? 'NGƯNG DÙNG' : 'RETIRED');
+                            stBadge.style.background = '#fee2e2'; stBadge.style.color = '#ef4444';
+                            if (opStatus) opStatus.innerHTML = '<span style="color: #ef4444;">🔴 ' + (currentLanguage === 'vi' ? 'Ngưng Sử Dụng' : 'Out of Order') + '</span>';
+                        }
+                    }
+
+                    // Purchase Date
+                    if (document.getElementById('rc_purchase_date')) {
+                        document.getElementById('rc_purchase_date').textContent = formatDateDisplay(eq.purchase_date);
+                    }
+
+                    // Warranty Period & Expiry
+                    if (document.getElementById('rc_warranty_period')) {
+                        document.getElementById('rc_warranty_period').textContent = (eq.warranty_months || 12) + (currentLanguage === 'vi' ? ' Tháng' : ' Mos');
+                    }
+                    if (document.getElementById('rc_warranty_expiry')) {
+                        document.getElementById('rc_warranty_expiry').textContent = formatDateDisplay(eq.warranty_expiry_date);
+                    }
+
+                    // Next Maintenance Date
+                    if (document.getElementById('rc_next_maintenance')) {
+                        document.getElementById('rc_next_maintenance').textContent = formatDateDisplay(eq.next_maintenance_date);
+                    }
+
+                    // Notes
+                    if (document.getElementById('rc_notes_content')) {
+                        document.getElementById('rc_notes_content').textContent = eq.notes || (currentLanguage === 'vi' ? 'Chưa có ghi chú kỹ thuật cho thiết bị này.' : 'No notes recorded.');
+                    }
+
+                    // Update dynamic badges for warranty and maintenance
+                    updateDetailsBadges(eq);
+
+                    // Update Tab 2 badge in top tab bar
+                    const navBadge = document.getElementById('nav-selected-eq-badge');
+                    if (navBadge) {
+                        navBadge.style.display = 'inline-block';
+                        navBadge.textContent = '#' + eq.id;
+                    }
+
+                    // Always reset to report view when opening details
+                    toggleDetailsSubMode('report');
+
+                    // Switch to Details pane & smooth scroll
+                    switchEquipmentTab('details');
+                    const wrapper = document.getElementById('equipmentSectionWrapper');
+                    if (wrapper) wrapper.scrollIntoView({ behavior: 'smooth' });
+                }
+
+                function updateDetailsBadges(eq) {
+                    const today = new Date();
+                    today.setHours(0,0,0,0);
+
+                    // Warranty Badge in Report Card
+                    const wContainer = document.getElementById('rc_warranty_badge_container');
+                    if (wContainer) {
+                        if (eq.warranty_expiry_date) {
+                            const expDate = new Date(eq.warranty_expiry_date);
+                            expDate.setHours(0,0,0,0);
+                            if (expDate >= today) {
+                                const diffDays = Math.round((expDate - today) / (1000 * 60 * 60 * 24));
+                                wContainer.innerHTML = `<span style="background: #dcfce7; color: #15803d; border: 1px solid #bbf7d0; padding: 3px 8px; border-radius: 6px; font-weight: 700; font-size: 0.75rem; display: inline-flex; align-items: center; gap: 5px;"><i class="fas fa-shield-alt"></i> ${currentLanguage === 'vi' ? 'Còn hạn: ' + diffDays + ' ngày' : 'Valid: ' + diffDays + 'd left'}</span>`;
+                            } else {
+                                wContainer.innerHTML = `<span style="background: #f1f5f9; color: #64748b; border: 1px solid #e2e8f0; padding: 3px 8px; border-radius: 6px; font-weight: 700; font-size: 0.75rem;"><i class="fas fa-history"></i> ${currentLanguage === 'vi' ? 'Hết hạn bảo hành' : 'Warranty Expired'}</span>`;
+                            }
+                        } else {
+                            wContainer.innerHTML = '<span style="color: #94a3b8; font-size: 0.75rem;">N/A</span>';
+                        }
+                    }
+
+                    // Maintenance Badge in Report Card
+                    const mContainer = document.getElementById('rc_maint_badge_container');
+                    if (mContainer) {
+                        if (eq.status === 'maintenance') {
+                            mContainer.innerHTML = `<span style="background: #fef3c7; color: #b45309; border: 1px solid #fde68a; padding: 3px 8px; border-radius: 6px; font-weight: 800; font-size: 0.75rem; display: inline-flex; align-items: center; gap: 5px;"><i class="fas fa-tools"></i> ${currentLanguage === 'vi' ? 'Đang sửa chữa' : 'In repair'}</span>`;
+                        } else if (eq.next_maintenance_date) {
+                            const mDate = new Date(eq.next_maintenance_date);
+                            mDate.setHours(0,0,0,0);
+                            const diffDays = Math.round((mDate - today) / (1000 * 60 * 60 * 24));
+                            if (mDate < today) {
+                                mContainer.innerHTML = `<span style="background: #fee2e2; color: #b91c1c; border: 1px solid #fecaca; padding: 3px 8px; border-radius: 6px; font-weight: 800; font-size: 0.75rem; display: inline-flex; align-items: center; gap: 5px;"><i class="fas fa-exclamation-triangle"></i> ${currentLanguage === 'vi' ? 'Quá hạn ' + Math.abs(diffDays) + ' ngày' : 'Overdue ' + Math.abs(diffDays) + 'd'}</span>`;
+                            } else if (diffDays <= 15) {
+                                mContainer.innerHTML = `<span style="background: #fffbeb; color: #d97706; border: 1px solid #fef3c7; padding: 3px 8px; border-radius: 6px; font-weight: 800; font-size: 0.75rem; display: inline-flex; align-items: center; gap: 5px;"><i class="fas fa-clock"></i> ${currentLanguage === 'vi' ? 'Sắp tới hạn (' + diffDays + ' ngày)' : 'Due in ' + diffDays + 'd'}</span>`;
+                            } else {
+                                mContainer.innerHTML = `<span style="background: #f0fdf4; color: #16a34a; border: 1px solid #dcfce7; padding: 3px 8px; border-radius: 6px; font-weight: 700; font-size: 0.75rem; display: inline-flex; align-items: center; gap: 5px;"><i class="fas fa-check-circle"></i> ${currentLanguage === 'vi' ? 'Đúng định kỳ' : 'On schedule'}</span>`;
+                            }
+                        } else {
+                            mContainer.innerHTML = '<span style="color: #94a3b8; font-size: 0.75rem;">N/A</span>';
+                        }
+                    }
+                }
+
+                function formatDateDisplay(dStr) {
+                    if (!dStr) return 'N/A';
+                    const parts = dStr.split('-');
+                    if (parts.length === 3) {
+                        return `${parts[2]}/${parts[1]}/${parts[0]}`;
+                    }
+                    return dStr;
+                }
+
+                function openMaintenanceModalFromDetails() {
+                    const eqId = document.getElementById('det_eq_id').value;
+                    const eq = allEquipmentData.find(e => parseInt(e.id) === parseInt(eqId));
+                    const eqName = eq ? eq.name : (document.getElementById('det_name') ? document.getElementById('det_name').value : '');
+                    const nextDate = eq ? eq.next_maintenance_date : '';
+                    openMaintenanceModal(eqId, eqName, formatDateDisplay(nextDate));
+                }
+
+                function openMaintenanceModal(eqId, eqName, currentDate) {
+                    document.getElementById('maint_modal_eq_id').value = eqId;
+                    document.getElementById('maint_modal_eq_name').textContent = eqName;
+                    document.getElementById('maint_modal_current_date').textContent = currentDate || 'N/A';
+                    const shell = document.getElementById('maintenanceLogModalShell');
+                    if (shell) shell.style.display = 'flex';
+                }
+
+                function closeMaintenanceModal() {
+                    const shell = document.getElementById('maintenanceLogModalShell');
+                    if (shell) shell.style.display = 'none';
+                }
+
+                function calcWarrantyDates(formId) {
+                    const form = document.getElementById(formId);
+                    if (!form) return;
+                    const pInput = form.querySelector('[name="purchase_date"]');
+                    const mSelect = form.querySelector('[name="warranty_months"]');
+                    const wExpInput = form.querySelector('[name="warranty_expiry_date"]');
+                    const nextMaintInput = form.querySelector('[name="next_maintenance_date"]');
+
+                    if (!pInput || !pInput.value) return;
+                    const pDate = new Date(pInput.value);
+                    if (isNaN(pDate.getTime())) return;
+
+                    const months = parseInt(mSelect ? mSelect.value : 12) || 12;
+
+                    // Compute Warranty Expiry
+                    const expDate = new Date(pDate);
+                    expDate.setMonth(expDate.getMonth() + months);
+                    if (wExpInput) {
+                        const y = expDate.getFullYear();
+                        const m = String(expDate.getMonth() + 1).padStart(2, '0');
+                        const d = String(expDate.getDate()).padStart(2, '0');
+                        wExpInput.value = `${y}-${m}-${d}`;
+                    }
+
+                    // Compute Next Maintenance
+                    if (nextMaintInput && (!nextMaintInput.value || formId === 'addEquipmentForm')) {
+                        const mDate = new Date(pDate);
+                        mDate.setMonth(mDate.getMonth() + 3);
+                        const my = mDate.getFullYear();
+                        const mm = String(mDate.getMonth() + 1).padStart(2, '0');
+                        const md = String(mDate.getDate()).padStart(2, '0');
+                        nextMaintInput.value = `${my}-${mm}-${md}`;
+                    }
+
+                    // If in details form, refresh badges
+                    if (formId === 'detailsEquipmentForm') {
+                        updateDetailsBadges({
+                            status: form.querySelector('[name="status"]').value,
+                            warranty_expiry_date: wExpInput ? wExpInput.value : '',
+                            next_maintenance_date: nextMaintInput ? nextMaintInput.value : ''
+                        });
+                    }
+                }
+
+                function filterEquipmentTable() {
+                    const query = (document.getElementById('eqSearchInput').value || '').trim().toLowerCase();
+                    const discipline = (document.getElementById('eqDisciplineFilter').value || '').toLowerCase();
+                    const status = (document.getElementById('eqStatusFilter').value || '').toLowerCase();
+                    const maint = (document.getElementById('eqMaintFilter').value || '').toLowerCase();
+
+                    const rows = document.querySelectorAll('#equipmentTableBody tr.eq-table-row');
+                    let visibleCount = 0;
+
+                    rows.forEach(row => {
+                        const rSearch = row.getAttribute('data-search') || '';
+                        const rDiscipline = row.getAttribute('data-discipline') || '';
+                        const rStatus = row.getAttribute('data-status') || '';
+                        const rMaintStatus = row.getAttribute('data-maint-status') || '';
+                        const rWarrantyValid = row.getAttribute('data-warranty-valid') || '0';
+
+                        let matches = true;
+
+                        if (query && !rSearch.includes(query)) matches = false;
+                        if (discipline && rDiscipline !== discipline) matches = false;
+                        if (status && rStatus !== status) matches = false;
+                        if (maint) {
+                            if (maint === 'overdue' && rMaintStatus !== 'overdue') matches = false;
+                            if (maint === 'upcoming' && rMaintStatus !== 'upcoming') matches = false;
+                            if (maint === 'warranty_valid' && rWarrantyValid !== '1') matches = false;
+                            if (maint === 'warranty_expired' && rWarrantyValid !== '0') matches = false;
+                        }
+
+                        if (matches) {
+                            row.style.display = '';
+                            visibleCount++;
+                        } else {
+                            row.style.display = 'none';
+                        }
+                    });
+
+                    const emptyRow = document.getElementById('eqEmptyRow');
+                    if (emptyRow) {
+                        emptyRow.style.display = (visibleCount === 0) ? '' : 'none';
+                    }
+                }
+
+                function resetEquipmentFilters() {
+                    document.getElementById('eqSearchInput').value = '';
+                    document.getElementById('eqDisciplineFilter').value = '';
+                    document.getElementById('eqStatusFilter').value = '';
+                    document.getElementById('eqMaintFilter').value = '';
+                    filterEquipmentTable();
+                }
+
+                // Initialize initial active equipment details if loaded on details tab
+                document.addEventListener('DOMContentLoaded', function() {
+                    <?php if ($selected_eq): ?>
+                        const initialEq = allEquipmentData.find(e => e.id === <?php echo intval($selected_eq['id']); ?>);
+                        if (initialEq) {
+                            updateDetailsBadges(initialEq);
+                        }
+                    <?php endif; ?>
+
+                    // Handle URL hash if present
+                    if (window.location.hash === '#tab-details') {
+                        switchEquipmentTab('details');
+                    } else if (window.location.hash === '#tab-add') {
+                        switchEquipmentTab('add');
+                    }
+                });
+
+                document.addEventListener('keydown', function(e) {
+                    if (e.key === 'Escape') {
+                        closeMaintenanceModal();
+                    }
+                });
+                </script>
 
             <?php endif; ?>
         </div>

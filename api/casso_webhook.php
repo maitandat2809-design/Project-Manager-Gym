@@ -98,26 +98,28 @@ function sendMembershipEmail(array $sub, int $amount): void {
         $mail->setFrom('lamtuoi155@gmail.com', 'GymX Fitness Center');
         $mail->addAddress($sub['user_email'], $sub['user_name']);
 
-        $plan_name  = $sub['name_vi'] ?: $sub['plan_name'];
+        // Webhook emails have no visitor language context, so use the
+        // application's English default rather than the Vietnamese plan name.
+        $plan_name  = $sub['plan_name'];
         $price_fmt  = number_format($amount, 0, ',', '.');
         $start_date = date('d/m/Y', strtotime($sub['start_date']));
         $end_date   = date('d/m/Y', strtotime($sub['end_date']));
 
         $mail->isHTML(true);
-        $mail->Subject = '✅ GymX – Thẻ Thành Viên Đã Được Kích Hoạt!';
+        $mail->Subject = '✅ GymX – Your Membership Has Been Activated!';
         $mail->Body = "
         <div style='font-family:Arial,sans-serif;max-width:600px;margin:auto;'>
             <div style='background:linear-gradient(135deg,#0f172a,#1e3a5f);padding:2rem;text-align:center;border-radius:20px 20px 0 0;'>
-                <h1 style='color:#f59e0b;'>✅ Thẻ Đã Kích Hoạt!</h1>
+                <h1 style='color:#f59e0b;'>✅ Membership Activated!</h1>
             </div>
             <div style='background:#f8fafc;padding:2rem;'>
-                <p>Xin chào <strong>{$sub['user_name']}</strong>, thẻ của bạn đã được kích hoạt sau khi xác nhận thanh toán.</p>
+                <p>Hello <strong>{$sub['user_name']}</strong>, your membership has been activated after payment confirmation.</p>
                 <div style='background:#fff;border-radius:16px;padding:1.5rem;border:1px solid #e2e8f0;'>
                     <table style='width:100%;border-collapse:collapse;'>
-                        <tr><td style='padding:8px 0;color:#64748b;'>Gói Thẻ:</td><td style='font-weight:700;'>{$plan_name}</td></tr>
-                        <tr style='border-top:1px dashed #e2e8f0;'><td style='padding:8px 0;color:#64748b;'>Số Tiền:</td><td style='font-weight:800;color:#10b981;'>{$price_fmt}đ</td></tr>
-                        <tr style='border-top:1px dashed #e2e8f0;'><td style='padding:8px 0;color:#64748b;'>Hiệu Lực:</td><td>{$start_date} → {$end_date}</td></tr>
-                        <tr style='border-top:1px dashed #e2e8f0;'><td style='padding:8px 0;color:#64748b;'>Trạng Thái:</td><td><span style='background:#d1fae5;color:#065f46;padding:3px 12px;border-radius:20px;font-weight:700;'>✓ ĐANG HOẠT ĐỘNG</span></td></tr>
+                        <tr><td style='padding:8px 0;color:#64748b;'>Membership Plan:</td><td style='font-weight:700;'>{$plan_name}</td></tr>
+                        <tr style='border-top:1px dashed #e2e8f0;'><td style='padding:8px 0;color:#64748b;'>Amount:</td><td style='font-weight:800;color:#10b981;'>VND {$price_fmt}</td></tr>
+                        <tr style='border-top:1px dashed #e2e8f0;'><td style='padding:8px 0;color:#64748b;'>Validity:</td><td>{$start_date} → {$end_date}</td></tr>
+                        <tr style='border-top:1px dashed #e2e8f0;'><td style='padding:8px 0;color:#64748b;'>Status:</td><td><span style='background:#d1fae5;color:#065f46;padding:3px 12px;border-radius:20px;font-weight:700;'>✓ ACTIVE</span></td></tr>
                     </table>
                 </div>
             </div>

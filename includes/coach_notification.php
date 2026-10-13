@@ -24,7 +24,7 @@ if (isset($_SESSION['user_id']) && $_SESSION['role'] === 'coach') {
         $stmt_b->execute([$coach_id]);
         $new_bookings = $stmt_b->fetchAll();
 
-        if (!empty($new_bookings)): 
+        if (!empty($new_bookings) && !isset($_SESSION['dismissed_coach_notifications'])): 
             $is_vi_cn = isset($_SESSION['lang']) && $_SESSION['lang'] === 'vi';
             ?>
             <!-- Notification Modal for Coach -->
@@ -62,8 +62,22 @@ if (isset($_SESSION['user_id']) && $_SESSION['role'] === 'coach') {
                         </form>
                         <a href="/Gym Manager/dashboards/coach_dashboard.php?tab=schedule" class="action-btn" style="flex: 1; display: flex; align-items: center; justify-content: center; background: #f1f5f9; color: var(--text-muted); border-radius: 15px; text-decoration: none; font-weight: 700;"><?php echo $is_vi_cn ? 'Xem Lịch Tập' : 'View Dashboard'; ?></a>
                     </div>
+                    <div style="padding: 0 2rem 1.4rem; text-align: center;">
+                        <a href="?dismiss_notification=coach" onclick="dismissCoachNotification(event)" style="color:#94a3b8;font-size:0.82rem;text-decoration:underline;cursor:pointer;">
+                            <?php echo $is_vi_cn ? 'Đóng thông báo này (Nhắc lại sau)' : 'Dismiss notification (Remind later)'; ?>
+                        </a>
+                    </div>
                 </div>
             </div>
+
+            <script>
+            function dismissCoachNotification(event) {
+                if (event) event.preventDefault();
+                const modal = document.getElementById('coachNotificationModal');
+                if (modal) modal.style.display = 'none';
+                fetch('?dismiss_notification=coach', {headers: {'X-Requested-With': 'XMLHttpRequest'}}).catch(function() {});
+            }
+            </script>
             
             <style>
                 @keyframes zoomIn {

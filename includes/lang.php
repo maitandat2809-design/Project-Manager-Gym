@@ -3,26 +3,11 @@ if (session_status() === PHP_SESSION_NONE) {
     session_start();
 }
 
-// Handle language switch
-if (isset($_GET['lang'])) {
-    $_SESSION['lang'] = $_GET['lang'] == 'en' ? 'en' : 'vi';
-    // Remove lang from URL to keep it clean
-    $url = strtok($_SERVER["REQUEST_URI"], '?');
-    $query = $_GET;
-    unset($query['lang']);
-    if (count($query) > 0) {
-        $url .= '?' . http_build_query($query);
-    }
-    header("Location: " . $url);
-    exit();
-}
-
-// Set default language
-if (!isset($_SESSION['lang'])) {
-    $_SESSION['lang'] = 'en';
-}
-
-$current_lang = $_SESSION['lang'];
+// Gym Manager is delivered in English.  Always reset stale language sessions
+// (and ignore old ?lang= links) so no Vietnamese copy can leak into a page,
+// notification, validation response, or transactional email.
+$_SESSION['lang'] = 'en';
+$current_lang = 'en';
 
 // Include the translation file into global scope
 $lang_file = __DIR__ . "/../languages/{$current_lang}.php";
@@ -57,7 +42,7 @@ if (!function_exists('__')) {
 if (!function_exists('getLocalizedCoachMsg')) {
     function getLocalizedCoachMsg($msg) {
         if (empty($msg)) return '';
-        $curr_lang = $_SESSION['lang'] ?? 'en';
+        $curr_lang = 'en';
         $sub_vi = 'Phân công HLV dạy thế cho buổi tập bị hủy đột xuất';
         $sub_en = 'Assigned substitute coach for emergency cancelled session';
         

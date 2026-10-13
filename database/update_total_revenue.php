@@ -13,7 +13,7 @@ $replace = <<<HTML
                     <div>
                         <h2>Yearly Report - <?php echo htmlspecialchars(\$selected_year); ?></h2>
                         <p style="font-size: 1.1rem; color: var(--text-muted); margin-top: 5px;">
-                            Total Revenue: <strong style="color: #10b981; font-size: 1.5rem;">$<?php echo number_format(\$total_yearly_revenue, 2); ?></strong>
+                            Total Revenue: <strong style="color: #10b981; font-size: 1.5rem;"><?php echo number_format(\$total_yearly_revenue, 0, ',', '.'); ?>đ</strong>
                         </p>
                     </div>
                     <form method="GET" style="display: flex; align-items: center; gap: 10px;">

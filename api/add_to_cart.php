@@ -35,7 +35,7 @@ if (!$product) {
 }
 
 $max_stock = intval($product['stock']);
-$is_vi     = (!isset($_SESSION['lang']) || $_SESSION['lang'] === 'vi');
+$is_vi     = (isset($_SESSION['lang']) && $_SESSION['lang'] === 'vi');
 
 if ($max_stock <= 0) {
     $msg = $is_vi ? 'Sản phẩm này hiện đã hết hàng.' : 'This product is currently out of stock.';

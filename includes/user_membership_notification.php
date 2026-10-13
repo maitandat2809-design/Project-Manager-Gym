@@ -8,9 +8,19 @@ if (isset($_GET['dismiss_mem_expiry']) && isset($_GET['sub_id'])) {
     $dismiss_sub_id = (int)$_GET['sub_id'];
     $_SESSION['dismissed_mem_expiry_' . $dismiss_sub_id] = true;
     
+    // If AJAX/fetch request, exit cleanly
+    if (!empty($_SERVER['HTTP_X_REQUESTED_WITH']) && strtolower($_SERVER['HTTP_X_REQUESTED_WITH']) === 'xmlhttprequest') {
+        http_response_code(200);
+        exit;
+    }
+
     // Redirect to remove query parameters from URL
     $clean_url = strtok($_SERVER['REQUEST_URI'], '?');
-    header("Location: " . $clean_url);
+    if (!headers_sent()) {
+        header("Location: " . $clean_url);
+    } else {
+        echo "<script>window.location.replace(" . json_encode($clean_url) . ");</script>";
+    }
     exit;
 }
 
@@ -38,11 +48,14 @@ if (isset($_SESSION['user_id']) && isset($_SESSION['role']) && $_SESSION['role']
             
             // Check if dismissed in this session
             if (!isset($_SESSION['dismissed_mem_expiry_' . $sub_id])) {
-                $plan_display = !empty($expired_sub['plan_name_vi']) ? $expired_sub['plan_name_vi'] : $expired_sub['plan_name'];
+                // English remains the default unless the visitor explicitly selected Vietnamese.
+                $is_vi = isset($_SESSION['lang']) && $_SESSION['lang'] === 'vi';
+                $plan_display = ($is_vi && !empty($expired_sub['plan_name_vi']))
+                    ? $expired_sub['plan_name_vi']
+                    : $expired_sub['plan_name'];
                 $pt_total = (int)$expired_sub['pt_sessions_total'];
                 $pt_used = (int)$expired_sub['pt_sessions_used'];
-                
-                $is_vi = isset($_SESSION['lang']) && $_SESSION['lang'] === 'vi';
+
                 ?>
                 <!-- USER MEMBERSHIP EXPIRATION POPUP MODAL -->
                 <div id="userMembershipExpiryModal" style="display: flex; position: fixed; inset: 0; background: rgba(15, 23, 42, 0.78); backdrop-filter: blur(8px); z-index: 99999; align-items: center; justify-content: center; padding: 1.5rem;">
@@ -101,25 +114,47 @@ if (isset($_SESSION['user_id']) && isset($_SESSION['role']) && $_SESSION['role']
                             <!-- Two Main Action Buttons -->
                             <div style="display: flex; flex-direction: column; gap: 0.75rem; margin-bottom: 1.2rem;">
                                 <!-- Option 1: Gia Hạn Gói Tập -->
-                                <a href="/Gym Manager/pages/membership.php" style="padding: 0.9rem 1.2rem; background: linear-gradient(135deg, #2563eb, #1d4ed8); color: #ffffff; border-radius: 12px; font-weight: 700; font-size: 0.95rem; text-decoration: none; display: flex; align-items: center; justify-content: center; gap: 8px; box-shadow: 0 4px 14px rgba(37, 99, 235, 0.35); transition: transform 0.2s;">
+                                <button type="button" onclick="goToMembershipPage()" style="width: 100%; border: 0; cursor: pointer; padding: 0.9rem 1.2rem; background: linear-gradient(135deg, #2563eb, #1d4ed8); color: #ffffff; border-radius: 12px; font-weight: 700; font-size: 0.95rem; text-decoration: none; display: flex; align-items: center; justify-content: center; gap: 8px; box-shadow: 0 4px 14px rgba(37, 99, 235, 0.35); transition: transform 0.2s;">
                                     <i class="fas fa-sync-alt"></i> 
                                     <span><?php echo $is_vi ? '1. Gia Hạn Gói Tập Hiện Tại' : '1. Renew Current Package'; ?></span>
-                                </a>
+                                </button>
 
                                 <!-- Option 2: Chọn Gói Khác -->
-                                <a href="/Gym Manager/pages/membership.php" style="padding: 0.9rem 1.2rem; background: linear-gradient(135deg, #d97706, #b45309); color: #ffffff; border-radius: 12px; font-weight: 700; font-size: 0.95rem; text-decoration: none; display: flex; align-items: center; justify-content: center; gap: 8px; box-shadow: 0 4px 14px rgba(217, 119, 6, 0.35); transition: transform 0.2s;">
+                                <button type="button" onclick="goToMembershipPage()" style="width: 100%; border: 0; cursor: pointer; padding: 0.9rem 1.2rem; background: linear-gradient(135deg, #d97706, #b45309); color: #ffffff; border-radius: 12px; font-weight: 700; font-size: 0.95rem; text-decoration: none; display: flex; align-items: center; justify-content: center; gap: 8px; box-shadow: 0 4px 14px rgba(217, 119, 6, 0.35); transition: transform 0.2s;">
                                     <i class="fas fa-gem"></i> 
                                     <span><?php echo $is_vi ? '2. Đăng Ký Chọn Gói Mới Khác' : '2. Choose Another Package'; ?></span>
-                                </a>
+                                </button>
                             </div>
 
                             <!-- Dismiss / Close Button -->
-                            <a href="?dismiss_mem_expiry=1&sub_id=<?php echo $sub_id; ?>" style="display: inline-block; color: #94a3b8; font-size: 0.82rem; text-decoration: underline; cursor: pointer; padding: 4px 8px;">
+                            <a href="?dismiss_mem_expiry=1&sub_id=<?php echo $sub_id; ?>" onclick="dismissUserExpiryModal(event, <?php echo $sub_id; ?>)" style="display: inline-block; color: #94a3b8; font-size: 0.82rem; text-decoration: underline; cursor: pointer; padding: 4px 8px;">
                                 <?php echo $is_vi ? 'Đóng thông báo này (Nhắc lại sau)' : 'Dismiss notification (Remind later)'; ?>
                             </a>
                         </div>
                     </div>
                 </div>
+
+                <script>
+                function goToMembershipPage() {
+                    const modal = document.getElementById('userMembershipExpiryModal');
+                    if (modal) modal.style.display = 'none';
+                    window.location.assign('/Gym%20Manager/pages/membership.php');
+                }
+
+                function dismissUserExpiryModal(e, subId) {
+                    if (e && e.preventDefault) e.preventDefault();
+                    const modal = document.getElementById('userMembershipExpiryModal');
+                    if (modal) {
+                        modal.style.display = 'none';
+                    }
+                    try {
+                        fetch('?dismiss_mem_expiry=1&sub_id=' + subId, {
+                            method: 'GET',
+                            headers: { 'X-Requested-With': 'XMLHttpRequest' }
+                        }).catch(function() {});
+                    } catch(err) {}
+                }
+                </script>
 
                 <style>
                 @keyframes modalPop {

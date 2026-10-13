@@ -43,9 +43,38 @@
 <!-- Hero -->
 <header class="hero">
     <div class="hero-bg-video">
-        <iframe src="https://www.youtube.com/embed/gC_L9qAHVJ8?autoplay=1&mute=1&controls=0&showinfo=0&loop=1&playlist=gC_L9qAHVJ8&playsinline=1" frameborder="0" allow="autoplay; encrypted-media" allowfullscreen></iframe>
+        <iframe id="heroBgIframe" src="https://www.youtube-nocookie.com/embed/gC_L9qAHVJ8?autoplay=1&mute=1&controls=0&disablekb=1&fs=0&iv_load_policy=3&modestbranding=1&playsinline=1&rel=0&enablejsapi=1" frameborder="0" allow="autoplay; encrypted-media" tabindex="-1" aria-hidden="true"></iframe>
     </div>
     <div class="hero-overlay"></div>
+
+    <script>
+    // Clean YouTube background loop without controls or playlist overlays
+    function onYouTubeIframeAPIReady() {
+        if (typeof YT !== 'undefined' && YT.Player) {
+            new YT.Player('heroBgIframe', {
+                events: {
+                    'onReady': function(e) {
+                        e.target.mute();
+                        e.target.playVideo();
+                    },
+                    'onStateChange': function(e) {
+                        if (e.data === 0) { // ENDED
+                            e.target.seekTo(0);
+                            e.target.playVideo();
+                        } else if (e.data === 2) { // PAUSED
+                            e.target.playVideo();
+                        }
+                    }
+                }
+            });
+        }
+    }
+    if (!window.YT || !window.YT.Player) {
+        var ytScript = document.createElement('script');
+        ytScript.src = 'https://www.youtube.com/iframe_api';
+        document.head.appendChild(ytScript);
+    }
+    </script>
 
     <div class="hero-content">
         <div class="hero-badge" style="background: rgba(255,255,255,0.08); backdrop-filter: blur(8px); color: rgba(255,255,255,0.8); border: 1px solid rgba(201,168,76,0.35);">
@@ -559,8 +588,8 @@
             </div>
         </div>
         <div class="promo-form-container">
-            <input type="text" placeholder="<?php echo __('promo_name'); ?>" class="promo-input home-promo-input">
-            <input type="text" placeholder="<?php echo __('promo_phone'); ?>" class="promo-input home-promo-input">
+            <input type="text" id="homePromoName" placeholder="<?php echo __('promo_name'); ?>" class="promo-input home-promo-input">
+            <input type="text" id="homePromoPhone" placeholder="<?php echo __('promo_phone'); ?>" class="promo-input home-promo-input">
             <button class="promo-submit-btn" id="submitHomePromo"><?php echo __('promo_register_btn'); ?></button>
             <p class="promo-note"><?php echo __('promo_note'); ?></p>
         </div>
@@ -762,16 +791,17 @@ document.addEventListener("DOMContentLoaded", function() {
         
         document.getElementById('submitHomePromo').addEventListener('click', function(e) {
             e.preventDefault();
-            var inputs = document.querySelectorAll('.home-promo-input');
-            if(inputs[0].value.trim() === '' || inputs[1].value.trim() === '') {
+            var nameInput = document.getElementById('homePromoName');
+            var phoneInput = document.getElementById('homePromoPhone');
+            var name = nameInput ? nameInput.value.trim() : '';
+            var phone = phoneInput ? phoneInput.value.trim() : '';
+            if(name === '' || phone === '') {
                 alert('<?php echo addslashes(__('promo_fill_info')); ?>');
                 return;
             }
-            alert('<?php echo addslashes(__('promo_thank_you')); ?> ' + inputs[0].value + ' <?php echo addslashes(__('promo_contact_soon')); ?>');
             modal.style.display = "none";
             sessionStorage.setItem('homePromoShown', 'true');
-            inputs[0].value = '';
-            inputs[1].value = '';
+            window.location.href = '/Gym Manager/auth/register.php?name=' + encodeURIComponent(name) + '&phone=' + encodeURIComponent(phone) + '&promo=7days_free';
         });
     }
 });

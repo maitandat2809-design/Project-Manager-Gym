@@ -451,21 +451,15 @@ include_once __DIR__ . '/../includes/lang.php';
             document.querySelector('.promo-submit-btn').addEventListener('click', function(e) {
                 e.preventDefault();
                 var inputs = document.querySelectorAll('.promo-input');
-                if(inputs[0].value.trim() === '' || inputs[1].value.trim() === '') {
+                var name = inputs[0] ? inputs[0].value.trim() : '';
+                var phone = inputs[1] ? inputs[1].value.trim() : '';
+                if(name === '' || phone === '') {
                     alert('<?php echo __('fill_all_info'); ?>');
                     return;
                 }
                 
-                // Show success notification frame instead of alert
-                var formContainer = document.querySelector('.promo-form-container');
-                formContainer.innerHTML = `
-                    <div style="text-align: center; padding: 20px 0; animation: modalOpen 0.5s ease-out forwards;">
-                        <i class="fas fa-check-circle" style="font-size: 60px; color: #22c55e; margin-bottom: 15px;"></i>
-                        <h3 style="color: #333; margin: 0 0 10px 0; font-size: 22px;"><?php echo __('promo_success_title'); ?></h3>
-                        <p style="color: #65676b; margin: 0; font-size: 16px; line-height: 1.5;"><?php echo __('promo_success_desc'); ?></p>
-                        <button class="promo-submit-btn" style="margin-top: 20px; background: #22c55e; box-shadow: 0 4px 10px rgba(34, 197, 94, 0.3);" onclick="document.getElementById('promoModal').style.display='none'"><?php echo __('close'); ?></button>
-                    </div>
-                `;
+                modal.style.display = "none";
+                window.location.href = '/Gym Manager/auth/register.php?name=' + encodeURIComponent(name) + '&phone=' + encodeURIComponent(phone) + '&promo=7days_free';
             });
         });
     </script>

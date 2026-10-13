@@ -62,36 +62,36 @@ if (!function_exists('sendBookingCancellationEmail')) {
             $formatted_date = date('l, d/m/Y - H:i', strtotime($b['booking_date']));
             
             $mail->isHTML(true);
-            $mail->Subject = "❌ [Gym Manager] Thông Báo Hủy Buổi Tập / Workout Session Cancelled (#" . $b['id'] . ")";
+            $mail->Subject = "❌ [Gym Manager] Workout Session Cancelled (#" . $b['id'] . ")";
 
             $mail_body = "
             <div style='font-family: Arial, sans-serif; max-width: 600px; margin: auto; padding: 25px; border: 1px solid #e2e8f0; border-radius: 16px; background-color: #ffffff; color: #1c2340;'>
                 <div style='text-align: center; padding-bottom: 15px; border-bottom: 2px solid #ef4444;'>
-                    <h2 style='color: #dc2626; margin: 0; font-size: 22px;'>❌ Thông Báo Hủy Buổi Tập</h2>
+                    <h2 style='color: #dc2626; margin: 0; font-size: 22px;'>❌ Workout Session Cancelled</h2>
                     <p style='color: #64748b; font-size: 14px; margin-top: 4px;'>Workout Session Cancellation Notice</p>
                 </div>
                 
                 <p style='color: #334155; font-size: 15px; margin-top: 20px;'>
-                    Xin chào <strong>" . htmlspecialchars($b['client_name']) . "</strong>,<br>
-                    Buổi tập của bạn đã được cập nhật trạng thái <strong>HỦY / CANCELLED</strong> thành công trên lịch cá nhân và lịch hệ thống.
+                    Hello <strong>" . htmlspecialchars($b['client_name']) . "</strong>,<br>
+                    Your workout session has been updated to <strong>CANCELLED</strong> in your personal and system calendars.
                 </p>
 
                 <div style='background: #fef2f2; padding: 18px; border-left: 4px solid #ef4444; border-radius: 8px; margin: 20px 0;'>
-                    <p style='margin: 6px 0;'><strong>Mã buổi tập (Booking ID):</strong> #" . $b['id'] . "</p>
-                    <p style='margin: 6px 0;'><strong>Học viên (Client):</strong> " . htmlspecialchars($b['client_name']) . " (" . htmlspecialchars($b['client_email'] ?? 'N/A') . ")</p>
-                    <p style='margin: 6px 0;'><strong>HLV Đảm Nhận (Coach):</strong> " . htmlspecialchars($b['coach_name'] ?? 'N/A') . "</p>
-                    <p style='margin: 6px 0;'><strong>Thời gian (Date & Time):</strong> <span style='color: #dc2626; font-weight: bold;'>" . $formatted_date . "</span></p>
-                    <p style='margin: 6px 0;'><strong>Trạng thái (Status):</strong> <span style='color: #dc2626; font-weight: bold;'>ĐÃ HỦY / CANCELLED</span></p>";
+                    <p style='margin: 6px 0;'><strong>Booking ID:</strong> #" . $b['id'] . "</p>
+                    <p style='margin: 6px 0;'><strong>Client:</strong> " . htmlspecialchars($b['client_name']) . " (" . htmlspecialchars($b['client_email'] ?? 'N/A') . ")</p>
+                    <p style='margin: 6px 0;'><strong>Coach:</strong> " . htmlspecialchars($b['coach_name'] ?? 'N/A') . "</p>
+                    <p style='margin: 6px 0;'><strong>Date & Time:</strong> <span style='color: #dc2626; font-weight: bold;'>" . $formatted_date . "</span></p>
+                    <p style='margin: 6px 0;'><strong>Status:</strong> <span style='color: #dc2626; font-weight: bold;'>CANCELLED</span></p>";
 
             if (!empty($reason)) {
-                $mail_body .= "<p style='margin: 6px 0;'><strong>Lý do hủy (Reason):</strong> " . htmlspecialchars($reason) . "</p>";
+                $mail_body .= "<p style='margin: 6px 0;'><strong>Reason:</strong> " . htmlspecialchars($reason) . "</p>";
             }
 
             $mail_body .= "
                 </div>
 
                 <p style='color: #64748b; font-size: 13px; text-align: center; border-top: 1px solid #f1f5f9; padding-top: 15px;'>
-                    Email này được tự động gửi đến Học viên, HLV và Ban Quản Lý Gym Manager.<br>Lịch hẹn đã được cập nhật lại trên hệ thống.
+                    This automated email was sent to the client, coach, and Gym Manager team.<br>The session has been updated in the system.
                 </p>
             </div>";
 
@@ -164,47 +164,49 @@ if (!function_exists('sendNewBookingNotificationEmail')) {
             }
 
             $formatted_date = date('l, d/m/Y - H:i', strtotime($b['booking_date']));
-            $room_info = !empty($b['room_number']) ? $b['room_number'] : (!empty($b['coach_room_number']) ? $b['coach_room_number'] : 'N/A');
-            $class_display = !empty($b['class_name']) ? htmlspecialchars($b['class_name']) : 'Buổi Tập Cá Nhân (1-on-1)';
+            $class_display = !empty($b['class_name']) ? htmlspecialchars($b['class_name']) : '1-on-1 Personal Training Session';
+            $room_info = !empty($b['room_number'])
+                ? $b['room_number']
+                : (!empty($b['coach_room_number']) ? $b['coach_room_number'] : 'To be confirmed');
 
             $mail->isHTML(true);
-            $mail->Subject = "📅 [Gym Manager] Thông Báo Lịch Tập Mới / New Workout Booking (#" . $b['id'] . ")";
+            $mail->Subject = "📅 [Gym Manager] New Workout Booking (#" . $b['id'] . ")";
 
             $mail_body = "
             <div style='font-family: Arial, sans-serif; max-width: 600px; margin: auto; padding: 25px; border: 1px solid #e2e8f0; border-radius: 16px; background-color: #ffffff; color: #1c2340;'>
                 <div style='text-align: center; padding-bottom: 15px; border-bottom: 2px solid #0062ff;'>
-                    <h2 style='color: #0062ff; margin: 0; font-size: 22px;'>📅 Thông Báo Lịch Tập Mới</h2>
+                    <h2 style='color: #0062ff; margin: 0; font-size: 22px;'>📅 New Workout Booking</h2>
                     <p style='color: #64748b; font-size: 14px; margin-top: 4px;'>New Workout Booking Notification</p>
                 </div>
                 
                 <p style='color: #334155; font-size: 15px; margin-top: 20px;'>
-                    Xin chào HLV <strong>" . htmlspecialchars($b['coach_name'] ?? 'HLV') . "</strong>,<br>
-                    Học viên <strong>" . htmlspecialchars($b['client_name'] ?? 'Học viên') . "</strong> đã đăng ký lịch tập mới thành công với bạn trên hệ thống.
+                    Hello Coach <strong>" . htmlspecialchars($b['coach_name'] ?? 'Coach') . "</strong>,<br>
+                    Client <strong>" . htmlspecialchars($b['client_name'] ?? 'Client') . "</strong> has successfully booked a new session with you.
                 </p>
 
                 <div style='background: #f0f7ff; padding: 18px; border-left: 4px solid #0062ff; border-radius: 8px; margin: 20px 0;'>
-                    <p style='margin: 6px 0;'><strong>Mã buổi tập (Booking ID):</strong> #" . $b['id'] . "</p>
-                    <p style='margin: 6px 0;'><strong>Học viên (Client):</strong> " . htmlspecialchars($b['client_name'] ?? 'N/A') . "</p>
-                    <p style='margin: 6px 0;'><strong>Số điện thoại (Phone):</strong> " . htmlspecialchars($b['client_phone'] ?? 'N/A') . "</p>
+                    <p style='margin: 6px 0;'><strong>Booking ID:</strong> #" . $b['id'] . "</p>
+                    <p style='margin: 6px 0;'><strong>Client:</strong> " . htmlspecialchars($b['client_name'] ?? 'N/A') . "</p>
+                    <p style='margin: 6px 0;'><strong>Phone:</strong> " . htmlspecialchars($b['client_phone'] ?? 'N/A') . "</p>
                     <p style='margin: 6px 0;'><strong>Email:</strong> " . htmlspecialchars($b['client_email'] ?? 'N/A') . "</p>
-                    <p style='margin: 6px 0;'><strong>Loại buổi tập / Gói dịch vụ:</strong> " . $class_display . "</p>
-                    <p style='margin: 6px 0;'><strong>Phòng tập (Room):</strong> " . htmlspecialchars($room_info) . "</p>
-                    <p style='margin: 6px 0;'><strong>Thời gian (Date & Time):</strong> <span style='color: #0062ff; font-weight: bold;'>" . $formatted_date . "</span></p>
-                    <p style='margin: 6px 0;'><strong>Trạng thái (Status):</strong> <span style='color: #d97706; font-weight: bold;'>" . strtoupper($b['status']) . "</span></p>";
+                    <p style='margin: 6px 0;'><strong>Session Type:</strong> " . $class_display . "</p>
+                    <p style='margin: 6px 0;'><strong>Room:</strong> " . htmlspecialchars($room_info) . "</p>
+                    <p style='margin: 6px 0;'><strong>Date & Time:</strong> <span style='color: #0062ff; font-weight: bold;'>" . $formatted_date . "</span></p>
+                    <p style='margin: 6px 0;'><strong>Status:</strong> <span style='color: #d97706; font-weight: bold;'>" . strtoupper($b['status']) . "</span></p>";
 
             if (!empty($b['training_plan'])) {
-                $mail_body .= "<p style='margin: 6px 0;'><strong>Ghi chú / Kế hoạch:</strong> " . htmlspecialchars($b['training_plan']) . "</p>";
+                $mail_body .= "<p style='margin: 6px 0;'><strong>Notes / Plan:</strong> " . htmlspecialchars($b['training_plan']) . "</p>";
             }
 
             $mail_body .= "
                 </div>
 
                 <p style='color: #166534; background: #dcfce7; padding: 12px; border-radius: 8px; font-weight: bold; text-align: center; font-size: 14px;'>
-                    ✅ Lịch tập này đã tự động cập nhật vào Lịch dạy & Dashboard của HLV.
+                    ✅ This session has been added to your teaching calendar and Coach Dashboard.
                 </p>
 
                 <p style='color: #64748b; font-size: 13px; text-align: center; border-top: 1px solid #f1f5f9; padding-top: 15px; margin-top: 20px;'>
-                    Email này được gửi tự động đến HLV, Học viên và Ban Quản Lý Gym Manager.
+                    This automated email was sent to the coach, client, and Gym Manager team.
                 </p>
             </div>";
 
@@ -255,47 +257,51 @@ if (!function_exists('sendMembershipExpirationEmail')) {
             $mail->setFrom('lamtuoi155@gmail.com', 'Gym Manager System');
             $mail->addAddress($sub['client_email'], $sub['client_name']);
 
-            $plan_title = !empty($sub['plan_name_vi']) ? $sub['plan_name_vi'] : $sub['plan_name'];
+            $is_vi_exp = false;
+            $plan_title = $sub['plan_name'];
             $pt_total = (int)($sub['pt_sessions_total'] > 0 ? $sub['pt_sessions_total'] : $sub['pt_sessions']);
             $pt_used = (int)$sub['pt_sessions_used'];
 
             $mail->isHTML(true);
-            $mail->Subject = "⚠️ [Gym Manager] Thông Báo Hết Hạn Gói PT (" . $pt_used . "/" . $pt_total . " Buổi Tập)";
+            $mail->Subject = $is_vi_exp 
+                ? "⚠️ [Gym Manager] Thông Báo Hết Hạn Gói PT (" . $pt_used . "/" . $pt_total . " Buổi Tập)"
+                : "⚠️ [Gym Manager] PT Membership Sessions Expired (" . $pt_used . "/" . $pt_total . " Sessions)";
 
             $mail_body = "
             <div style='font-family: Arial, sans-serif; max-width: 600px; margin: auto; padding: 25px; border: 1px solid #e2e8f0; border-radius: 16px; background-color: #ffffff; color: #1c2340;'>
                 <div style='text-align: center; padding-bottom: 15px; border-bottom: 2px solid #d97706;'>
-                    <h2 style='color: #d97706; margin: 0; font-size: 22px;'>⚠️ Gói Tập PT Của Bạn Đã Hết Hạn</h2>
+                    <h2 style='color: #d97706; margin: 0; font-size: 22px;'>" . ($is_vi_exp ? "⚠️ Gói Tập PT Của Bạn Đã Hết Hạn" : "⚠️ Your PT Sessions Have Expired") . "</h2>
                     <p style='color: #64748b; font-size: 14px; margin-top: 4px;'>PT Membership Sessions Expired</p>
                 </div>
                 
                 <p style='color: #334155; font-size: 15px; margin-top: 20px;'>
-                    Xin chào <strong>" . htmlspecialchars($sub['client_name']) . "</strong>,<br>
-                    HLV đã hoàn tất điểm danh tất cả <strong>" . $pt_used . "/" . $pt_total . " buổi tập</strong> thuộc gói <strong>" . htmlspecialchars($plan_title) . "</strong> của bạn.
+                    " . ($is_vi_exp 
+                        ? "Xin chào <strong>" . htmlspecialchars($sub['client_name']) . "</strong>,<br>HLV đã hoàn tất điểm danh tất cả <strong>" . $pt_used . "/" . $pt_total . " buổi tập</strong> thuộc gói <strong>" . htmlspecialchars($plan_title) . "</strong> của bạn."
+                        : "Hello <strong>" . htmlspecialchars($sub['client_name']) . "</strong>,<br>Your coach has logged attendance for all <strong>" . $pt_used . "/" . $pt_total . " sessions</strong> under your <strong>" . htmlspecialchars($plan_title) . "</strong> membership plan.") . "
                 </p>
 
                 <div style='background: #fffbeb; padding: 18px; border-left: 4px solid #d97706; border-radius: 8px; margin: 20px 0;'>
-                    <p style='margin: 6px 0;'><strong>Gói tập:</strong> " . htmlspecialchars($plan_title) . "</p>
-                    <p style='margin: 6px 0;'><strong>Tổng số buổi:</strong> " . $pt_total . " buổi</p>
-                    <p style='margin: 6px 0;'><strong>Đã hoàn thành:</strong> <span style='color: #d97706; font-weight: bold;'>" . $pt_used . " / " . $pt_total . " buổi ✅</span></p>
-                    <p style='margin: 6px 0;'><strong>Số buổi còn lại:</strong> <span style='color: #dc2626; font-weight: bold;'>0 buổi (ĐÃ HẾT HẠN)</span></p>
+                    <p style='margin: 6px 0;'><strong>" . ($is_vi_exp ? "Gói tập:" : "Plan:") . "</strong> " . htmlspecialchars($plan_title) . "</p>
+                    <p style='margin: 6px 0;'><strong>" . ($is_vi_exp ? "Tổng số buổi:" : "Total sessions:") . "</strong> " . $pt_total . ($is_vi_exp ? " buổi" : " sessions") . "</p>
+                    <p style='margin: 6px 0;'><strong>" . ($is_vi_exp ? "Đã hoàn thành:" : "Completed:") . "</strong> <span style='color: #d97706; font-weight: bold;'>" . $pt_used . " / " . $pt_total . ($is_vi_exp ? " buổi ✅" : " sessions ✅") . "</span></p>
+                    <p style='margin: 6px 0;'><strong>" . ($is_vi_exp ? "Số buổi còn lại:" : "Remaining:") . "</strong> <span style='color: #dc2626; font-weight: bold;'>0 " . ($is_vi_exp ? "buổi (ĐÃ HẾT HẠN)" : "sessions (EXPIRED)") . "</span></p>
                 </div>
 
                 <p style='color: #334155; font-size: 14px; font-weight: bold; margin-bottom: 15px; text-align: center;'>
-                    Vui lòng chọn 1 trong 2 lựa chọn bên dưới để tiếp tục duy trì tập luyện cùng HLV:
+                    " . ($is_vi_exp ? "Vui lòng chọn 1 trong 2 lựa chọn bên dưới để tiếp tục duy trì tập luyện cùng HLV:" : "Please choose one of the options below to continue training with your coach:") . "
                 </p>
 
                 <div style='display: flex; gap: 12px; margin: 20px 0; justify-content: center; flex-wrap: wrap;'>
                     <a href='http://localhost/Gym%20Manager/pages/membership.php' style='background: linear-gradient(135deg, #2563eb, #1d4ed8); color: #ffffff; padding: 12px 20px; border-radius: 10px; text-decoration: none; font-weight: bold; font-size: 14px; display: inline-block;'>
-                        🔄 1. Gia Hạn Gói Tập (Renew)
+                        🔄 " . ($is_vi_exp ? "1. Gia Hạn Gói Tập (Renew)" : "1. Renew Plan") . "
                     </a>
                     <a href='http://localhost/Gym%20Manager/pages/membership.php' style='background: linear-gradient(135deg, #d97706, #b45309); color: #ffffff; padding: 12px 20px; border-radius: 10px; text-decoration: none; font-weight: bold; font-size: 14px; display: inline-block;'>
-                        ✨ 2. Chọn Gói Khác (Choose New)
+                        ✨ " . ($is_vi_exp ? "2. Chọn Gói Khác (Choose New)" : "2. Choose New Plan") . "
                     </a>
                 </div>
 
                 <p style='color: #64748b; font-size: 13px; text-align: center; border-top: 1px solid #f1f5f9; padding-top: 15px; margin-top: 20px;'>
-                    Email này được gửi tự động từ Hệ Thống Gym Manager.
+                    " . ($is_vi_exp ? "Email này được gửi tự động từ Hệ Thống Gym Manager." : "This automated email was sent by the Gym Manager System.") . "
                 </p>
             </div>";
 

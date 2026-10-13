@@ -28,7 +28,7 @@ $st_prod->execute([$p_id]);
 $prod_data = $st_prod->fetch();
 $stock_limit = $prod_data ? intval($prod_data['stock']) : 99;
 
-$is_vi = (!isset($_SESSION['lang']) || $_SESSION['lang'] === 'vi');
+$is_vi = (isset($_SESSION['lang']) && $_SESSION['lang'] === 'vi');
 
 if ($action === 'remove' || ($action === 'set' && $quantity <= 0)) {
     unset($_SESSION['cart'][$cart_key]);
@@ -83,16 +83,31 @@ if (!empty($cart_keys)) {
 }
 
 $cart_count = array_sum($_SESSION['cart'] ?? []);
-$total_vnd = (int)round($total * 25000);
+
+require_once __DIR__ . '/../includes/membership_loyalty.php';
+$member_discount = 0;
+$discount_rate = 0;
+if (isset($_SESSION['user_id'])) {
+    $loyalty = getUserMembershipLoyaltyInfo($pdo, (int)$_SESSION['user_id']);
+    if (!empty($loyalty['eligible_for_renewal_perks'])) {
+        $discount_rate = 0.10;
+        $member_discount = round($total * $discount_rate, 2);
+    }
+}
+$final_total = max(0, $total - $member_discount);
+$final_total_vnd = (int)round($final_total * 25000);
 
 echo json_encode([
     'success' => true,
     'cart_empty' => empty($_SESSION['cart']),
     'cart_key' => $cart_key,
     'current_qty' => $current_qty,
-    'item_subtotal_formatted' => number_format($item_subtotal, 2),
-    'total_formatted' => number_format($total, 2),
-    'total_vnd_formatted' => number_format($total_vnd, 0, ',', '.') . 'đ',
+    'item_subtotal_formatted' => number_format((int)round($item_subtotal * 25000), 0, ',', '.') . 'đ',
+    'subtotal_formatted' => number_format((int)round($total * 25000), 0, ',', '.') . 'đ',
+    'total_formatted' => number_format($final_total_vnd, 0, ',', '.') . 'đ',
+    'member_discount' => $member_discount,
+    'member_discount_formatted' => number_format((int)round($member_discount * 25000), 0, ',', '.') . 'đ',
+    'total_vnd_formatted' => number_format($final_total_vnd, 0, ',', '.') . 'đ',
     'cart_count' => $cart_count
 ]);
 ?>

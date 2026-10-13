@@ -490,7 +490,7 @@
                 <div id="gymx-modal-icon-bg" style="width:36px;height:36px;border-radius:10px;background:rgba(255,255,255,0.12);display:flex;align-items:center;justify-content:center;font-size:1.2rem;">
                     <span id="gymx-modal-icon">⚠️</span>
                 </div>
-                <h4 id="gymx-modal-title" style="color:#fff;margin:0;font-size:1.08rem;font-weight:800;font-family:inherit;">Thông Báo</h4>
+                <h4 id="gymx-modal-title" style="color:#fff;margin:0;font-size:1.08rem;font-weight:800;font-family:inherit;">Notification</h4>
             </div>
             <button onclick="closeGymXModal(false)" style="background:rgba(255,255,255,0.12);border:none;color:#fff;width:32px;height:32px;border-radius:50%;cursor:pointer;font-size:1.2rem;display:flex;align-items:center;justify-content:center;transition:all 0.2s;" onmouseover="this.style.background='rgba(255,255,255,0.25)'" onmouseout="this.style.background='rgba(255,255,255,0.12)'">×</button>
         </div>
@@ -501,10 +501,10 @@
         <!-- Footer / Actions -->
         <div style="padding:0 1.6rem 1.6rem;display:flex;gap:12px;justify-content:center;">
             <button id="gymx-modal-btn-cancel" onclick="closeGymXModal(false)" style="display:none;flex:1;padding:0.9rem;background:#f1f5f9;color:#64748b;border:none;border-radius:14px;font-weight:700;font-size:0.92rem;cursor:pointer;transition:all 0.2s;" onmouseover="this.style.background='#e2e8f0'" onmouseout="this.style.background='#f1f5f9'">
-                Hủy Bỏ
+                Cancel
             </button>
             <button id="gymx-modal-btn-confirm" onclick="closeGymXModal(true)" style="flex:1;padding:0.9rem;background:linear-gradient(135deg,#2563eb,#1d4ed8);color:#fff;border:none;border-radius:14px;font-weight:700;font-size:0.92rem;cursor:pointer;box-shadow:0 4px 15px rgba(37,99,235,0.3);transition:all 0.2s;" onmouseover="this.style.transform='translateY(-1px)'" onmouseout="this.style.transform='none'">
-                Đã Hiểu
+                Got It
             </button>
         </div>
     </div>
@@ -520,6 +520,40 @@
 <script>
 let gymxModalResolver = null;
 const GYMX_LANG = <?php echo json_encode($_SESSION['lang'] ?? 'en'); ?>;
+
+// English is the default UI language. Keep the Vietnamese dong marker only
+// for an explicit Vietnamese session; English sessions display the ISO code.
+function normaliseEnglishCurrency(root = document.body) {
+    if (GYMX_LANG !== 'en' || !root) return;
+
+    const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
+    const textNodes = [];
+    let node;
+    while ((node = walker.nextNode())) {
+        const parentTag = node.parentElement ? node.parentElement.tagName : '';
+        if (!['SCRIPT', 'STYLE', 'TEXTAREA'].includes(parentTag) && /\dđ/.test(node.nodeValue)) {
+            textNodes.push(node);
+        }
+    }
+    textNodes.forEach((textNode) => {
+        textNode.nodeValue = textNode.nodeValue.replace(/(\d)đ/g, '$1 VND');
+    });
+}
+
+if (GYMX_LANG === 'en') {
+    normaliseEnglishCurrency();
+    new MutationObserver((mutations) => {
+        mutations.forEach((mutation) => {
+            mutation.addedNodes.forEach((addedNode) => {
+                if (addedNode.nodeType === Node.ELEMENT_NODE) {
+                    normaliseEnglishCurrency(addedNode);
+                } else if (addedNode.nodeType === Node.TEXT_NODE && /\dđ/.test(addedNode.nodeValue)) {
+                    addedNode.nodeValue = addedNode.nodeValue.replace(/(\d)đ/g, '$1 VND');
+                }
+            });
+        });
+    }).observe(document.body, { childList: true, subtree: true });
+}
 
 function showGymXAlert(message, title = null, icon = '⚠️') {
     if (!title) title = GYMX_LANG === 'vi' ? 'Thông Báo' : 'Notification';

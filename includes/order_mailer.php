@@ -55,7 +55,10 @@ if (!function_exists('sendMoMoOrderSuccessEmail')) {
             $stmt_items->execute([$order_id]);
             $items = $stmt_items->fetchAll();
 
-            $customer_name  = $order['customer_name'] ?? 'Khách Hàng';
+            $curr_lang = $_SESSION['lang'] ?? 'en';
+            $is_vi_mailer = false;
+
+            $customer_name  = $order['customer_name'] ?? ($is_vi_mailer ? 'Khách Hàng' : 'Customer');
             $customer_email = $order['customer_email'] ?? '';
             $phone          = !empty($order['phone']) ? $order['phone'] : ($order['customer_phone'] ?? '');
             $address        = $order['address'] ?? '';
@@ -70,9 +73,9 @@ if (!function_exists('sendMoMoOrderSuccessEmail')) {
             // Items HTML table
             $items_rows = '';
             foreach ($items as $it) {
-                $p_name = !empty($it['name_vi']) ? $it['name_vi'] : $it['name'];
+                $p_name = ($is_vi_mailer && !empty($it['name_vi'])) ? $it['name_vi'] : $it['name'];
                 $var = !empty($it['variant']) ? " <span style='color:#64748b;font-size:0.85em;'>({$it['variant']})</span>" : '';
-                $item_total = number_format($it['price'] * $it['quantity'], 2);
+                $item_total = number_format((int)round($it['price'] * $it['quantity'] * 25000), 0, ',', '.') . ' VND';
                 $items_rows .= "
                     <tr style='border-bottom: 1px solid #e2e8f0;'>
                         <td style='padding: 12px 10px; font-weight: 600; color: #0f172a;'>
@@ -82,7 +85,7 @@ if (!function_exists('sendMoMoOrderSuccessEmail')) {
                             x{$it['quantity']}
                         </td>
                         <td style='padding: 12px 10px; text-align: right; font-weight: 700; color: #7e22ce;'>
-                            \${$item_total}
+                            {$item_total}
                         </td>
                     </tr>
                 ";
@@ -104,60 +107,62 @@ if (!function_exists('sendMoMoOrderSuccessEmail')) {
                     $mailUser->setFrom('lamtuoi155@gmail.com', 'GymX Fitness Center');
                     $mailUser->addAddress($customer_email, $customer_name);
                     $mailUser->isHTML(true);
-                    $mailUser->Subject = "💜 GymX: Xác Nhận Đã Thanh Toán MoMo Thành Công - Đơn Hàng #{$order_id}";
+                    $mailUser->Subject = $is_vi_mailer 
+                        ? "💜 GymX: Xác Nhận Đã Thanh Toán MoMo Thành Công - Đơn Hàng #{$order_id}"
+                        : "💜 GymX: MoMo Payment Confirmed - Order #{$order_id}";
 
                     $userBody = "
                     <div style='font-family: Arial, sans-serif; max-width: 620px; margin: auto; background: #ffffff; border-radius: 20px; overflow: hidden; box-shadow: 0 10px 30px rgba(0,0,0,0.08); border: 1px solid #e2e8f0;'>
                         <div style='background: linear-gradient(135deg, #a21caf 0%, #7e22ce 100%); padding: 30px 25px; text-align: center; color: #ffffff;'>
                             <div style='font-size: 3rem; margin-bottom: 10px;'>💜</div>
-                            <h2 style='margin: 0; font-size: 1.6rem; font-weight: 800; letter-spacing: -0.3px;'>Thanh Toán MoMo Thành Công!</h2>
-                            <p style='margin: 8px 0 0; opacity: 0.9; font-size: 0.95rem;'>Cảm ơn bạn đã mua sắm tại GymX. Đơn hàng của bạn đang được đóng gói và vận chuyển!</p>
+                            <h2 style='margin: 0; font-size: 1.6rem; font-weight: 800; letter-spacing: -0.3px;'>" . ($is_vi_mailer ? "Thanh Toán MoMo Thành Công!" : "MoMo Payment Successful!") . "</h2>
+                            <p style='margin: 8px 0 0; opacity: 0.9; font-size: 0.95rem;'>" . ($is_vi_mailer ? "Cảm ơn bạn đã mua sắm tại GymX. Đơn hàng của bạn đang được đóng gói và vận chuyển!" : "Thank you for shopping with GymX. Your order is being packed and prepared for delivery!") . "</p>
                         </div>
 
                         <div style='padding: 25px;'>
                             <p style='font-size: 1rem; color: #334155; margin-top: 0;'>
-                                Xin chào <strong>{$customer_name}</strong>, GymX đã nhận được thanh toán qua <strong>Ví MoMo</strong> cho đơn hàng <strong>#{$order_id}</strong>.
+                                " . ($is_vi_mailer ? "Xin chào <strong>{$customer_name}</strong>, GymX đã nhận được thanh toán qua <strong>Ví MoMo</strong> cho đơn hàng <strong>#{$order_id}</strong>." : "Hello <strong>{$customer_name}</strong>, GymX has received your payment via <strong>MoMo Wallet</strong> for order <strong>#{$order_id}</strong>.") . "
                             </p>
 
                             <!-- Order Summary Box -->
                             <div style='background: #fdf4ff; border: 1.5px solid #f0abfc; border-radius: 16px; padding: 18px; margin: 20px 0;'>
                                 <div style='display: flex; justify-content: space-between; margin-bottom: 8px;'>
-                                    <span style='color: #64748b; font-size: 0.9rem;'>Mã đơn hàng:</span>
+                                    <span style='color: #64748b; font-size: 0.9rem;'>" . ($is_vi_mailer ? "Mã đơn hàng:" : "Order ID:") . "</span>
                                     <strong style='color: #a21caf;'>#{$order_id}</strong>
                                 </div>
                                 <div style='display: flex; justify-content: space-between; margin-bottom: 8px;'>
-                                    <span style='color: #64748b; font-size: 0.9rem;'>Thời gian đặt:</span>
+                                    <span style='color: #64748b; font-size: 0.9rem;'>" . ($is_vi_mailer ? "Thời gian đặt:" : "Order Time:") . "</span>
                                     <strong style='color: #0f172a;'>{$created_at}</strong>
                                 </div>
                                 <div style='display: flex; justify-content: space-between; margin-bottom: 8px;'>
-                                    <span style='color: #64748b; font-size: 0.9rem;'>Phương thức:</span>
-                                    <strong style='color: #7e22ce;'>Ví MoMo (Đã thanh toán)</strong>
+                                    <span style='color: #64748b; font-size: 0.9rem;'>" . ($is_vi_mailer ? "Phương thức:" : "Payment Method:") . "</span>
+                                    <strong style='color: #7e22ce;'>MoMo (" . ($is_vi_mailer ? "Đã thanh toán" : "Paid") . ")</strong>
                                 </div>
                                 <div style='display: flex; justify-content: space-between; margin-bottom: 8px;'>
-                                    <span style='color: #64748b; font-size: 0.9rem;'>Trạng thái:</span>
-                                    <strong style='color: #d97706;'>🚚 Đang vận chuyển (2 - 3 ngày)</strong>
+                                    <span style='color: #64748b; font-size: 0.9rem;'>" . ($is_vi_mailer ? "Trạng thái:" : "Status:") . "</span>
+                                    <strong style='color: #d97706;'>🚚 " . ($is_vi_mailer ? "Đang vận chuyển (2 - 3 ngày)" : "Shipping (2 - 3 days)") . "</strong>
                                 </div>
                                 <div style='display: flex; justify-content: space-between; border-top: 1px dashed #e9d5ff; padding-top: 10px; margin-top: 8px;'>
-                                    <span style='font-weight: 700; color: #0f172a;'>Tổng tiền thanh toán:</span>
-                                    <strong style='font-size: 1.25rem; color: #a21caf;'>\${$total_usd} <span style='font-size:0.85em;color:#7e22ce;'>({$total_vnd}đ)</span></strong>
+                                    <span style='font-weight: 700; color: #0f172a;'>" . ($is_vi_mailer ? "Tổng tiền thanh toán:" : "Total Paid:") . "</span>
+                                    <strong style='font-size: 1.25rem; color: #a21caf;'>{$total_vnd} VND</strong>
                                 </div>
                             </div>
 
                             <!-- Delivery Address -->
                             <div style='background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 14px; padding: 15px; margin-bottom: 20px; font-size: 0.9rem; color: #334155;'>
-                                <strong style='color: #0f172a;'>📍 Thông tin nhận hàng:</strong><br>
-                                <span style='color: #64748b;'>Địa chỉ:</span> {$address}<br>
-                                <span style='color: #64748b;'>Số điện thoại:</span> {$phone}
+                                <strong style='color: #0f172a;'>📍 " . ($is_vi_mailer ? "Thông tin nhận hàng:" : "Delivery Address:") . "</strong><br>
+                                <span style='color: #64748b;'>" . ($is_vi_mailer ? "Địa chỉ:" : "Address:") . "</span> {$address}<br>
+                                <span style='color: #64748b;'>" . ($is_vi_mailer ? "Số điện thoại:" : "Phone:") . "</span> {$phone}
                             </div>
 
                             <!-- Products Table -->
-                            <h4 style='margin: 0 0 10px; color: #0f172a;'>Chi tiết sản phẩm đã mua:</h4>
+                            <h4 style='margin: 0 0 10px; color: #0f172a;'>" . ($is_vi_mailer ? "Chi tiết sản phẩm đã mua:" : "Purchased Items:") . "</h4>
                             <table style='width: 100%; border-collapse: collapse; font-size: 0.9rem; margin-bottom: 25px;'>
                                 <thead>
                                     <tr style='background: #f1f5f9; text-align: left; font-size: 0.82rem; color: #64748b; text-transform: uppercase;'>
-                                        <th style='padding: 10px;'>Sản phẩm</th>
-                                        <th style='padding: 10px; text-align: center;'>Số lượng</th>
-                                        <th style='padding: 10px; text-align: right;'>Thành tiền</th>
+                                        <th style='padding: 10px;'>" . ($is_vi_mailer ? "Sản phẩm" : "Product") . "</th>
+                                        <th style='padding: 10px; text-align: center;'>" . ($is_vi_mailer ? "Số lượng" : "Qty") . "</th>
+                                        <th style='padding: 10px; text-align: right;'>" . ($is_vi_mailer ? "Thành tiền" : "Subtotal") . "</th>
                                     </tr>
                                 </thead>
                                 <tbody>
@@ -168,12 +173,12 @@ if (!function_exists('sendMoMoOrderSuccessEmail')) {
                             <!-- CTA Button -->
                             <div style='text-align: center; margin: 30px 0 10px;'>
                                 <a href='{$tracking_url}' style='background: linear-gradient(135deg, #a21caf 0%, #7e22ce 100%); color: #ffffff; padding: 14px 30px; border-radius: 14px; font-weight: 800; font-size: 0.95rem; text-decoration: none; display: inline-block; box-shadow: 0 6px 20px rgba(162,28,175,0.35);'>
-                                    🚚 Theo Dõi Quá Trình Vận Chuyển Đơn Hàng
+                                    🚚 " . ($is_vi_mailer ? "Theo Dõi Quá Trình Vận Chuyển Đơn Hàng" : "Track Order Status & Delivery") . "
                                 </a>
                             </div>
 
                             <p style='text-align: center; font-size: 0.82rem; color: #94a3b8; margin-top: 25px;'>
-                                Khi nhận được hàng, vui lòng vào trang Theo dõi đơn hàng để xác nhận và đánh giá sản phẩm nhé! ❤️
+                                " . ($is_vi_mailer ? "Khi nhận được hàng, vui lòng vào trang Theo dõi đơn hàng để xác nhận và đánh giá sản phẩm nhé! ❤️" : "Once received, please visit your Order Tracking page to confirm delivery and leave a review! ❤️") . "
                             </p>
                         </div>
                     </div>
@@ -213,34 +218,36 @@ if (!function_exists('sendMoMoOrderSuccessEmail')) {
 
                 if ($has_manager) {
                     $mailMgr->isHTML(true);
-                    $mailMgr->Subject = "💜 [ĐÃ THANH TOÁN MOMO] Đơn Hàng Mới #{$order_id} - Khách: {$customer_name}";
+                    $mailMgr->Subject = $is_vi_mailer
+                        ? "💜 [ĐÃ THANH TOÁN MOMO] Đơn Hàng Mới #{$order_id} - Khách: {$customer_name}"
+                        : "💜 [MOMO PAID] New Order #{$order_id} - Customer: {$customer_name}";
 
                     $mgrBody = "
                     <div style='font-family: Arial, sans-serif; max-width: 620px; margin: auto; background: #ffffff; border-radius: 20px; overflow: hidden; box-shadow: 0 10px 30px rgba(0,0,0,0.08); border: 1px solid #e2e8f0;'>
                         <div style='background: linear-gradient(135deg, #1e1b4b 0%, #312e81 100%); padding: 25px; text-align: center; color: #ffffff;'>
-                            <h2 style='margin: 0; font-size: 1.4rem; font-weight: 800;'>💜 Đơn Hàng Mới Đã Thanh Toán Qua MoMo!</h2>
-                            <p style='margin: 6px 0 0; opacity: 0.9; font-size: 0.9rem;'>Khách hàng đã chuyển tiền thành công qua MoMo. Vui lòng đóng gói và xuất kho giao hàng.</p>
+                            <h2 style='margin: 0; font-size: 1.4rem; font-weight: 800;'>" . ($is_vi_mailer ? "💜 Đơn Hàng Mới Đã Thanh Toán Qua MoMo!" : "💜 New Order Paid via MoMo!") . "</h2>
+                            <p style='margin: 6px 0 0; opacity: 0.9; font-size: 0.9rem;'>" . ($is_vi_mailer ? "Khách hàng đã chuyển tiền thành công qua MoMo. Vui lòng đóng gói và xuất kho giao hàng." : "Payment received successfully via MoMo. Please pack items and dispatch.") . "</p>
                         </div>
 
                         <div style='padding: 22px;'>
                             <div style='background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 14px; padding: 15px; margin-bottom: 20px; font-size: 0.9rem;'>
-                                <strong>Thông tin khách hàng:</strong><br>
-                                • Tên: <strong>{$customer_name}</strong> ({$customer_email})<br>
-                                • SĐT: <strong>{$phone}</strong><br>
-                                • Địa chỉ nhận hàng: <strong>{$address}</strong><br>
-                                • Mã đơn hàng: <strong style='color:#a21caf;'>#{$order_id}</strong><br>
-                                • Doanh thu: <strong style='color:#16a34a;font-size:1.1em;'>\${$total_usd} ({$total_vnd}đ)</strong><br>
-                                • Phương thức: <strong style='color:#7e22ce;'>Ví MoMo (ĐÃ NHẬN TIỀN)</strong><br>
-                                • Trạng thái: <strong style='color:#d97706;'>Đang vận chuyển (pending)</strong>
+                                <strong>" . ($is_vi_mailer ? "Thông tin khách hàng:" : "Customer Information:") . "</strong><br>
+                                • " . ($is_vi_mailer ? "Tên:" : "Name:") . " <strong>{$customer_name}</strong> ({$customer_email})<br>
+                                • " . ($is_vi_mailer ? "SĐT:" : "Phone:") . " <strong>{$phone}</strong><br>
+                                • " . ($is_vi_mailer ? "Địa chỉ nhận hàng:" : "Address:") . " <strong>{$address}</strong><br>
+                                • " . ($is_vi_mailer ? "Mã đơn hàng:" : "Order ID:") . " <strong style='color:#a21caf;'>#{$order_id}</strong><br>
+                                • " . ($is_vi_mailer ? "Doanh thu:" : "Revenue:") . " <strong style='color:#16a34a;font-size:1.1em;'>{$total_vnd} VND</strong><br>
+                                • " . ($is_vi_mailer ? "Phương thức:" : "Method:") . " <strong style='color:#7e22ce;'>MoMo (" . ($is_vi_mailer ? "ĐÃ NHẬN TIỀN" : "PAID") . ")</strong><br>
+                                • " . ($is_vi_mailer ? "Trạng thái:" : "Status:") . " <strong style='color:#d97706;'>Shipping (pending)</strong>
                             </div>
 
-                            <h4 style='margin: 0 0 10px; color: #0f172a;'>Danh sách sản phẩm cần đóng gói:</h4>
+                            <h4 style='margin: 0 0 10px; color: #0f172a;'>" . ($is_vi_mailer ? "Danh sách sản phẩm cần đóng gói:" : "Items to Pack:") . "</h4>
                             <table style='width: 100%; border-collapse: collapse; font-size: 0.9rem; margin-bottom: 22px;'>
                                 <thead>
                                     <tr style='background: #f1f5f9; text-align: left; font-size: 0.82rem; color: #64748b; text-transform: uppercase;'>
-                                        <th style='padding: 10px;'>Sản phẩm</th>
-                                        <th style='padding: 10px; text-align: center;'>Số lượng</th>
-                                        <th style='padding: 10px; text-align: right;'>Giá</th>
+                                        <th style='padding: 10px;'>" . ($is_vi_mailer ? "Sản phẩm" : "Product") . "</th>
+                                        <th style='padding: 10px; text-align: center;'>" . ($is_vi_mailer ? "Số lượng" : "Qty") . "</th>
+                                        <th style='padding: 10px; text-align: right;'>" . ($is_vi_mailer ? "Giá" : "Price") . "</th>
                                     </tr>
                                 </thead>
                                 <tbody>
@@ -250,7 +257,7 @@ if (!function_exists('sendMoMoOrderSuccessEmail')) {
 
                             <div style='text-align: center; margin: 25px 0 10px;'>
                                 <a href='{$manager_url}' style='background: #0f172a; color: #ffffff; padding: 12px 26px; border-radius: 12px; font-weight: 800; font-size: 0.92rem; text-decoration: none; display: inline-block;'>
-                                    📦 Mở Bảng Quản Trị Đơn Hàng
+                                    📦 " . ($is_vi_mailer ? "Mở Bảng Quản Trị Đơn Hàng" : "Open Orders Dashboard") . "
                                 </a>
                             </div>
                         </div>

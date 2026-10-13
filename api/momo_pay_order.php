@@ -64,14 +64,27 @@ foreach ($ids as $cart_key) {
     $checkout_items[] = ['id' => $p['id'], 'price' => $price, 'qty' => $qty, 'variant' => $weight];
 }
 
+// --- Loyalty Member Discount Calculation ---
+require_once __DIR__ . '/../includes/membership_loyalty.php';
+$user_loyalty = getUserMembershipLoyaltyInfo($pdo, $user_id);
+$is_loyal = !empty($user_loyalty['eligible_for_renewal_perks']);
+$member_discount_rate = $is_loyal ? 0.10 : 0.00;
+
+$raw_usd_total = array_sum(array_map(fn($i) => $i['price'] * $i['qty'], $checkout_items));
+$member_discount_usd = round($raw_usd_total * $member_discount_rate, 2);
+$final_usd_total = max(0, $raw_usd_total - $member_discount_usd);
+
+if ($member_discount_rate > 0) {
+    $total_vnd = (int)round($total_vnd * (1 - $member_discount_rate));
+}
 // MoMo minimum 1000 VND
 if ($total_vnd < 1000) $total_vnd = 1000;
 
 // --- Create order record (status = pending until QR confirmed) ---
 try {
     $pdo->beginTransaction();
-    $stmt = $pdo->prepare("INSERT INTO orders (user_id, total_price, status, phone, address, payment_method, admin_seen) VALUES (?, ?, 'pending', ?, ?, 'momo', 0)");
-    $stmt->execute([$user_id, array_sum(array_map(fn($i) => $i['price'] * $i['qty'], $checkout_items)), $phone, $address]);
+    $stmt = $pdo->prepare("INSERT INTO orders (user_id, total_price, member_discount, status, phone, address, payment_method, admin_seen) VALUES (?, ?, ?, 'pending', ?, ?, 'momo', 0)");
+    $stmt->execute([$user_id, $final_usd_total, $member_discount_usd, $phone, $address]);
     $order_id = $pdo->lastInsertId();
 
     $stmt_item = $pdo->prepare("INSERT INTO order_items (order_id, product_id, quantity, price, variant) VALUES (?,?,?,?,?)");

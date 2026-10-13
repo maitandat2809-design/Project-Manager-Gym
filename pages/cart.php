@@ -249,6 +249,24 @@ if (!empty($_SESSION['cart'])) {
     }
 }
 
+// --- Member Loyalty Discount Calculation ---
+require_once __DIR__ . '/../includes/membership_loyalty.php';
+$user_loyalty = null;
+$is_loyal_member = false;
+$member_discount_rate = 0.0;
+$member_discount = 0.0;
+
+if (isset($_SESSION['user_id'])) {
+    $user_loyalty = getUserMembershipLoyaltyInfo($pdo, (int)$_SESSION['user_id']);
+    if (!empty($user_loyalty['eligible_for_renewal_perks'])) {
+        $is_loyal_member = true;
+        $member_discount_rate = 0.10;
+        $member_discount = round($total * $member_discount_rate, 2);
+    }
+}
+$final_total = max(0, $total - $member_discount);
+$final_total_vnd = (int)round($final_total * 25000);
+
 // --- Fetch User Orders & Reviews ---
 $user_orders = [];
 $user_reviews_map = []; // [product_id => review_data]
@@ -507,7 +525,7 @@ $cancelled_count = count(array_filter($user_orders, fn($o) => $o['status'] === '
                                             <img src="<?php echo htmlspecialchars(get_image_url($item['image'])); ?>" style="width: 64px; height: 64px; border-radius: 14px; object-fit: contain; background: #f8fafc; padding: 4px; border: 1px solid #e2e8f0; flex-shrink: 0;">
                                             <span style="font-weight: 800; color: #0f172a; font-size: 0.95rem; line-height: 1.4;"><?php echo htmlspecialchars($item['name']); ?></span>
                                         </td>
-                                        <td style="padding: 1.2rem 0.8rem; font-weight: 700; color: #334155;">$<?php echo number_format($item['price'], 2); ?></td>
+                                        <td style="padding: 1.2rem 0.8rem; font-weight: 700; color: #334155;"><?php echo number_format((int)round($item['price'] * 25000), 0, ',', '.'); ?>đ</td>
                                         <td style="padding: 1.2rem 0.8rem; text-align: center;">
                                             <div style="display: inline-flex; align-items: center; border: 1.5px solid #cbd5e1; border-radius: 12px; overflow: hidden; background: #ffffff; box-shadow: 0 1px 3px rgba(0,0,0,0.05);">
                                                 <button type="button" onclick="modifyCartQty('<?php echo $item['cart_key']; ?>', -1)" style="border: none; background: #f8fafc; width: 30px; height: 30px; font-weight: 800; cursor: pointer; color: #334155; font-size: 1.1rem; display: flex; align-items: center; justify-content: center; transition: 0.2s;" onmouseover="this.style.background='#e2e8f0'" onmouseout="this.style.background='#f8fafc'">-</button>
@@ -516,7 +534,7 @@ $cancelled_count = count(array_filter($user_orders, fn($o) => $o['status'] === '
                                             </div>
                                         </td>
                                         <td style="padding: 1.2rem 0.8rem; font-weight: 800; color: var(--primary); text-align: right; font-size: 1.05rem;">
-                                            $<span id="cart_subtotal_<?php echo $item['cart_key']; ?>"><?php echo number_format($item['subtotal'], 2); ?></span>
+                                            <span id="cart_subtotal_<?php echo $item['cart_key']; ?>"><?php echo number_format((int)round($item['subtotal'] * 25000), 0, ',', '.'); ?>đ</span>
                                         </td>
                                         <td style="padding: 1.2rem 0.8rem; text-align: center;">
                                             <a href="/Gym Manager/pages/cart.php?remove=<?php echo $item['cart_key']; ?>" style="color: #ef4444; font-weight: 700; text-decoration: none; font-size: 0.88rem; display: inline-flex; align-items: center; gap: 4px; padding: 6px 10px; border-radius: 8px; transition: background 0.2s;" onmouseover="this.style.background='#fee2e2'" onmouseout="this.style.background='transparent'" title="<?php echo __('remove_from_cart'); ?>">
@@ -542,17 +560,29 @@ $cancelled_count = count(array_filter($user_orders, fn($o) => $o['status'] === '
                     <!-- Cart Totals Card -->
                     <div style="background: #ffffff; border-radius: 28px; padding: 2.2rem; box-shadow: 0 20px 50px rgba(15, 23, 42, 0.05); border: 1px solid #e2e8f0; height: fit-content;">
                         <h3 style="margin: 0 0 1.5rem; color: #0f172a; font-weight: 900; font-size: 1.4rem; letter-spacing: -0.3px;"><?php echo __('cart_totals'); ?></h3>
-                        <div style="display: flex; justify-content: space-between; margin-bottom: 1.2rem; color: #64748b; font-weight: 600;">
+                        <div style="display: flex; justify-content: space-between; margin-bottom: 1rem; color: #64748b; font-weight: 600;">
                             <span><?php echo __('subtotal'); ?>:</span>
-                            <span style="font-weight: 800; color: #0f172a;">$<span id="cart_subtotal_usd"><?php echo number_format($total, 2); ?></span></span>
+                            <span style="font-weight: 800; color: #0f172a;"><span id="cart_subtotal_vnd"><?php echo number_format((int)round($total * 25000), 0, ',', '.'); ?>đ</span></span>
                         </div>
+
+                        <?php if ($is_loyal_member): ?>
+                            <div id="cart_discount_row" style="display: flex; justify-content: space-between; margin-bottom: 1.2rem; color: #b45309; background: #fffbeb; padding: 10px 14px; border-radius: 14px; border: 1.5px solid #fde68a; font-weight: 700; font-size: 0.88rem; align-items: center;">
+                                <span><i class="fas fa-crown" style="color: #f59e0b; margin-right: 6px;"></i> <?php echo $is_vi ? 'Đặc quyền Hội viên (-10%)' : 'VIP Member Perk (-10%)'; ?>:</span>
+                                <span style="font-weight: 800; color: #16a34a;">-<span id="cart_discount_vnd"><?php echo number_format((int)round($member_discount * 25000), 0, ',', '.'); ?>đ</span></span>
+                            </div>
+                        <?php else: ?>
+                            <div style="background: #f8fafc; border: 1px dashed #cbd5e1; border-radius: 14px; padding: 12px; margin-bottom: 1.2rem; font-size: 0.82rem; color: #64748b; line-height: 1.5;">
+                                <i class="fas fa-gift" style="color: #2563eb; margin-right: 5px;"></i>
+                                <?php echo $is_vi 
+                                    ? 'Hội viên GymX được <strong>giảm ngay 10%</strong> mọi phụ kiện & Whey. <a href="/Gym Manager/pages/membership.php" style="color:#2563eb;font-weight:700;">Xem gói thẻ</a>' 
+                                    : 'GymX members get <strong>10% OFF</strong> all shop orders. <a href="/Gym Manager/pages/membership.php" style="color:#2563eb;font-weight:700;">Explore plans</a>'; ?>
+                            </div>
+                        <?php endif; ?>
+
                         <div style="display: flex; justify-content: space-between; margin-bottom: 2rem; font-weight: 900; color: var(--primary); font-size: 1.35rem; border-top: 2px solid #f1f5f9; padding-top: 1.4rem;">
                             <span><?php echo __('total'); ?>:</span>
                             <div style="text-align: right;">
-                                <div>$<span id="cart_total_usd"><?php echo number_format($total, 2); ?></span></div>
-                                <div style="font-size: 0.85rem; color: #64748b; font-weight: 600; margin-top: 2px;">
-                                    (<span id="cart_total_vnd"><?php echo number_format((int)round($total * 25000), 0, ',', '.'); ?>đ</span>)
-                                </div>
+                                <span id="cart_total_vnd" style="font-size: 1.5rem; font-weight: 900; color: #10b981;"><?php echo number_format($final_total_vnd, 0, ',', '.'); ?>đ</span>
                             </div>
                         </div>
                         <a href="/Gym Manager/pages/checkout.php" class="btn-auth" style="display: flex; align-items: center; justify-content: center; gap: 8px; text-decoration: none; padding: 1.1rem; border-radius: 16px; font-weight: 800; font-size: 1rem; box-shadow: 0 10px 25px rgba(0, 98, 255, 0.25);">
@@ -737,7 +767,7 @@ $cancelled_count = count(array_filter($user_orders, fn($o) => $o['status'] === '
                                                             <?php endif; ?>
                                                         </div>
                                                         <div style="font-size: 0.8rem; color: #64748b; margin-top: 2px;">
-                                                            <?php echo __('quantity'); ?>: <strong><?php echo $oi['quantity']; ?></strong> × $<?php echo number_format($oi['price'], 2); ?>
+                                                            <?php echo __('quantity'); ?>: <strong><?php echo $oi['quantity']; ?></strong> × <?php echo number_format((int)round($oi['price'] * 25000), 0, ',', '.'); ?>đ
                                                         </div>
                                                     </div>
                                                 </div>
@@ -793,7 +823,7 @@ $cancelled_count = count(array_filter($user_orders, fn($o) => $o['status'] === '
                                                                    value="<?php echo $has_review ? htmlspecialchars($rev_data['comment']) : ''; ?>" 
                                                                    style="flex-grow: 1; padding: 10px 14px; border: 1.5px solid #cbd5e1; border-radius: 12px; font-size: 0.88rem; outline: none; background: #f8fafc;">
                                                             
-                                                            <button type="button" onclick="submitReviewAjax(<?php echo $ord['id']; ?>, <?php echo $oi['product_id']; ?>)" class="btn-auth" style="margin: 0; padding: 10px 20px; font-size: 0.85rem; border-radius: 12px; font-weight: 800;">
+                                                             <button type="button" onclick="submitReviewAjax(<?php echo $ord['id']; ?>, <?php echo $oi['product_id']; ?>)" class="btn-auth" style="margin: 0; padding: 10px 20px; font-size: 0.85rem; border-radius: 12px; font-weight: 800;">
                                                                 <i class="fas fa-paper-plane"></i> <?php echo $is_vi ? 'Gửi Đánh Giá' : 'Submit'; ?>
                                                             </button>
                                                             <button type="button" onclick="toggleReviewForm('rev-form-<?php echo $ord['id']; ?>-<?php echo $oi['product_id']; ?>')" style="background: #f1f5f9; color: #64748b; border: none; padding: 10px 16px; border-radius: 12px; font-weight: 700; cursor: pointer; font-size: 0.85rem;">
@@ -812,8 +842,7 @@ $cancelled_count = count(array_filter($user_orders, fn($o) => $o['status'] === '
                             <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 1rem; border-top: 1px solid #f1f5f9; padding-top: 1.2rem;">
                                 <div>
                                     <span style="font-size: 0.88rem; color: #64748b; font-weight: 600;"><?php echo __('total_payment'); ?>:</span>
-                                    <strong style="font-size: 1.3rem; color: #0f172a; margin-left: 6px; font-weight: 900;">$<?php echo number_format($ord['total_price'], 2); ?></strong>
-                                    <span style="font-size: 0.82rem; color: #94a3b8; margin-left: 6px;">(~<?php echo number_format((int)round($ord['total_price'] * 25000), 0, ',', '.'); ?>đ)</span>
+                                    <strong style="font-size: 1.3rem; color: #10b981; margin-left: 6px; font-weight: 900;"><?php echo number_format((int)round($ord['total_price'] * 25000), 0, ',', '.'); ?>đ</strong>
                                 </div>
 
                                 <?php if ($is_pending): ?>
@@ -999,10 +1028,10 @@ function modifyCartQty(cartKey, changeDelta, exactValue) {
                 var subtotalSpan = document.getElementById('cart_subtotal_' + cartKey);
                 if (subtotalSpan) subtotalSpan.innerText = data.item_subtotal_formatted;
             }
-            var subTotalUsd = document.getElementById('cart_subtotal_usd');
-            if (subTotalUsd) subTotalUsd.innerText = data.total_formatted;
-            var totalUsd = document.getElementById('cart_total_usd');
-            if (totalUsd) totalUsd.innerText = data.total_formatted;
+            var subTotalVnd = document.getElementById('cart_subtotal_vnd');
+            if (subTotalVnd) subTotalVnd.innerText = data.subtotal_formatted || data.total_formatted;
+            var discVnd = document.getElementById('cart_discount_vnd');
+            if (discVnd && data.member_discount_formatted) discVnd.innerText = data.member_discount_formatted;
             var totalVnd = document.getElementById('cart_total_vnd');
             if (totalVnd && data.total_vnd_formatted) totalVnd.innerText = data.total_vnd_formatted;
 

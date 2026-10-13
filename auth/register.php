@@ -14,20 +14,21 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
     $phone = trim($_POST['phone'] ?? '');
     $password = password_hash($_POST['password'], PASSWORD_DEFAULT);
 
-    $clean_phone = preg_replace('/[^0-9]/', '', $phone);
+    $is_valid_gmail = filter_var($email, FILTER_VALIDATE_EMAIL) && preg_match('/^[^@\s]+@gmail\.com$/i', $email);
+    $is_valid_phone = preg_match('/^[0-9]{10}$/', $phone);
 
     if (!isset($_POST['agreement'])) {
         $error = __('agree_terms_error');
-    } elseif (!filter_var($email, FILTER_VALIDATE_EMAIL)) {
-        $error = __('email_invalid_format');
-    } elseif (strlen($clean_phone) !== 10) {
-        $error = __('phone_invalid');
+    } elseif (!$is_valid_gmail) {
+        $error = $current_lang === 'vi' ? 'Email phải có định dạng @gmail.com.' : 'Email must use a @gmail.com address.';
+    } elseif (!$is_valid_phone) {
+        $error = $current_lang === 'vi' ? 'Số điện thoại phải gồm đúng 10 chữ số, không chứa chữ hoặc ký tự đặc biệt.' : 'Phone number must contain exactly 10 digits and no letters or special characters.';
     } else {
         $check_email = $pdo->prepare("SELECT id FROM users WHERE LOWER(email) = LOWER(?)");
         $check_email->execute([$email]);
         
-        $check_phone = $pdo->prepare("SELECT id FROM users WHERE (phone = ? OR phone = ?) AND phone IS NOT NULL AND phone != ''");
-        $check_phone->execute([$phone, $clean_phone]);
+        $check_phone = $pdo->prepare("SELECT id FROM users WHERE phone = ? AND phone IS NOT NULL AND phone != ''");
+        $check_phone->execute([$phone]);
 
         if ($check_email->fetch()) {
             $error = __('email_exists_error');
@@ -43,6 +44,59 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
                 $_SESSION['user_name'] = $name;
                 $_SESSION['user_email'] = $email;
                 $_SESSION['role'] = 'user';
+
+                // Automatically grant 7 days free training trial subscription
+                try {
+                    $stmt_plan = $pdo->prepare("SELECT id FROM membership_plans WHERE duration_days = 7 ORDER BY id DESC LIMIT 1");
+                    $stmt_plan->execute();
+                    $plan_row = $stmt_plan->fetch();
+
+                    if (!$plan_row) {
+                        $stmt_in_plan = $pdo->prepare("
+                            INSERT INTO membership_plans (
+                                name, name_vi, description, description_vi, price, duration_days,
+                                features, features_vi, badge, badge_color, is_popular, is_active, sort_order, pt_sessions
+                            ) VALUES (
+                                '7 Days Free Trial',
+                                '7 Ngày Tập Miễn Phí',
+                                '7 days free training trial with full gym access and privileges.',
+                                'Gói trải nghiệm 7 ngày tập luyện miễn phí với đầy đủ tiện ích phòng gym.',
+                                0,
+                                7,
+                                'Full Gym Access for 7 Days|Free Locker & Shower|1 InBody Analysis|1-on-1 PT Consultation',
+                                'Tập luyện toàn bộ khu vực trong 7 ngày|Tủ locker & phòng tắm nóng lạnh|1 lần đo chỉ số InBody miễn phí|Tư vấn lộ trình 1-1 cùng HLV',
+                                '7 DAYS FREE',
+                                '#00b4ff',
+                                0,
+                                0,
+                                0,
+                                1
+                            )
+                        ");
+                        $stmt_in_plan->execute();
+                        $trial_plan_id = (int)$pdo->lastInsertId();
+                    } else {
+                        $trial_plan_id = (int)$plan_row['id'];
+                    }
+
+                    $start_date = date('Y-m-d');
+                    $end_date   = date('Y-m-d', strtotime('+7 days'));
+
+                    $stmt_sub = $pdo->prepare("
+                        INSERT INTO member_subscriptions 
+                        (user_id, plan_id, start_date, end_date, price_paid, payment_method, status, note, admin_seen, pt_sessions_total, pt_sessions_used)
+                        VALUES (?, ?, ?, ?, 0, 'cod', 'active', ?, 1, 1, 0)
+                    ");
+                    $stmt_sub->execute([
+                        $user_id,
+                        $trial_plan_id,
+                        $start_date,
+                        $end_date,
+                        'Kích hoạt 7 ngày tập luyện miễn phí (7 Days Free Training)'
+                    ]);
+                } catch (Exception $sub_ex) {
+                    error_log("Trial subscription error: " . $sub_ex->getMessage());
+                }
                 
                 // Send welcome email
                 require_once __DIR__ . '/../libs/PHPMailer/src/Exception.php';
@@ -74,6 +128,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
                     $body .= "<ul>";
                     $body .= "<li><strong>Email:</strong> " . htmlspecialchars($email) . "</li>";
                     $body .= "<li><strong>" . __('phone_number') . ":</strong> " . htmlspecialchars($phone ? $phone : __('not_provided')) . "</li>";
+                    $body .= "<li><strong>" . __('active_membership_title') . ":</strong> 7 " . __('days_remaining') . " " . __('promo_free') . " (7 Days Free Training)</li>";
                     $body .= "</ul>";
                     $body .= "<p>" . __('welcome_email_p3') . "</p>";
                     $body .= "<p style='margin-top: 20px; font-size: 0.9em; color: #666;'>" . __('welcome_email_footer') . "</p>";
@@ -85,7 +140,8 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
                     error_log("Mail Error for Registration: " . $mail->ErrorInfo);
                 }
 
-                header("Location: /Gym Manager/index.php");
+                $_SESSION['registered_trial_success'] = true;
+                header("Location: /Gym Manager/dashboards/profile.php?welcome_trial=1");
                 exit();
             } else {
                 $error = __('something_went_wrong');
@@ -95,6 +151,10 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
 }
 
 include_once __DIR__ . '/../includes/header.php';
+
+$pref_name = trim($_POST['name'] ?? $_GET['name'] ?? '');
+$pref_phone = trim($_POST['phone'] ?? $_GET['phone'] ?? '');
+$is_promo = (isset($_GET['promo']) && $_GET['promo'] === '7days_free') || (isset($_POST['promo']) && $_POST['promo'] === '7days_free') || (!empty($pref_name) && !empty($pref_phone));
 ?>
 
 <style>
@@ -140,20 +200,31 @@ input.input-success {
         <p style="color: #00C851; text-align: center; margin-bottom: 1rem; font-weight: 600;"><?php echo $success; ?></p>
     <?php endif; ?>
 
+    <?php if ($is_promo): ?>
+        <div style="background: linear-gradient(135deg, #00b4ff, #0062ff); color: white; padding: 14px 18px; border-radius: 14px; margin-bottom: 1.5rem; display: flex; align-items: center; gap: 14px; box-shadow: 0 6px 20px rgba(0, 180, 255, 0.28);">
+            <div style="font-size: 1.8rem; background: rgba(255,255,255,0.22); width: 46px; height: 46px; border-radius: 50%; display: flex; align-items: center; justify-content: center; flex-shrink: 0; box-shadow: 0 2px 8px rgba(0,0,0,0.1);">🎁</div>
+            <div>
+                <strong style="display: block; font-size: 0.98rem; font-weight: 800; letter-spacing: 0.3px;"><?php echo __('promo_claim_banner_title'); ?></strong>
+                <span style="font-size: 0.83rem; opacity: 0.95;"><?php echo __('promo_claim_banner_desc'); ?></span>
+            </div>
+        </div>
+    <?php endif; ?>
+
     <form method="POST" id="registerForm" novalidate>
+        <input type="hidden" name="promo" value="<?php echo $is_promo ? '7days_free' : ''; ?>">
         <div class="form-group">
             <label><?php echo __('full_name'); ?></label>
-            <input type="text" name="name" id="registerName" placeholder="<?php echo __('promo_name'); ?>">
+            <input type="text" name="name" id="registerName" value="<?php echo htmlspecialchars($pref_name); ?>" placeholder="<?php echo __('promo_name'); ?>">
             <div id="nameFeedback" class="input-feedback-msg"></div>
         </div>
         <div class="form-group">
             <label><?php echo __('phone_number'); ?></label>
-            <input type="text" name="phone" id="registerPhone" placeholder="<?php echo __('phone_number'); ?> (e.g. 0912345678)">
+            <input type="tel" name="phone" id="registerPhone" value="<?php echo htmlspecialchars($pref_phone); ?>" placeholder="<?php echo __('phone_number'); ?> (e.g. 0912345678)" inputmode="numeric" minlength="10" maxlength="10" pattern="[0-9]{10}" required>
             <div id="phoneFeedback" class="input-feedback-msg"></div>
         </div>
         <div class="form-group">
             <label><?php echo __('email'); ?></label>
-            <input type="email" name="email" id="registerEmail" placeholder="example@gmail.com">
+            <input type="email" name="email" id="registerEmail" placeholder="example@gmail.com" pattern="[A-Za-z0-9._%+-]+@gmail\.com" title="Use a valid @gmail.com address" required>
             <div id="emailFeedback" class="input-feedback-msg"></div>
         </div>
         <div class="form-group">
@@ -199,6 +270,8 @@ document.addEventListener('DOMContentLoaded', function() {
     const MSG_MIN_PASS = <?php echo json_encode(__('password_min_length')); ?>;
     const MSG_PASS_OK = <?php echo json_encode(__('password_valid')); ?>;
     const MSG_INVALID_EMAIL = <?php echo json_encode(__('email_invalid_format')); ?>;
+    const MSG_GMAIL_ONLY = <?php echo json_encode($current_lang === 'vi' ? 'Email phải có định dạng @gmail.com.' : 'Email must use a @gmail.com address.'); ?>;
+    const MSG_PHONE_FORMAT = <?php echo json_encode($current_lang === 'vi' ? 'Số điện thoại phải gồm đúng 10 chữ số.' : 'Phone number must contain exactly 10 digits.'); ?>;
 
     function validateName() {
         const val = nameInput.value.trim();
@@ -250,15 +323,24 @@ document.addEventListener('DOMContentLoaded', function() {
         }
 
         if (field === 'email') {
-            const emailRegex = /^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/;
+            const emailRegex = /^[a-zA-Z0-9._%+-]+@gmail\.com$/i;
             if (!emailRegex.test(val)) {
                 feedbackEl.className = 'input-feedback-msg error';
-                feedbackEl.innerHTML = '<i class="fas fa-exclamation-triangle"></i> ' + MSG_INVALID_EMAIL;
+                feedbackEl.innerHTML = '<i class="fas fa-exclamation-triangle"></i> ' + MSG_GMAIL_ONLY;
                 inputEl.classList.add('input-error');
                 inputEl.classList.remove('input-success');
                 inputEl.dataset.duplicate = 'false';
                 return false;
             }
+        }
+
+        if (field === 'phone' && !/^[0-9]{10}$/.test(val)) {
+            feedbackEl.className = 'input-feedback-msg error';
+            feedbackEl.innerHTML = '<i class="fas fa-exclamation-triangle"></i> ' + MSG_PHONE_FORMAT;
+            inputEl.classList.add('input-error');
+            inputEl.classList.remove('input-success');
+            inputEl.dataset.duplicate = 'false';
+            return false;
         }
 
         feedbackEl.className = 'input-feedback-msg loading';
@@ -336,7 +418,7 @@ document.addEventListener('DOMContentLoaded', function() {
             const isPhoneEmpty = !phoneInput.value.trim();
             const isEmailEmpty = !emailInput.value.trim();
             const agreementInput = document.getElementById('user_agreement');
-            const isVi = (typeof GYMX_LANG !== 'undefined' ? GYMX_LANG : 'vi') === 'vi';
+            const isVi = (typeof GYMX_LANG !== 'undefined' ? GYMX_LANG : 'en') === 'vi';
 
             if (isPhoneEmpty) checkField('phone', phoneInput, phoneFeedback, MSG_REQ_PHONE);
             if (isEmailEmpty) checkField('email', emailInput, emailFeedback, MSG_REQ_EMAIL);
@@ -376,6 +458,19 @@ document.addEventListener('DOMContentLoaded', function() {
                 return false;
             }
         });
+    }
+
+    // Auto validate prefilled fields and focus next empty field
+    if (nameInput && nameInput.value.trim()) {
+        validateName();
+    }
+    if (phoneInput && phoneInput.value.trim()) {
+        checkField('phone', phoneInput, phoneFeedback, MSG_REQ_PHONE);
+    }
+    if (nameInput && nameInput.value.trim() && phoneInput && phoneInput.value.trim() && emailInput && !emailInput.value.trim()) {
+        setTimeout(function() {
+            emailInput.focus();
+        }, 300);
     }
 });
 </script>

@@ -51,7 +51,14 @@ if (isset($_GET['add_to_cart']) || isset($_GET['buy_now'])) {
 
 include_once __DIR__ . '/../includes/header.php';
 
-$search = $_GET['search'] ?? '';
+// Check membership loyalty and discount privilege for current user
+require_once __DIR__ . '/../includes/membership_loyalty.php';
+$shop_user_id = $_SESSION['user_id'] ?? 0;
+$loyalty_info = getUserMembershipLoyaltyInfo($pdo, $shop_user_id);
+$is_loyal = !empty($loyalty_info['eligible_for_renewal_perks']) || !empty($loyalty_info['is_eligible']);
+$member_discount_percent = $is_loyal ? 10 : 0;
+
+$search = trim($_GET['search'] ?? '');
 $cat = $_GET['category'] ?? '';
 $message = isset($_GET['success']) ? __('cart_success') : "";
 
@@ -70,9 +77,15 @@ $where = [];
 $params = [];
 
 if (!empty($search)) {
-    $where[] = "(p.name LIKE ? OR p.description LIKE ?)";
-    $params[] = "%$search%";
-    $params[] = "%$search%";
+    // Search in both site languages and in the category so the result is not
+    // dependent on the visitor's currently selected language.
+    $where[] = "(p.name LIKE ? OR p.name_vi LIKE ? OR p.description LIKE ? OR p.description_vi LIKE ? OR p.category LIKE ?)";
+    $search_term = "%{$search}%";
+    $params[] = $search_term;
+    $params[] = $search_term;
+    $params[] = $search_term;
+    $params[] = $search_term;
+    $params[] = $search_term;
 }
 
 if (!empty($cat) && in_array($cat, ['supplement', 'accessory'])) {
@@ -98,12 +111,118 @@ $products = $stmt->fetchAll();
 }
 </style>
 
-<section>
-    <div class="section-title">
-        <h2><?php echo __('shop_title'); ?></h2>
-        <div class="underline"></div>
-        <p style="margin-top: 10px; color: var(--text-muted);"><?php echo __('shop_subtitle'); ?></p>
+<section style="padding-top: 1.5rem;">
+    <!-- Professional Shop Hero Banner Header -->
+    <div class="shop-hero-banner" style="text-align: center; max-width: 980px; margin: 0 auto 2.5rem auto; position: relative;">
+        <!-- Top Eyebrow Badge -->
+        <div style="display: inline-flex; align-items: center; gap: 8px; background: rgba(201, 168, 76, 0.12); border: 1px solid rgba(201, 168, 76, 0.35); padding: 6px 18px; border-radius: 30px; margin-bottom: 1.2rem;">
+            <i class="fas fa-certificate" style="color: var(--gold); font-size: 0.82rem;"></i>
+            <span style="font-size: 0.78rem; font-weight: 800; letter-spacing: 2px; text-transform: uppercase; color: var(--gold);">
+                <?php echo $current_lang === 'vi' ? 'HỆ THỐNG CỬA HÀNG THỂ HÌNH CHÍNH HÃNG' : 'OFFICIAL FITNESS & NUTRITION STORE'; ?>
+            </span>
+        </div>
+
+        <!-- Main Title -->
+        <h1 style="font-family: 'Playfair Display', serif; font-size: clamp(2.3rem, 4.8vw, 3.5rem); font-weight: 800; color: #0f172a; margin: 0 0 1rem 0; line-height: 1.2; letter-spacing: -0.5px;">
+            <?php echo $current_lang === 'vi' ? 'Dinh Dưỡng & Phụ Kiện' : 'GymX Performance'; ?> 
+            <span style="background: linear-gradient(135deg, #1e3a8a 0%, #2563eb 50%, #c9a84c 100%); -webkit-background-clip: text; -webkit-text-fill-color: transparent;">Pro Store</span>
+        </h1>
+
+        <!-- Elegant Decorative Line with Dumbbell Icon -->
+        <div style="display: flex; align-items: center; justify-content: center; gap: 12px; margin-bottom: 1.2rem;">
+            <div style="width: 50px; height: 1.5px; background: linear-gradient(to right, transparent, var(--gold));"></div>
+            <i class="fas fa-dumbbell" style="color: var(--gold); font-size: 0.9rem;"></i>
+            <div style="width: 50px; height: 1.5px; background: linear-gradient(to left, transparent, var(--gold));"></div>
+        </div>
+
+        <!-- Subtitle Description -->
+        <p style="font-size: 1.05rem; color: #64748b; max-width: 740px; margin: 0 auto 2rem auto; line-height: 1.6; font-weight: 400;">
+            <?php echo __('shop_subtitle'); ?>
+        </p>
+
+        <!-- Trust Badges Bar (3 Cam kết chất lượng) -->
+        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 1rem; max-width: 860px; margin: 0 auto; text-align: left;">
+            <div style="background: #ffffff; border: 1px solid #e2e8f0; border-radius: 14px; padding: 12px 18px; display: flex; align-items: center; gap: 12px; box-shadow: 0 4px 15px rgba(0,0,0,0.03);">
+                <div style="width: 40px; height: 40px; border-radius: 10px; background: #eff6ff; color: #2563eb; display: flex; align-items: center; justify-content: center; font-size: 1.15rem; flex-shrink: 0;">
+                    <i class="fas fa-shield-alt"></i>
+                </div>
+                <div>
+                    <strong style="display: block; font-size: 0.88rem; color: #0f172a;"><?php echo $current_lang === 'vi' ? '100% Chính Hãng' : '100% Authentic'; ?></strong>
+                    <span style="font-size: 0.75rem; color: #64748b;"><?php echo $current_lang === 'vi' ? 'Nhập khẩu tem kiểm định' : 'Verified import & safety'; ?></span>
+                </div>
+            </div>
+
+            <div style="background: #ffffff; border: 1px solid #e2e8f0; border-radius: 14px; padding: 12px 18px; display: flex; align-items: center; gap: 12px; box-shadow: 0 4px 15px rgba(0,0,0,0.03);">
+                <div style="width: 40px; height: 40px; border-radius: 10px; background: #ecfdf5; color: #059669; display: flex; align-items: center; justify-content: center; font-size: 1.15rem; flex-shrink: 0;">
+                    <i class="fas fa-truck-fast"></i>
+                </div>
+                <div>
+                    <strong style="display: block; font-size: 0.88rem; color: #0f172a;"><?php echo $current_lang === 'vi' ? 'Giao Hàng Siêu Tốc' : 'Fast Delivery'; ?></strong>
+                    <span style="font-size: 0.75rem; color: #64748b;"><?php echo $current_lang === 'vi' ? 'Đóng gói chuẩn bảo quản' : 'Nationwide 2-3 days'; ?></span>
+                </div>
+            </div>
+
+            <div style="background: #ffffff; border: 1px solid #e2e8f0; border-radius: 14px; padding: 12px 18px; display: flex; align-items: center; gap: 12px; box-shadow: 0 4px 15px rgba(0,0,0,0.03);">
+                <div style="width: 40px; height: 40px; border-radius: 10px; background: #fffbeb; color: #d97706; display: flex; align-items: center; justify-content: center; font-size: 1.15rem; flex-shrink: 0;">
+                    <i class="fas fa-crown"></i>
+                </div>
+                <div>
+                    <strong style="display: block; font-size: 0.88rem; color: #0f172a;"><?php echo $current_lang === 'vi' ? 'Giảm 10% Hội Viên' : '10% VIP Perk'; ?></strong>
+                    <span style="font-size: 0.75rem; color: #64748b;"><?php echo $current_lang === 'vi' ? 'Tự động áp dụng giá tốt' : 'Auto discount for members'; ?></span>
+                </div>
+            </div>
+        </div>
     </div>
+
+    <!-- VIP Member Loyalty Discount Banner -->
+    <?php if ($is_loyal): ?>
+        <div style="max-width: 1000px; margin: 0 auto 2.5rem auto; background: linear-gradient(135deg, #064e3b 0%, #065f46 50%, #047857 100%); color: #ffffff; padding: 1.4rem 1.8rem; border-radius: 20px; box-shadow: 0 10px 25px rgba(5,150,105,0.25); border: 1.5px solid #34d399; display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 1rem;">
+            <div style="display: flex; align-items: center; gap: 14px;">
+                <div style="width: 48px; height: 48px; border-radius: 14px; background: rgba(255,255,255,0.15); display: flex; align-items: center; justify-content: center; font-size: 1.5rem; color: #fde047; box-shadow: 0 4px 10px rgba(0,0,0,0.15);">
+                    <i class="fas fa-crown"></i>
+                </div>
+                <div>
+                    <div style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
+                        <span style="font-weight: 800; font-size: 1.1rem; color: #ffffff;">
+                            <?php echo $current_lang === 'vi' ? 'ĐẶC QUYỀN HỘI VIÊN GYMX' : 'GYMX MEMBER PRIVILEGE'; ?>
+                        </span>
+                        <span style="background: #fde047; color: #064e3b; font-weight: 800; font-size: 0.72rem; padding: 2px 8px; border-radius: 6px; text-transform: uppercase;">
+                            <?php echo $current_lang === 'vi' ? $loyalty_info['tier_name_vi'] : $loyalty_info['tier_name_en']; ?>
+                        </span>
+                    </div>
+                    <p style="margin: 4px 0 0 0; color: #ecfdf5; font-size: 0.9rem;">
+                        <?php echo $current_lang === 'vi' 
+                            ? 'Chào mừng bạn! Tài khoản của bạn được <strong>GIẢM NGAY 10%</strong> cho toàn bộ sản phẩm bên dưới.' 
+                            : 'Welcome! Your account enjoys an exclusive <strong>10% OFF</strong> applied on all products below.'; ?>
+                    </p>
+                </div>
+            </div>
+            <div style="background: rgba(255,255,255,0.18); border: 1px solid rgba(255,255,255,0.3); border-radius: 12px; padding: 6px 14px; font-weight: 800; font-size: 0.85rem; color: #ffffff; display: flex; align-items: center; gap: 6px;">
+                <i class="fas fa-percent"></i> <?php echo $current_lang === 'vi' ? 'Đã kích hoạt giảm 10%' : '10% Discount Active'; ?>
+            </div>
+        </div>
+    <?php else: ?>
+        <div style="max-width: 1000px; margin: 0 auto 2.5rem auto; background: linear-gradient(135deg, #1e293b 0%, #0f172a 100%); color: #ffffff; padding: 1.3rem 1.8rem; border-radius: 20px; box-shadow: 0 10px 25px rgba(0,0,0,0.1); border: 1px solid #334155; display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 1rem;">
+            <div style="display: flex; align-items: center; gap: 14px;">
+                <div style="width: 46px; height: 46px; border-radius: 14px; background: rgba(245,158,11,0.2); display: flex; align-items: center; justify-content: center; font-size: 1.4rem; color: #f59e0b;">
+                    <i class="fas fa-gem"></i>
+                </div>
+                <div>
+                    <span style="font-weight: 800; font-size: 1.05rem; color: #ffffff;">
+                        <?php echo $current_lang === 'vi' ? 'ƯU ĐÃI ĐẶC BIỆT KHI MUA MEMBERSHIP' : 'EXCLUSIVE MEMBERSHIP BENEFIT'; ?>
+                    </span>
+                    <p style="margin: 4px 0 0 0; color: #cbd5e1; font-size: 0.88rem;">
+                        <?php echo $current_lang === 'vi' 
+                            ? 'Các tài khoản đang mua hoặc đã mua gói thẻ thành viên được <strong>GIẢM THÊM 10%</strong> khi mua sắm tại Shop!' 
+                            : 'Accounts currently or previously holding a membership get <strong>10% OFF</strong> all shop products!'; ?>
+                    </p>
+                </div>
+            </div>
+            <a href="/Gym Manager/pages/membership.php" class="cta-btn" style="margin: 0; padding: 0.65rem 1.4rem; font-size: 0.85rem; border-radius: 12px; background: linear-gradient(135deg, #f59e0b, #d97706); border: none; display: inline-flex; align-items: center; gap: 6px;">
+                <i class="fas fa-id-card"></i> <?php echo $current_lang === 'vi' ? 'Xem Gói Hội Viên' : 'Explore Memberships'; ?>
+            </a>
+        </div>
+    <?php endif; ?>
 
     <?php if($message): ?>
         <p style="color: #16a34a; text-align: center; margin-bottom: 2rem; background: #f0fdf4; padding: 1.2rem; border-radius: 20px; border: 1px solid #bbf7d0; font-weight: 600;"><?php echo $message; ?></p>
@@ -111,7 +230,7 @@ $products = $stmt->fetchAll();
 
     <!-- Search Form -->
     <div class="search-container">
-        <form action="shop.php" method="GET" class="search-form">
+        <form action="/Gym Manager/pages/shop.php" method="GET" class="search-form">
             <?php if(!empty($cat)): ?>
                 <input type="hidden" name="category" value="<?php echo htmlspecialchars($cat); ?>">
             <?php endif; ?>
@@ -120,6 +239,10 @@ $products = $stmt->fetchAll();
                 <div class="search-input-wrapper">
                     <i class="fas fa-search"></i>
                     <input type="text" id="product-search" name="search" placeholder="<?php echo __('search_products'); ?>" value="<?php echo htmlspecialchars($search); ?>">
+                    <button type="submit" class="shop-search-submit" aria-label="<?php echo $current_lang === 'vi' ? 'Tìm sản phẩm' : 'Search products'; ?>">
+                        <i class="fas fa-arrow-right"></i>
+                        <span><?php echo $current_lang === 'vi' ? 'Tìm' : 'Search'; ?></span>
+                    </button>
                 </div>
             </div>
         </form>
@@ -176,9 +299,43 @@ $products = $stmt->fetchAll();
 
                     <p style="margin-bottom: 1.5rem; flex-grow: 1;"><?php echo ($current_lang === 'vi' && !empty($product['description_vi'])) ? $product['description_vi'] : $product['description']; ?></p>
                     <div class="card-footer" style="margin-top: auto; display: flex; flex-direction: column; gap: 1rem;">
-                        <div style="display: flex; justify-content: space-between; align-items: center;">
-                            <span class="price" style="font-size: 1.5rem;">$<?php echo $product['price']; ?> <span style="font-size: 0.95rem; color: var(--text-muted); font-weight: 600;">(~<?php echo number_format((int)round($product['price'] * 25000), 0, ',', '.'); ?>đ)</span></span>
-                        </div>
+                        <?php 
+                            $orig_p = (float)$product['price'];
+                            $mem_p  = round($orig_p * 0.90, 2);
+                            $orig_vnd = (int)round($orig_p * 25000);
+                            $mem_vnd  = (int)round($mem_p * 25000);
+                            $saved_vnd = $orig_vnd - $mem_vnd;
+                        ?>
+                        <?php if ($is_loyal): ?>
+                            <div style="display: flex; flex-direction: column; gap: 4px;">
+                                <div style="display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap;">
+                                    <span class="price" style="font-size: 1.55rem; color: #16a34a; font-weight: 800;">
+                                        <?php echo number_format($mem_vnd, 0, ',', '.'); ?>đ
+                                    </span>
+                                    <span style="text-decoration: line-through; color: #94a3b8; font-size: 1rem; font-weight: 600;">
+                                        <?php echo number_format($orig_vnd, 0, ',', '.'); ?>đ
+                                    </span>
+                                    <span style="background: #dcfce7; color: #15803d; border: 1px solid #bbf7d0; padding: 2px 8px; border-radius: 6px; font-weight: 800; font-size: 0.72rem; display: inline-flex; align-items: center; gap: 4px;">
+                                        <i class="fas fa-tag"></i> <?php echo $current_lang === 'vi' ? 'Giảm 10% Hội Viên' : '10% Member OFF'; ?>
+                                    </span>
+                                </div>
+                                <span style="font-size: 0.82rem; color: var(--text-muted); font-weight: 600;">
+                                    <span style="color:#16a34a;"><?php echo $current_lang === 'vi' ? 'Tiết kiệm ' . number_format($saved_vnd, 0, ',', '.') . 'đ' : 'Save ' . number_format($saved_vnd, 0, ',', '.') . 'đ'; ?></span>
+                                </span>
+                            </div>
+                        <?php else: ?>
+                            <div style="display: flex; flex-direction: column; gap: 4px;">
+                                <div style="display: flex; justify-content: space-between; align-items: baseline;">
+                                    <span class="price" style="font-size: 1.5rem; font-weight: 800; color: var(--primary);">
+                                        <?php echo number_format($orig_vnd, 0, ',', '.'); ?>đ
+                                    </span>
+                                </div>
+                                <div style="background: #f8fafc; border: 1px dashed #cbd5e1; border-radius: 8px; padding: 5px 10px; font-size: 0.78rem; color: #475569; display: flex; align-items: center; justify-content: space-between;">
+                                    <span><i class="fas fa-crown" style="color: #f59e0b;"></i> <?php echo $current_lang === 'vi' ? 'Hội viên GymX chỉ:' : 'Member price:'; ?> <strong style="color: #16a34a;"><?php echo number_format($mem_vnd, 0, ',', '.'); ?>đ</strong></span>
+                                    <a href="/Gym Manager/pages/membership.php" style="color: var(--primary); font-weight: 700; text-decoration: none; font-size: 0.74rem;">-10% OFF &rarr;</a>
+                                </div>
+                            </div>
+                        <?php endif; ?>
                         <form id="form-prod-<?php echo $product['id']; ?>" action="shop.php" method="GET" style="display: flex; flex-direction: column; gap: 1rem; width: 100%;" novalidate>
                             <div style="display: flex; gap: 10px; align-items: center;">
                                 <div style="display: flex; flex-direction: column; width: 80px;">
@@ -187,9 +344,9 @@ $products = $stmt->fetchAll();
                                 <?php if (!empty($product['has_weight_variants']) && $product['has_weight_variants'] == 1): ?>
                                 <select name="weight" style="padding: 0.8rem; border-radius: 8px; border: 1px solid #e2e8f0; font-weight: 600; width: 100%; outline: none; background: #f8fafc; color: var(--text-main); flex-grow: 1;">
                                     <option value="500g">500g (<?php echo ($current_lang === 'vi') ? 'Tiêu chuẩn' : 'Standard'; ?>)</option>
-                                    <option value="1kg">1 kg (+ $10)</option>
-                                    <option value="2kg">2 kg (+ $25)</option>
-                                    <option value="5kg">5 kg (+ $60)</option>
+                                    <option value="1kg">1 kg (+ 250.000đ)</option>
+                                    <option value="2kg">2 kg (+ 625.000đ)</option>
+                                    <option value="5kg">5 kg (+ 1.500.000đ)</option>
                                 </select>
                                 <?php endif; ?>
                             </div>
@@ -448,15 +605,22 @@ function closeConfirmModal() {
     currentFormToSubmit = null;
 }
 
-document.getElementById('btnConfirmYes').addEventListener('click', function() {
-    if (currentFormToSubmit) {
-        let input = document.createElement("input");
-        input.type = "hidden";
-        input.name = currentActionName;
-        input.value = currentProductId;
-        currentFormToSubmit.appendChild(input);
-        currentFormToSubmit.submit();
-    }
+// The confirmation modal is declared after this script. Wait until parsing has
+// completed before attaching the handler so the Shop page never throws on load.
+document.addEventListener('DOMContentLoaded', function () {
+    const confirmYesButton = document.getElementById('btnConfirmYes');
+    if (!confirmYesButton) return;
+
+    confirmYesButton.addEventListener('click', function() {
+        if (currentFormToSubmit) {
+            let input = document.createElement("input");
+            input.type = "hidden";
+            input.name = currentActionName;
+            input.value = currentProductId;
+            currentFormToSubmit.appendChild(input);
+            currentFormToSubmit.submit();
+        }
+    });
 });
 </script>
 

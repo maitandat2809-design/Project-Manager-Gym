@@ -18,7 +18,7 @@ $rating     = max(1, min(5, intval($input['rating'] ?? 5)));
 $comment    = trim($input['comment'] ?? '');
 $user_id    = (int)$_SESSION['user_id'];
 
-$is_vi = (!isset($_SESSION['lang']) || $_SESSION['lang'] === 'vi');
+$is_vi = (isset($_SESSION['lang']) && $_SESSION['lang'] === 'vi');
 
 if ($product_id <= 0) {
     echo json_encode(['success' => false, 'message' => $is_vi ? 'Sản phẩm không hợp lệ' : 'Invalid product']);

@@ -11,7 +11,7 @@ if (!isset($_GET['id'])) {
 }
 
 $id = $_GET['id'];
-$stmt = $pdo->prepare("SELECT c.*, u.name as coach_name, u.email, u.avatar FROM coaches c JOIN users u ON c.user_id = u.id WHERE c.id = ?");
+$stmt = $pdo->prepare("SELECT c.*, u.name as coach_name, u.email, u.avatar FROM coaches c JOIN users u ON c.user_id = u.id WHERE c.id = ? AND u.status = 'active'");
 $stmt->execute([$id]);
 $coach = $stmt->fetch();
 
@@ -24,6 +24,8 @@ if (!$coach) {
 
 $message = '';
 $error = '';
+$booking_created = false;
+$conflicting_booking_id = null;
 
 
 
@@ -41,12 +43,20 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['book_now']) && isset($
     }
 
     $valid_dates = [];
+    $has_outside_operating_hours = false;
     foreach ($booking_dates as $d) {
         $trimmed = trim($d);
         if (!empty($trimmed)) {
             $ts = strtotime($trimmed);
             if ($ts && $ts >= time()) {
-                $valid_dates[] = date('Y-m-d H:i:s', $ts);
+                $hour = (int) date('G', $ts);
+                $minute = (int) date('i', $ts);
+                // Sessions begin on the hour. The gym is available from 07:00 to 22:00.
+                if ($hour < 7 || $hour > 22 || $minute !== 0) {
+                    $has_outside_operating_hours = true;
+                } else {
+                    $valid_dates[] = date('Y-m-d H:i:s', $ts);
+                }
             }
         }
     }
@@ -59,6 +69,10 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['book_now']) && isset($
     // Validation: phone format, valid future dates
     if (!preg_match('/^[0-9]{10}$/', $user_phone)) {
         $error = __('phone_invalid');
+    } elseif ($has_outside_operating_hours) {
+        $error = (isset($_SESSION['lang']) && $_SESSION['lang'] === 'vi')
+            ? "⚠️ Giờ hoạt động là 07:00 đến 22:00. Vui lòng chọn ngày hoặc giờ khác."
+            : "⚠️ Booking hours are from 07:00 to 22:00. Please choose another date or time.";
     } elseif (empty($valid_dates)) {
         $error = (isset($_SESSION['lang']) && $_SESSION['lang'] === 'vi')
             ? "⚠️ Vui lòng chọn ít nhất một khung giờ tập luyện."
@@ -102,6 +116,30 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['book_now']) && isset($
                     : "⚠️ The coach already has a session at $slot_fmt. Please choose another slot!";
                 break;
             }
+
+            // A member may only have one active coaching session in the same hour.
+            // This is checked server-side so it cannot be bypassed from the browser.
+            $user_conflict_stmt = $pdo->prepare("
+                SELECT b.id, coach_user.name AS existing_coach_name
+                FROM bookings b
+                JOIN coaches existing_coach ON b.coach_id = existing_coach.id
+                JOIN users coach_user ON existing_coach.user_id = coach_user.id
+                WHERE b.user_id = ?
+                  AND b.status NOT IN ('cancelled', 'rejected', 'completed')
+                  AND DATE(b.booking_date) = DATE(?)
+                  AND HOUR(b.booking_date) = HOUR(?)
+                LIMIT 1
+            ");
+            $user_conflict_stmt->execute([$_SESSION['user_id'], $b_date, $b_date]);
+            $existing_booking = $user_conflict_stmt->fetch();
+
+            if ($existing_booking) {
+                $conflict_found = true;
+                $conflicting_booking_id = (int)$existing_booking['id'];
+                $slot_fmt = date('d/m/Y H:i', $requested_time);
+                $conflict_msg = "⚠️ You already have a session with Coach " . htmlspecialchars($existing_booking['existing_coach_name']) . " at $slot_fmt. Please choose another date or time, or cancel the existing coach booking first.";
+                break;
+            }
         }
 
         if ($conflict_found) {
@@ -133,6 +171,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['book_now']) && isset($
                         ? "🎉 Đã gửi thành công yêu cầu đặt " . count($valid_dates) . " khung giờ tập! HLV sẽ liên hệ xác nhận sớm nhất."
                         : "🎉 Successfully requested " . count($valid_dates) . " workout sessions! The coach will confirm shortly.")
                     : __('booking_success');
+                $booking_created = true;
             } catch (Exception $e) {
                 if ($pdo->inTransaction()) {
                     $pdo->rollBack();
@@ -197,12 +236,26 @@ if (isset($_SESSION['user_id'])) {
 
 <section class="coach-detail-page-wrap">
     <?php if($message): ?>
-        <p style="color: #00C851; text-align: center; margin-bottom: 1.5rem; background: rgba(0,200,81,0.1); padding: 1rem 1.5rem; border-radius: 12px; font-weight: 700;"><?php echo $message; ?></p>
+        <?php if($booking_created): ?>
+            <div role="status" style="color: #166534; text-align: center; margin-bottom: 1.5rem; background: #f0fdf4; border: 1px solid #86efac; padding: 1.1rem 1.5rem; border-radius: 16px; font-weight: 700; box-shadow: 0 8px 20px rgba(22, 163, 74, 0.10);">
+                <i class="fas fa-circle-check" aria-hidden="true" style="margin-right: 8px; color: #16a34a;"></i><?php echo htmlspecialchars($message); ?>
+                <a href="/Gym Manager/features/calendar.php" style="display: inline-flex; align-items: center; gap: 7px; margin-left: 14px; padding: 0.55rem 0.9rem; border-radius: 10px; background: #166534; color: #fff; text-decoration: none; font-size: 0.9rem; white-space: nowrap;">
+                    <?php echo __('view_calendar'); ?> <i class="fas fa-arrow-right" aria-hidden="true"></i>
+                </a>
+            </div>
+        <?php else: ?>
+            <p style="color: #00C851; text-align: center; margin-bottom: 1.5rem; background: rgba(0,200,81,0.1); padding: 1rem 1.5rem; border-radius: 12px; font-weight: 700;"><?php echo htmlspecialchars($message); ?></p>
+        <?php endif; ?>
     <?php endif; ?>
 
     <?php if($error): ?>
-        <div style="background: #fef2f2; color: #991b1b; border: 1px solid #fca5a5; padding: 1.25rem 1.5rem; border-radius: 16px; margin-bottom: 1.5rem; box-shadow: 0 4px 14px rgba(239, 68, 68, 0.12); line-height: 1.6; max-width: 800px; margin-left: auto; margin-right: auto;">
+            <div style="background: #fef2f2; color: #991b1b; border: 1px solid #fca5a5; padding: 1.25rem 1.5rem; border-radius: 16px; margin-bottom: 1.5rem; box-shadow: 0 4px 14px rgba(239, 68, 68, 0.12); line-height: 1.6; max-width: 800px; margin-left: auto; margin-right: auto;">
             <?php echo $error; ?>
+            <?php if ($conflicting_booking_id): ?>
+                <a href="/Gym%20Manager/features/calendar.php?booking_id=<?php echo $conflicting_booking_id; ?>" style="display: inline-flex; align-items: center; gap: 7px; margin-left: 12px; padding: 0.5rem 0.8rem; border-radius: 9px; background: #991b1b; color: #fff; text-decoration: none; font-weight: 700; font-size: 0.88rem;">
+                    View Calendar and cancel existing booking
+                </a>
+            <?php endif; ?>
         </div>
     <?php endif; ?>
 
@@ -242,8 +295,12 @@ if (isset($_SESSION['user_id'])) {
                         <h1 class="coach-title-name"><?php echo __('coach_label') . ' ' . htmlspecialchars($coach['coach_name']); ?></h1>
 
                         <div class="coach-meta-chips-row">
+                            <?php 
+                            $coach_hr = floatval($coach['hourly_rate'] ?? 0);
+                            if ($coach_hr < 100) $coach_hr *= 25000;
+                            ?>
                             <span class="meta-chip-item price-chip">
-                                💰 <strong>$<?php echo number_format((float)$coach['hourly_rate'], 2); ?></strong><?php echo __('hour_label'); ?>
+                                💰 <strong><?php echo number_format((int)round($coach_hr), 0, ',', '.'); ?>đ</strong><?php echo __('hour_label'); ?>
                             </span>
                             <span class="meta-chip-item email-chip">
                                 📧 <span><?php echo htmlspecialchars($coach['email']); ?></span>
@@ -309,11 +366,11 @@ if (isset($_SESSION['user_id'])) {
                     <p class="booking-simple-subtitle"><?php echo __('book_session_subtitle'); ?></p>
                 </div>
 
-                <form method="POST" id="coachBookingForm">
+                <form method="POST" id="coachBookingForm" novalidate>
                     <div class="form-group" style="margin-bottom: 1.2rem;">
                         <label class="simple-form-label">
                             <span><i class="fas fa-phone-alt" style="color: var(--primary); margin-right: 6px;"></i> <?php echo __('your_phone_label'); ?></span>
-                            <span style="font-size: 0.8rem; color: var(--text-muted); font-weight: normal;">(10 chữ số)</span>
+                            <span style="font-size: 0.8rem; color: var(--text-muted); font-weight: normal;"><?php echo __('ten_digits_hint'); ?></span>
                         </label>
                         <input type="text" name="user_phone" required placeholder="090x xxx xxx" pattern="[0-9]{10}" title="<?php echo __('phone_invalid'); ?>"
                                value="<?php echo isset($curr_user['phone']) ? htmlspecialchars($curr_user['phone']) : ''; ?>"
@@ -334,7 +391,7 @@ if (isset($_SESSION['user_id'])) {
                             <label class="simple-form-label" style="margin: 0;">
                                 <span><i class="fas fa-clock" style="color: var(--primary); margin-right: 6px;"></i> <?php echo __('select_date_time_label'); ?></span>
                             </label>
-                            <button type="button" id="btnAddSlot" class="btn-add-extra-slot" title="Thêm khung giờ tập khác trong ngày">
+                            <button type="button" id="btnAddSlot" class="btn-add-extra-slot" title="<?php echo (($_SESSION['lang'] ?? 'en') === 'vi') ? 'Thêm khung giờ tập khác trong ngày' : 'Add another workout time slot'; ?>">
                                 <i class="fas fa-plus-circle"></i> <?php echo (($_SESSION['lang'] ?? 'en') === 'en') ? '+ Add another time' : '+ Thêm giờ tập'; ?>
                             </button>
                         </div>
@@ -342,7 +399,7 @@ if (isset($_SESSION['user_id'])) {
                         <div id="bookingDatesContainer" style="display: flex; flex-direction: column; gap: 10px;">
                             <div class="booking-date-row">
                                 <input type="datetime-local" name="booking_dates[]" required 
-                                       min="<?php echo date('Y-m-d\TH:i'); ?>"
+                                       min="<?php echo date('Y-m-d\TH:i'); ?>" step="3600"
                                        class="simple-form-input booking-date-field">
                             </div>
                         </div>
@@ -359,8 +416,8 @@ if (isset($_SESSION['user_id'])) {
                             <div class="hints-note">
                                 <i class="fas fa-info-circle" style="color: #0284c7;"></i>
                                 <span><?php echo (($_SESSION['lang'] ?? 'en') === 'en')
-                                    ? 'Coach accepts bookings from 06:00 to 22:00 (60 mins/session). Click any suggestion above to autofill.'
-                                    : 'HLV nhận lịch từ 06:00 đến 22:00 hàng ngày (mỗi buổi 60 phút). Bấm vào gợi ý để điền nhanh hoặc tự chọn theo lịch của bạn.'; ?></span>
+                                    ? 'Booking hours are from 07:00 to 22:00 (60 minutes per session). Click any suggestion above to autofill.'
+                                    : 'HLV nhận lịch từ 07:00 đến 22:00 hàng ngày (mỗi buổi 60 phút). Bấm vào gợi ý để điền nhanh hoặc tự chọn theo lịch của bạn.'; ?></span>
                             </div>
                         </div>
                     </div>
@@ -388,7 +445,7 @@ if (isset($_SESSION['user_id'])) {
                         ? 'You are logged in as a Coach. To view and manage appointments requested by trainees, visit your schedule manager.'
                         : 'Bạn đang đăng nhập dưới quyền Huấn luyện viên. Để kiểm tra danh sách lịch tập học viên đã đặt, vui lòng truy cập trang quản lý lịch tập.'; ?>
                 </p>
-                <a href="/Gym Manager/coach/schedule.php" class="cta-btn" style="text-decoration: none; display: inline-flex; align-items: center; gap: 8px; padding: 0.85rem 1.8rem;">
+                <a href="/Gym Manager/dashboards/coach_dashboard.php?tab=schedule" class="cta-btn" style="text-decoration: none; display: inline-flex; align-items: center; gap: 8px; padding: 0.85rem 1.8rem;">
                     <i class="fas fa-calendar-alt"></i> <?php echo (($_SESSION['lang'] ?? 'en') === 'en') ? 'Go to My Schedule' : 'Quản Lý Lịch Tập Của Tôi'; ?>
                 </a>
             </div>
@@ -1280,7 +1337,7 @@ document.addEventListener("DOMContentLoaded", function() {
             row.style.marginTop = "8px";
             row.innerHTML = `
                 <input type="datetime-local" name="booking_dates[]" required 
-                       min="<?php echo date('Y-m-d\TH:i'); ?>"
+                       min="<?php echo date('Y-m-d\TH:i'); ?>" step="3600"
                        class="simple-form-input booking-date-field">
                 <button type="button" class="btn-remove-date-row" title="${isVi ? 'Xóa khung giờ này' : 'Remove this slot'}">
                     <i class="fas fa-times"></i>
@@ -1304,8 +1361,8 @@ document.addEventListener("DOMContentLoaded", function() {
             if (phoneInput && !phoneInput.value.trim()) {
                 e.preventDefault();
                 showGymXAlert(
-                    isVi ? 'Vui lòng nhập số điện thoại liên hệ.' : 'Please enter your phone number.',
-                    isVi ? 'Thiếu Số Điện Thoại' : 'Phone Required',
+                    isVi ? 'Vui lòng điền đầy đủ thông tin bắt buộc, bao gồm số điện thoại liên hệ.' : 'Please complete all required information, including your phone number.',
+                    isVi ? 'Thiếu Thông Tin Bắt Buộc' : 'Incomplete Required Information',
                     '📱'
                 );
                 phoneInput.focus();
@@ -1326,27 +1383,38 @@ document.addEventListener("DOMContentLoaded", function() {
             if (addressInput && !addressInput.value.trim()) {
                 e.preventDefault();
                 showGymXAlert(
-                    isVi ? 'Vui lòng nhập địa chỉ liên hệ.' : 'Please enter your address.',
-                    isVi ? 'Thiếu Địa Chỉ' : 'Address Required',
+                    isVi ? 'Vui lòng điền đầy đủ thông tin bắt buộc, bao gồm địa chỉ liên hệ.' : 'Please complete all required information, including your address.',
+                    isVi ? 'Thiếu Thông Tin Bắt Buộc' : 'Incomplete Required Information',
                     '🏠'
                 );
                 addressInput.focus();
                 return false;
             }
 
-            let hasDate = false;
-            dateInputs.forEach(inp => {
-                if (inp.value && inp.value.trim()) hasDate = true;
-            });
-
-            if (!hasDate) {
+            const emptyDateInput = Array.from(dateInputs).find(inp => !inp.value || !inp.value.trim());
+            if (emptyDateInput) {
                 e.preventDefault();
                 showGymXAlert(
-                    isVi ? 'Vui lòng chọn ngày và giờ tập.' : 'Please select your workout date and time.',
-                    isVi ? 'Chưa Chọn Giờ Tập' : 'Time Slot Required',
+                    isVi ? 'Vui lòng điền đầy đủ ngày và giờ cho tất cả các khung giờ tập đã chọn.' : 'Please complete the date and time for every selected workout slot.',
+                    isVi ? 'Thiếu Thông Tin Bắt Buộc' : 'Incomplete Required Information',
                     '📅'
                 );
-                if (dateInputs[0]) dateInputs[0].focus();
+                emptyDateInput.focus();
+                return false;
+            }
+
+            const invalidTimeInput = Array.from(dateInputs).find(inp => {
+                const selected = new Date(inp.value);
+                return Number.isNaN(selected.getTime()) || selected.getMinutes() !== 0 || selected.getHours() < 7 || selected.getHours() > 22;
+            });
+            if (invalidTimeInput) {
+                e.preventDefault();
+                showGymXAlert(
+                    isVi ? 'Khung giờ hoạt động là từ 07:00 đến 22:00. Vui lòng chọn ngày hoặc giờ khác.' : 'Booking hours are from 07:00 to 22:00. Please choose another date or time.',
+                    isVi ? 'Khung Giờ Không Hợp Lệ' : 'Invalid Booking Time',
+                    '⏰'
+                );
+                invalidTimeInput.focus();
                 return false;
             }
         });

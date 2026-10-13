@@ -107,24 +107,27 @@ function sendOrderConfirmationEmail(PDO $pdo, int $orderId): void
         foreach ($items as $item) {
             $itemRows .= "<li style='padding:6px 0;border-bottom:1px solid #f1f5f9;'>"
                        . htmlspecialchars($item['name']) . " × " . $item['quantity']
-                       . " — <strong>" . number_format($item['price'] * $item['quantity'], 0, ',', '.') . "đ</strong></li>";
+                       . " — <strong>" . number_format($item['price'] * $item['quantity'], 0, ',', '.') . " VND</strong></li>";
         }
 
+        // Webhooks run without a browser session; notification emails are English-only.
+        $is_vi_ipn = false;
+
         $mail->isHTML(true);
-        $mail->Subject = "✅ [Gym Manager] Đơn hàng #$orderId đã thanh toán qua MoMo thành công!";
+        $mail->Subject = $is_vi_ipn ? "✅ [Gym Manager] Đơn hàng #$orderId đã thanh toán qua MoMo thành công!" : "✅ [Gym Manager] Order #$orderId paid successfully via MoMo!";
         $mail->Body = "
         <div style='font-family:Arial,sans-serif;max-width:600px;margin:auto;padding:25px;border:1px solid #e2e8f0;border-radius:16px;'>
-            <h2 style='color:#a21caf;margin-top:0;'>💜 Thanh toán MoMo thành công!</h2>
-            <p>Xin chào <strong>{$order['user_name']}</strong>, đơn hàng của bạn đã được xác nhận thanh toán qua Ví MoMo.</p>
+            <h2 style='color:#a21caf;margin-top:0;'>💜 " . ($is_vi_ipn ? "Thanh toán MoMo thành công!" : "MoMo Payment Successful!") . "</h2>
+            <p>" . ($is_vi_ipn ? "Xin chào <strong>{$order['user_name']}</strong>, đơn hàng của bạn đã được xác nhận thanh toán qua Ví MoMo." : "Hello <strong>{$order['user_name']}</strong>, your order payment has been confirmed via MoMo Wallet.") . "</p>
             <div style='background:#f8fafc;padding:16px;border-radius:10px;margin:16px 0;'>
-                <p style='margin:4px 0;'><strong>Mã đơn hàng:</strong> #$orderId</p>
-                <p style='margin:4px 0;'><strong>Tổng tiền:</strong> " . number_format($order['total_price'], 0, ',', '.') . "đ</p>
-                <p style='margin:4px 0;'><strong>Phương thức:</strong> Ví MoMo 💜</p>
-                <p style='margin:4px 0;'><strong>Trạng thái:</strong> <span style='color:#16a34a;font-weight:700;'>Đã thanh toán ✓</span></p>
+                <p style='margin:4px 0;'><strong>" . ($is_vi_ipn ? "Mã đơn hàng:" : "Order ID:") . "</strong> #$orderId</p>
+                <p style='margin:4px 0;'><strong>" . ($is_vi_ipn ? "Tổng tiền:" : "Total:") . "</strong> " . number_format($order['total_price'], 0, ',', '.') . " VND</p>
+                <p style='margin:4px 0;'><strong>" . ($is_vi_ipn ? "Phương thức:" : "Method:") . "</strong> MoMo Wallet 💜</p>
+                <p style='margin:4px 0;'><strong>" . ($is_vi_ipn ? "Trạng thái:" : "Status:") . "</strong> <span style='color:#16a34a;font-weight:700;'>" . ($is_vi_ipn ? "Đã thanh toán ✓" : "Paid ✓") . "</span></p>
             </div>
-            <h4>Sản phẩm đã mua:</h4>
+            <h4>" . ($is_vi_ipn ? "Sản phẩm đã mua:" : "Purchased items:") . "</h4>
             <ul style='padding-left:0;list-style:none;'>$itemRows</ul>
-            <p style='color:#64748b;font-size:13px;'>Cảm ơn bạn đã tin tưởng Gym Manager! Đơn hàng sẽ được giao sớm nhất có thể.</p>
+            <p style='color:#64748b;font-size:13px;'>" . ($is_vi_ipn ? "Cảm ơn bạn đã tin tưởng Gym Manager! Đơn hàng sẽ được giao sớm nhất có thể." : "Thank you for choosing Gym Manager! Your order will be dispatched as soon as possible.") . "</p>
         </div>";
         $mail->send();
 
@@ -133,7 +136,7 @@ function sendOrderConfirmationEmail(PDO $pdo, int $orderId): void
         if ($managers) {
             $mail2 = clone $mail;
             $mail2->clearAddresses();
-            $mail2->Subject = "🚨 [Gym Manager] Đơn MoMo #$orderId đã thanh toán — Cần xử lý!";
+            $mail2->Subject = $is_vi_ipn ? "🚨 [Gym Manager] Đơn MoMo #$orderId đã thanh toán — Cần xử lý!" : "🚨 [Gym Manager] MoMo Order #$orderId Paid — Action Required!";
             foreach ($managers as $mgr) {
                 if (!empty($mgr['email'])) $mail2->addAddress($mgr['email'], $mgr['name']);
             }
@@ -148,7 +151,7 @@ function sendOrderConfirmationEmail(PDO $pdo, int $orderId): void
 function sendMembershipActivationEmail(PDO $pdo, int $subId): void
 {
     try {
-        $stmt = $pdo->prepare("SELECT ms.*, mp.name AS plan_name, u.name AS user_name, u.email AS user_email FROM member_subscriptions ms JOIN membership_plans mp ON ms.plan_id = mp.id JOIN users u ON ms.user_id = u.id WHERE ms.id = ?");
+        $stmt = $pdo->prepare("SELECT ms.*, mp.name AS plan_name, mp.name_vi AS plan_name_vi, u.name AS user_name, u.email AS user_email FROM member_subscriptions ms JOIN membership_plans mp ON ms.plan_id = mp.id JOIN users u ON ms.user_id = u.id WHERE ms.id = ?");
         $stmt->execute([$subId]);
         $sub = $stmt->fetch();
         if (!$sub || empty($sub['user_email'])) return;
@@ -169,21 +172,26 @@ function sendMembershipActivationEmail(PDO $pdo, int $subId): void
 
         $mail->setFrom('lamtuoi155@gmail.com', 'Gym Manager Membership');
         $mail->addAddress($sub['user_email'], $sub['user_name']);
+        
+        // Webhooks run without a browser session; notification emails are English-only.
+        $is_vi_ipn = false;
+        $p_name = ($is_vi_ipn && !empty($sub['plan_name_vi'])) ? $sub['plan_name_vi'] : $sub['plan_name'];
+
         $mail->isHTML(true);
-        $mail->Subject = "🎉 [Gym Manager] Thẻ Thành Viên {$sub['plan_name']} đã được kích hoạt!";
+        $mail->Subject = $is_vi_ipn ? "🎉 [Gym Manager] Thẻ Thành Viên {$p_name} đã được kích hoạt!" : "🎉 [Gym Manager] Membership {$p_name} Activated!";
         $mail->Body = "
         <div style='font-family:Arial,sans-serif;max-width:600px;margin:auto;padding:25px;border:1px solid #e2e8f0;border-radius:16px;'>
-            <h2 style='color:#a21caf;margin-top:0;'>💜 Thẻ Thành Viên Đã Kích Hoạt!</h2>
-            <p>Xin chào <strong>{$sub['user_name']}</strong>!</p>
-            <p>Gói thành viên <strong>{$sub['plan_name']}</strong> của bạn đã được thanh toán thành công qua Ví MoMo và kích hoạt ngay lập tức.</p>
+            <h2 style='color:#a21caf;margin-top:0;'>💜 " . ($is_vi_ipn ? "Thẻ Thành Viên Đã Kích Hoạt!" : "Membership Activated!") . "</h2>
+            <p>" . ($is_vi_ipn ? "Xin chào" : "Hello") . " <strong>{$sub['user_name']}</strong>!</p>
+            <p>" . ($is_vi_ipn ? "Gói thành viên <strong>{$p_name}</strong> của bạn đã được thanh toán thành công qua Ví MoMo và kích hoạt ngay lập tức." : "Your membership package <strong>{$p_name}</strong> has been successfully paid via MoMo Wallet and activated immediately.") . "</p>
             <div style='background:#f8fafc;padding:16px;border-radius:10px;margin:16px 0;'>
-                <p style='margin:4px 0;'><strong>Gói tập:</strong> {$sub['plan_name']}</p>
-                <p style='margin:4px 0;'><strong>Hiệu lực từ:</strong> " . date('d/m/Y', strtotime($sub['start_date'])) . "</p>
-                <p style='margin:4px 0;'><strong>Hết hạn:</strong> " . date('d/m/Y', strtotime($sub['end_date'])) . "</p>
-                <p style='margin:4px 0;'><strong>Số tiền:</strong> " . number_format($sub['price_paid'], 0, ',', '.') . "đ</p>
-                <p style='margin:4px 0;'><strong>Thanh toán qua:</strong> Ví MoMo 💜</p>
+                <p style='margin:4px 0;'><strong>" . ($is_vi_ipn ? "Gói tập:" : "Plan:") . "</strong> {$p_name}</p>
+                <p style='margin:4px 0;'><strong>" . ($is_vi_ipn ? "Hiệu lực từ:" : "Valid from:") . "</strong> " . date('d/m/Y', strtotime($sub['start_date'])) . "</p>
+                <p style='margin:4px 0;'><strong>" . ($is_vi_ipn ? "Hết hạn:" : "Expires:") . "</strong> " . date('d/m/Y', strtotime($sub['end_date'])) . "</p>
+                <p style='margin:4px 0;'><strong>" . ($is_vi_ipn ? "Số tiền:" : "Amount:") . "</strong> " . number_format($sub['price_paid'], 0, ',', '.') . " VND</p>
+                <p style='margin:4px 0;'><strong>" . ($is_vi_ipn ? "Thanh toán qua:" : "Method:") . "</strong> MoMo Wallet 💜</p>
             </div>
-            <p style='color:#64748b;font-size:13px;'>Vui lòng đến quầy giao dịch của phòng tập để nhận thẻ thành viên vật lý. Cảm ơn bạn!</p>
+            <p style='color:#64748b;font-size:13px;'>" . ($is_vi_ipn ? "Vui lòng đến quầy giao dịch của phòng tập để nhận thẻ thành viên vật lý. Cảm ơn bạn!" : "Please visit our reception counter to receive your physical membership card. Thank you!") . "</p>
         </div>";
         $mail->send();
 

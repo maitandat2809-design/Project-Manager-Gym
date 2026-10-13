@@ -1,11 +1,11 @@
-<?php include_once __DIR__ . '/../includes/header.php'; ?>
-
 <?php
 // Secure page - check if logged in
 if (!isset($_SESSION['user_id'])) {
     header("Location: /Gym Manager/auth/login.php");
     exit();
 }
+
+include_once __DIR__ . '/../includes/header.php';
 ?>
 
 <div class="container" style="padding: 120px 10%; min-height: 80vh;">

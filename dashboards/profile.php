@@ -36,7 +36,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['update_profile'])) {
     if (empty($error)) {
         // Handle Upload
         if (isset($_FILES['avatar']) && $_FILES['avatar']['error'] == 0) {
-            $upload_dir = 'assets/img/avatars/';
+            $upload_dir = __DIR__ . '/../assets/img/avatars/';
             if (!is_dir($upload_dir)) mkdir($upload_dir, 0777, true);
             
             $file_ext = pathinfo($_FILES['avatar']['name'], PATHINFO_EXTENSION);
@@ -44,7 +44,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['update_profile'])) {
             $target_file = $upload_dir . $file_name;
 
             if (move_uploaded_file($_FILES['avatar']['tmp_name'], $target_file)) {
-                $avatar_path = $target_file;
+                $avatar_path = 'assets/img/avatars/' . $file_name;
             }
         }
 
@@ -389,13 +389,83 @@ foreach ($all_bookings as $b) {
 $stmt = $pdo->prepare("SELECT * FROM orders WHERE user_id = ? ORDER BY created_at DESC");
 $stmt->execute([$user_id]);
 $orders = $stmt->fetchAll();
+
+// Fetch active/pending membership subscription plan details for user
+$stmt_profile_mem = $pdo->prepare("
+    SELECT mp.id as plan_id, mp.name, mp.name_vi, mp.description, mp.description_vi, mp.badge, mp.badge_color,
+           mp.features, mp.features_vi,
+           ms.id as sub_id, ms.status, ms.start_date, ms.end_date, ms.price_paid, ms.payment_method,
+           ms.pt_sessions_total, ms.pt_sessions_used,
+           DATEDIFF(ms.end_date, CURDATE()) as days_left
+    FROM member_subscriptions ms
+    JOIN membership_plans mp ON ms.plan_id = mp.id
+    WHERE ms.user_id = ? AND ms.status IN ('active', 'pending') AND (ms.status = 'pending' OR ms.end_date >= CURDATE())
+    ORDER BY ms.id DESC LIMIT 1
+");
+$stmt_profile_mem->execute([$user_id]);
+$profile_mem = $stmt_profile_mem->fetch();
+$pt_total = (int)($profile_mem['pt_sessions_total'] ?? 0);
+$pt_used  = (int)($profile_mem['pt_sessions_used'] ?? 0);
+$pt_rem   = max(0, $pt_total - $pt_used);
+$days_left = isset($profile_mem['days_left']) ? max(0, (int)$profile_mem['days_left']) : 0;
+require_once __DIR__ . '/../includes/membership_loyalty.php';
+$user_loyalty = getUserMembershipLoyaltyInfo($pdo, $user_id);
+$is_vi_mem = ($current_lang ?? 'en') === 'vi';
+
+// Show the plan tier as soon as the account has registered a membership.
+// The query above only returns active or pending subscriptions, never expired ones.
+$account_heading = __('your_account');
+$account_heading_class = 'account-heading-guest';
+$account_heading_icon = '';
+$account_heading_label = '';
+if ($profile_mem) {
+    $heading_source = strtoupper(trim((string) ($profile_mem['badge'] ?: $profile_mem['name'])));
+    if (strpos($heading_source, 'WELLNESS') !== false || stripos($profile_mem['name'], 'wellness') !== false) {
+        $account_tier = 'wellness';
+        $account_heading_icon = 'fa-leaf';
+        $account_heading_label = 'WELLNESS MEMBER';
+    } elseif (strpos($heading_source, 'ATHLETIC') !== false || stripos($profile_mem['name'], 'athletic') !== false || stripos($profile_mem['name'], 'kickboxing') !== false) {
+        $account_tier = 'athletic';
+        $account_heading_icon = 'fa-bolt';
+        $account_heading_label = 'ATHLETIC MEMBER';
+    } else {
+        $account_tier = 'starter';
+        $account_heading_icon = 'fa-star';
+        $account_heading_label = 'STARTER MEMBER';
+    }
+
+    $account_heading_class = 'account-heading-member account-heading-' . $account_tier;
+    $account_heading = $is_vi_mem
+        ? 'Tài Khoản ' . ucfirst($account_tier)
+        : 'Your ' . ucfirst($account_tier) . ' Account';
+}
 ?>
 
 <section>
     <div class="section-title">
-        <h2><?php echo __('your_account'); ?></h2>
+        <h2 class="membership-account-title <?php echo $account_heading_class; ?>">
+            <?php if ($account_heading_icon): ?><i class="fas <?php echo $account_heading_icon; ?>" aria-hidden="true"></i><?php endif; ?>
+            <?php echo htmlspecialchars($account_heading); ?>
+        </h2>
+        <?php if ($account_heading_label): ?>
+            <span class="membership-account-label <?php echo $account_heading_class; ?>"><?php echo htmlspecialchars($account_heading_label); ?></span>
+        <?php endif; ?>
         <div class="underline"></div>
     </div>
+
+    <?php if (isset($_GET['welcome_trial']) || isset($_SESSION['registered_trial_success'])): 
+        unset($_SESSION['registered_trial_success']);
+    ?>
+        <script>
+            document.addEventListener('DOMContentLoaded', function() {
+                showGymXAlert(
+                    <?php echo json_encode(__('free_trial_welcome_msg')); ?>,
+                    <?php echo json_encode(__('free_trial_welcome_title')); ?>,
+                    '🎉'
+                );
+            });
+        </script>
+    <?php endif; ?>
 
     <?php if($message): ?>
         <p style="color: #16a34a; text-align: center; margin-bottom: 2rem; background: #f0fdf4; padding: 1rem; border-radius: 15px; border: 1px solid #bbf7d0; font-weight: 600;"><?php echo $message; ?></p>
@@ -430,119 +500,191 @@ $orders = $stmt->fetchAll();
         </script>
     <?php endif; ?>
 
-    <!-- Profile Edit Section -->
-    <div style="background: var(--bg-card); padding: 2rem; border-radius: 15px; border: 1px solid var(--border); margin-bottom: 4rem;">
-        <form method="POST" enctype="multipart/form-data" id="profileEditForm" novalidate class="profile-form-grid">
-            <div style="text-align: center;">
-                <img src="<?php echo $user['avatar'] ?: 'https://ui-avatars.com/api/?name='.urlencode($user['name']).'&background=0062ff&color=fff&size=200'; ?>" 
-                     style="width: 150px; height: 150px; border-radius: 50%; object-fit: cover; border: 3px solid var(--primary); margin-bottom: 0.5rem;">
-                
-                <?php
-                // Fetch active/pending membership subscription plan badge for user
-                $stmt_profile_mem = $pdo->prepare("
-                    SELECT mp.name, mp.name_vi, mp.badge, mp.badge_color, ms.status, ms.pt_sessions_total, ms.pt_sessions_used
-                    FROM member_subscriptions ms
-                    JOIN membership_plans mp ON ms.plan_id = mp.id
-                    WHERE ms.user_id = ? AND ms.status IN ('active', 'pending') AND (ms.status = 'pending' OR ms.end_date >= CURDATE())
-                    ORDER BY ms.id DESC LIMIT 1
-                ");
-                $stmt_profile_mem->execute([$user_id]);
-                $profile_mem = $stmt_profile_mem->fetch();
-                $pt_total = (int)($profile_mem['pt_sessions_total'] ?? 0);
-                $pt_used  = (int)($profile_mem['pt_sessions_used'] ?? 0);
-                $pt_rem   = max(0, $pt_total - $pt_used);
-                ?>
+    <?php if ($profile_mem): 
+        $is_vi_mem = ($current_lang ?? 'en') === 'vi';
+        $plan_display_title = $is_vi_mem && !empty($profile_mem['name_vi']) ? $profile_mem['name_vi'] : $profile_mem['name'];
+        $is_free_trial = (stripos($profile_mem['name'], '7 Day') !== false || stripos($profile_mem['name_vi'] ?? '', '7 Ngày') !== false);
+        $card_accent_color = !empty($profile_mem['badge_color']) ? $profile_mem['badge_color'] : ($is_free_trial ? '#00b4ff' : '#2563eb');
+    ?>
+        <!-- Active Membership Card -->
+        <div class="active-membership-banner" style="background: linear-gradient(135deg, #0f172a 0%, #1e293b 65%, #0f172a 100%); border: 1.5px solid <?php echo $card_accent_color; ?>; border-radius: 22px; padding: 1.8rem 2.2rem; margin-bottom: 2.5rem; box-shadow: 0 12px 35px rgba(0,0,0,0.2); color: #fff; position: relative; overflow: hidden;">
+            <div style="position: absolute; top: -60px; right: -60px; width: 220px; height: 220px; background: radial-gradient(circle, <?php echo $card_accent_color; ?>40 0%, transparent 70%); pointer-events: none;"></div>
 
-                <div style="margin-bottom: 1rem; display: flex; align-items: center; justify-content: center; gap: 8px; flex-wrap: wrap;">
-                    <?php if ($profile_mem): ?>
-                        <span style="background: <?php echo !empty($profile_mem['badge_color']) ? $profile_mem['badge_color'] : '#2563eb'; ?>; color: #fff; padding: 6px 16px; border-radius: 20px; font-weight: 800; font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.6px; display: inline-flex; align-items: center; gap: 5px; box-shadow: 0 4px 12px rgba(0,0,0,0.15);">
-                            <i class="fas fa-certificate"></i>
-                            <?php echo htmlspecialchars(!empty($profile_mem['badge']) ? $profile_mem['badge'] : mb_strtoupper($profile_mem['name'])); ?>
+            <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 1.5rem; position: relative; z-index: 1;">
+                <div style="flex: 1; min-width: 280px;">
+                    <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 10px; flex-wrap: wrap;">
+                        <span style="background: <?php echo $card_accent_color; ?>; color: #fff; font-weight: 800; font-size: 0.76rem; padding: 5px 14px; border-radius: 20px; text-transform: uppercase; letter-spacing: 0.6px; display: inline-flex; align-items: center; gap: 6px; box-shadow: 0 3px 10px <?php echo $card_accent_color; ?>40;">
+                            <i class="fas fa-certificate"></i> <?php echo htmlspecialchars($profile_mem['badge'] ?? 'ACTIVE'); ?>
                         </span>
-                        <?php if ($pt_total > 0): ?>
-                            <span style="background: linear-gradient(135deg, #eff6ff, #dbeafe); color: #1e40af; border: 1.5px solid #93c5fd; padding: 5px 12px; border-radius: 20px; font-weight: 800; font-size: 0.78rem; display: inline-flex; align-items: center; gap: 5px; box-shadow: 0 2px 8px rgba(37,99,235,0.15);">
-                                <i class="fas fa-dumbbell" style="color: #2563eb;"></i> 
-                                <?php echo (($_SESSION['lang'] ?? 'en') === 'vi' ? "Còn {$pt_rem}/{$pt_total} buổi PT" : "{$pt_rem}/{$pt_total} PT Left"); ?>
+                        <span style="color: #94a3b8; font-size: 0.85rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px;">
+                            <?php echo __('active_membership_title'); ?>
+                        </span>
+                        <?php if ($user_loyalty['eligible_for_renewal_perks']): ?>
+                            <span style="background: linear-gradient(135deg, #f59e0b, #d97706); color: #fff; font-weight: 800; font-size: 0.74rem; padding: 5px 14px; border-radius: 20px; display: inline-flex; align-items: center; gap: 6px; box-shadow: 0 3px 10px rgba(245,158,11,0.35);">
+                                <i class="fas fa-crown"></i> <?php echo $is_vi_mem ? 'ĐẶC QUYỀN GIA HẠN (-10% & TẶNG NGÀY)' : 'RENEWAL PRIVILEGE (-10% & BONUS DAYS)'; ?>
                             </span>
                         <?php endif; ?>
-                    <?php else: ?>
-                        <span style="background: #64748b; color: #fff; padding: 6px 16px; border-radius: 20px; font-weight: 800; font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.6px; display: inline-flex; align-items: center; gap: 5px;">
-                            <i class="fas fa-user-circle"></i>
-                            <?php echo strtoupper($_SESSION['role'] ?? 'USER'); ?>
+                    </div>
+                    <h3 style="font-size: 1.7rem; font-weight: 900; margin: 0 0 8px 0; color: #fff; display: flex; align-items: center; gap: 12px; letter-spacing: -0.3px;">
+                        <i class="fas <?php echo $is_free_trial ? 'fa-gift' : 'fa-id-card'; ?>" style="color: <?php echo $card_accent_color; ?>;"></i>
+                        <?php echo htmlspecialchars($plan_display_title); ?>
+                    </h3>
+                    <p style="color: #cbd5e1; font-size: 0.92rem; margin: 0 0 14px 0; max-width: 650px; line-height: 1.5;">
+                        <?php echo htmlspecialchars($is_vi_mem && !empty($profile_mem['description_vi']) ? $profile_mem['description_vi'] : $profile_mem['description']); ?>
+                    </p>
+                    <div style="display: flex; gap: 18px; flex-wrap: wrap; font-size: 0.88rem; color: #94a3b8;">
+                        <div style="background: rgba(255,255,255,0.06); padding: 6px 14px; border-radius: 10px; border: 1px solid rgba(255,255,255,0.08);">
+                            <i class="far fa-calendar-alt" style="color: #60a5fa; margin-right: 6px;"></i> 
+                            <?php echo __('membership_validity'); ?>: <strong style="color: #fff; margin-left: 4px;"><?php echo date('d/m/Y', strtotime($profile_mem['start_date'])); ?> – <?php echo date('d/m/Y', strtotime($profile_mem['end_date'])); ?></strong>
+                        </div>
+                        <?php if ($pt_total > 0): ?>
+                            <div style="background: rgba(255,255,255,0.06); padding: 6px 14px; border-radius: 10px; border: 1px solid rgba(255,255,255,0.08);">
+                                <i class="fas fa-dumbbell" style="color: #38bdf8; margin-right: 6px;"></i> 
+                                PT 1-1: <strong style="color: #fff; margin-left: 4px;"><?php echo "{$pt_rem}/{$pt_total}"; ?> <?php echo $is_vi_mem ? 'buổi' : 'sessions'; ?></strong>
+                            </div>
+                        <?php endif; ?>
+                    </div>
+                </div>
+
+                <div style="display: flex; flex-direction: column; align-items: flex-end; justify-content: center; gap: 10px; min-width: 220px;">
+                    <div style="text-align: center; background: rgba(255,255,255,0.05); padding: 14px 22px; border-radius: 16px; border: 1px solid rgba(255,255,255,0.12); width: 100%; box-sizing: border-box;">
+                        <span style="font-size: 0.76rem; text-transform: uppercase; color: #94a3b8; font-weight: 700; display: block; margin-bottom: 3px; letter-spacing: 0.5px;">
+                            <?php echo __('days_remaining'); ?>
                         </span>
+                        <span style="font-size: 1.85rem; font-weight: 900; color: <?php echo $is_free_trial ? '#38bdf8' : '#fbbf24'; ?>; display: block; line-height: 1.1;">
+                            <?php echo $days_left; ?> <?php echo $is_vi_mem ? 'Ngày' : 'Days'; ?>
+                        </span>
+                        <span style="font-size: 0.78rem; color: #22c55e; font-weight: 700; display: inline-flex; align-items: center; gap: 4px; margin-top: 5px;">
+                            <i class="fas fa-check-circle"></i> <?php echo $is_vi_mem ? 'Đang Kích Hoạt' : 'Active & Ready'; ?>
+                        </span>
+                    </div>
+                    <?php if ($user_loyalty['eligible_for_renewal_perks']): ?>
+                        <a href="/Gym Manager/pages/membership.php?plan_id=<?php echo $profile_mem['plan_id']; ?>" style="width: 100%; text-align: center; justify-content: center; background: linear-gradient(135deg, #f59e0b, #d97706); color: #fff; text-decoration: none; padding: 11px 18px; border-radius: 14px; font-weight: 800; font-size: 0.88rem; display: inline-flex; align-items: center; gap: 8px; box-shadow: 0 4px 15px rgba(245,158,11,0.35); transition: transform 0.2s;">
+                            <i class="fas fa-sync-alt"></i> <?php echo $is_vi_mem ? 'Gia Hạn Ngay (-10%)' : 'Renew Plan (-10%)'; ?>
+                        </a>
                     <?php endif; ?>
+                    <a href="/Gym Manager/pages/membership.php" style="width: 100%; text-align: center; justify-content: center; background: linear-gradient(135deg, #2563eb, #1d4ed8); color: #fff; text-decoration: none; padding: 11px 18px; border-radius: 14px; font-weight: 800; font-size: 0.88rem; display: inline-flex; align-items: center; gap: 8px; box-shadow: 0 4px 15px rgba(37,99,235,0.35); transition: transform 0.2s;">
+                        <i class="fas fa-crown" style="color: #fbbf24;"></i> <?php echo __('upgrade_membership_btn'); ?>
+                    </a>
+                    <button type="button" onclick="document.getElementById('profile-details-modal').style.display='flex'" style="width: 100%; background: rgba(255,255,255,0.08); color: #fff; border: 1px solid rgba(255,255,255,0.22); padding: 11px 18px; border-radius: 14px; cursor: pointer; font-weight: 800; font-size: 0.88rem; display: inline-flex; align-items: center; justify-content: center; gap: 8px;">
+                        <i class="fas fa-user-edit"></i> <?php echo $is_vi_mem ? 'Chi Tiết Tài Khoản' : 'Account Details'; ?>
+                    </button>
                 </div>
+            </div>
+        </div>
+    <?php elseif ($user_loyalty['is_previously_purchased']): ?>
+        <!-- Returning Loyal Member Banner -->
+        <div style="background: linear-gradient(135deg, #0f172a 0%, #1e1b4b 50%, #0f172a 100%); border: 1.5px solid #818cf8; border-radius: 22px; padding: 1.8rem 2.2rem; margin-bottom: 2.5rem; box-shadow: 0 12px 35px rgba(49,46,129,0.25); color: #fff; position: relative; overflow: hidden;">
+            <div style="position: absolute; top: -60px; right: -60px; width: 220px; height: 220px; background: radial-gradient(circle, rgba(129,140,248,0.25) 0%, transparent 70%); pointer-events: none;"></div>
+            <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 1.5rem; position: relative; z-index: 1;">
+                <div style="flex: 1; min-width: 280px;">
+                    <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 10px;">
+                        <span style="background: linear-gradient(135deg, #f59e0b, #d97706); color: #fff; font-weight: 800; font-size: 0.76rem; padding: 5px 14px; border-radius: 20px; text-transform: uppercase; letter-spacing: 0.6px; display: inline-flex; align-items: center; gap: 6px;">
+                            <i class="fas fa-crown"></i> <?php echo $is_vi_mem ? 'HỘI VIÊN THÂN THIẾT GYMX' : 'RETURNING LOYAL MEMBER'; ?>
+                        </span>
+                    </div>
+                    <h3 style="font-size: 1.6rem; font-weight: 900; margin: 0 0 8px 0; color: #fff; display: flex; align-items: center; gap: 10px;">
+                        <i class="fas fa-hand-holding-heart" style="color: #f59e0b;"></i>
+                        <?php echo $is_vi_mem ? 'Chào Mừng Bạn Trở Lại! Ưu Đãi Mua Lại Thẻ' : 'Welcome Back! Reactivation Loyalty Perks'; ?>
+                    </h3>
+                    <p style="color: #cbd5e1; font-size: 0.92rem; margin: 0 0 14px 0; max-width: 650px; line-height: 1.6;">
+                        <?php echo $is_vi_mem 
+                            ? 'Cảm ơn bạn đã luôn tin tưởng GymX. Đăng ký lại gói thẻ ngay hôm nay để nhận ngay ưu đãi giảm 10%–15%, tặng thêm ngày tập miễn phí, PT 1:1 và bộ quà tặng tri ân VIP!' 
+                            : 'Thank you for your journey with GymX. Reactivate your membership today to receive 10%–15% OFF, bonus training days, free PT sessions, and VIP welcome gifts!'; ?>
+                    </p>
+                    <div style="display: flex; gap: 10px; flex-wrap: wrap; font-size: 0.84rem;">
+                        <span style="background: rgba(255,255,255,0.08); padding: 5px 12px; border-radius: 10px; border: 1px solid rgba(255,255,255,0.12); color:#fef08a;">
+                            <i class="fas fa-tag" style="color: #fbbf24; margin-right: 5px;"></i> <?php echo $is_vi_mem ? 'Giảm 10% - 15% gói thẻ' : '10% - 15% OFF all plans'; ?>
+                        </span>
+                        <span style="background: rgba(255,255,255,0.08); padding: 5px 12px; border-radius: 10px; border: 1px solid rgba(255,255,255,0.12); color:#bae6fd;">
+                            <i class="fas fa-calendar-plus" style="color: #38bdf8; margin-right: 5px;"></i> <?php echo $is_vi_mem ? 'Tặng thêm 7 - 30 ngày tập' : '+7 to 30 bonus days'; ?>
+                        </span>
+                        <span style="background: rgba(255,255,255,0.08); padding: 5px 12px; border-radius: 10px; border: 1px solid rgba(255,255,255,0.12); color:#fbcfe8;">
+                            <i class="fas fa-gift" style="color: #f472b6; margin-right: 5px;"></i> <?php echo $is_vi_mem ? 'Quà VIP Shaker + 2 Guest Pass' : 'VIP Shaker + 2 Guest Passes'; ?>
+                        </span>
+                    </div>
+                </div>
+                <div style="min-width: 200px; display: flex; flex-direction: column; gap: 10px;">
+                    <a href="/Gym Manager/pages/membership.php" style="width: 100%; text-align: center; justify-content: center; background: linear-gradient(135deg, #f59e0b, #d97706); color: #fff; text-decoration: none; padding: 13px 22px; border-radius: 14px; font-weight: 800; font-size: 0.92rem; display: inline-flex; align-items: center; gap: 8px; box-shadow: 0 4px 18px rgba(245,158,11,0.4); transition: transform 0.2s;">
+                        <i class="fas fa-crown"></i> <?php echo $is_vi_mem ? 'Đăng Ký Nhận Ưu Đãi' : 'Claim Loyalty Perks'; ?>
+                    </a>
+                    <button type="button" onclick="document.getElementById('profile-details-modal').style.display='flex'" style="width: 100%; background: rgba(255,255,255,0.08); color: #fff; border: 1px solid rgba(255,255,255,0.22); padding: 13px 22px; border-radius: 14px; cursor: pointer; font-weight: 800; font-size: 0.92rem; display: inline-flex; align-items: center; justify-content: center; gap: 8px;">
+                        <i class="fas fa-user-edit"></i> <?php echo $is_vi_mem ? 'Chi Tiết Tài Khoản' : 'Account Details'; ?>
+                    </button>
+                </div>
+            </div>
+        </div>
+    <?php endif; ?>
 
-                <input type="file" name="avatar" id="avatar" style="display: none;">
-                <div style="display: flex; justify-content: center; gap: 8px; flex-wrap: wrap;">
-                    <label for="avatar" class="action-btn btn-add" style="cursor: pointer; font-size: 0.8rem; margin: 0;"><?php echo __('change_photo'); ?></label>
-                    <?php if(!isset($_SESSION['role']) || $_SESSION['role'] === 'user'): ?>
-                        <a href="/Gym Manager/pages/membership.php" class="action-btn btn-add" style="text-decoration: none; display: inline-flex; align-items: center; gap: 5px; background: linear-gradient(135deg, #2563eb, #1d4ed8); color: #fff; font-weight: 700; font-size: 0.8rem; margin: 0; border: none; box-shadow: 0 4px 12px rgba(37,99,235,0.3);"><i class="fas fa-id-card"></i> <?php echo __('membership_nav'); ?></a>
-                    <?php endif; ?>
-                </div>
+    <?php
+        $is_vi_profile = (($_SESSION['lang'] ?? 'en') === 'vi');
+        $avatar_url = !empty($user['avatar'])
+            ? get_image_url($user['avatar'])
+            : 'https://ui-avatars.com/api/?name=' . urlencode($user['name']) . '&background=0062ff&color=fff&size=200';
+    ?>
+
+    <?php if (!$profile_mem && !$user_loyalty['is_previously_purchased']): ?>
+    <!-- Compact Profile Summary for members without a membership banner -->
+    <div style="background: var(--bg-card); border: 1px solid var(--border); border-radius: 20px; padding: 1.5rem 1.75rem; margin-bottom: 3rem; display: flex; align-items: center; justify-content: space-between; gap: 1.5rem; flex-wrap: wrap; box-shadow: 0 8px 24px rgba(15,23,42,0.06);">
+        <div style="display: flex; align-items: center; gap: 1rem; min-width: 0;">
+            <img src="<?php echo htmlspecialchars($avatar_url); ?>" alt="<?php echo htmlspecialchars($user['name']); ?>" style="width: 76px; height: 76px; border-radius: 50%; object-fit: cover; border: 3px solid var(--primary);">
+            <div style="min-width: 0;">
+                <h3 style="margin: 0 0 5px; color: var(--text-main); font-size: 1.35rem;"><?php echo htmlspecialchars($user['name']); ?></h3>
+                <p style="margin: 0 0 6px; color: var(--text-muted); font-size: 0.9rem; overflow-wrap: anywhere;"><?php echo htmlspecialchars($user['email']); ?></p>
+                <span style="display: inline-flex; align-items: center; gap: 6px; color: var(--primary); font-size: 0.82rem; font-weight: 700;"><i class="fas fa-phone-alt"></i> <?php echo !empty($user['phone']) ? htmlspecialchars($user['phone']) : ($is_vi_profile ? 'Chưa cập nhật số điện thoại' : 'Phone number not added'); ?></span>
             </div>
-            
-            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1.5rem;">
-                <div class="form-group">
-                    <label><?php echo __('full_name'); ?></label>
-                    <input type="text" name="name" value="<?php echo $user['name']; ?>" required>
-                </div>
-                <div class="form-group">
-                    <label><?php echo __('nickname'); ?></label>
-                    <input type="text" name="nickname" value="<?php echo $user['nickname']; ?>" placeholder="Gym Shark">
-                </div>
-                <div class="form-group">
-                    <label><?php echo __('age'); ?></label>
-                    <input type="number" name="age" value="<?php echo $user['age']; ?>" placeholder="25">
-                </div>
-                <div class="form-group">
-                    <label><?php echo __('phone_number'); ?></label>
-                    <input type="text" name="phone" value="<?php echo htmlspecialchars($user['phone'] ?? ''); ?>" placeholder="090x xxx xxx" pattern="[0-9]{10}">
-                </div>
-                <div class="form-group" style="grid-column: span 2;">
-                    <label><?php echo __('address'); ?></label>
-                    <input type="text" name="address" value="<?php echo htmlspecialchars($user['address'] ?? ''); ?>" placeholder="123 Main St...">
-                </div>
-                <div class="form-group">
-                    <label><?php echo __('email_readonly'); ?></label>
-                    <input type="email" value="<?php echo $user['email']; ?>" disabled style="opacity: 0.5;">
-                </div>
-                <div style="grid-column: span 2;">
-                    <button type="submit" name="update_profile" class="cta-btn" style="width: 100%; border: none; cursor: pointer;"><?php echo __('save_changes'); ?></button>
-                </div>
-            </div>
-        </form>
+        </div>
+        <div style="display: flex; align-items: center; gap: 10px; flex-wrap: wrap;">
+            <button type="button" onclick="document.getElementById('profile-details-modal').style.display='flex'" class="action-btn btn-add" style="margin: 0; border: none; cursor: pointer;">
+                <i class="fas fa-user-edit"></i> <?php echo $is_vi_profile ? 'Chi Tiết' : 'Details'; ?>
+            </button>
+        </div>
     </div>
+    <?php endif; ?>
 
-    <!-- Password Change Section -->
-    <div style="background: var(--bg-card); padding: 2.5rem; border-radius: 25px; border: 1px solid var(--border); margin-bottom: 4rem; box-shadow: var(--shadow-premium);">
-        <h3 style="margin-bottom: 2rem; color: var(--primary); font-weight: 800; display: flex; align-items: center; gap: 10px;">
-            <i class="fas fa-shield-alt" style="color: var(--primary);"></i> <?php echo __('security_settings'); ?>
-        </h3>
-        <form method="POST" id="profilePasswordForm" novalidate class="password-form-grid">
-            <div class="form-group" style="margin-bottom: 0;">
-                <label style="font-weight: 600;"><?php echo __('current_password'); ?></label>
-                <input type="password" name="current_password" required placeholder="••••••••" style="background: #f1f5f9; width: 100%;">
+    <!-- Details Modal: profile fields remain hidden until the user chooses Details -->
+    <div id="profile-details-modal" class="profile-modal-backdrop" onclick="if(event.target===this) this.style.display='none'" style="display: none; position: fixed; inset: 0; background: rgba(15,23,42,0.62); z-index: 10001; align-items: center; justify-content: center; backdrop-filter: blur(5px); padding: 1rem;">
+        <div style="background: var(--bg-card); width: min(760px, 100%); max-height: 90vh; overflow-y: auto; border-radius: 20px; padding: 1.75rem; position: relative; box-shadow: 0 24px 60px rgba(0,0,0,0.3);">
+            <button type="button" onclick="document.getElementById('profile-details-modal').style.display='none'" aria-label="Close" style="position: absolute; top: 14px; right: 14px; border: 0; background: transparent; color: var(--text-muted); font-size: 1.35rem; cursor: pointer;"><i class="fas fa-times"></i></button>
+            <h3 style="margin: 0 0 1.5rem; color: var(--text-main);"><i class="fas fa-user-edit" style="color: var(--primary); margin-right: 8px;"></i><?php echo $is_vi_profile ? 'Thông Tin Cá Nhân' : 'Personal Details'; ?></h3>
+            <form method="POST" enctype="multipart/form-data" id="profileEditForm" novalidate>
+                <div style="display: flex; align-items: center; gap: 14px; margin-bottom: 1.5rem;">
+                    <img src="<?php echo htmlspecialchars($avatar_url); ?>" alt="Profile avatar" style="width: 64px; height: 64px; border-radius: 50%; object-fit: cover; border: 2px solid var(--primary);">
+                    <div>
+                        <input type="file" name="avatar" id="avatar" accept="image/*" style="display: none;">
+                        <label for="avatar" class="action-btn btn-add" style="cursor: pointer; font-size: 0.82rem; margin: 0;"><i class="fas fa-camera"></i> <?php echo __('change_photo'); ?></label>
+                    </div>
+                </div>
+                <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 1rem;">
+                    <div class="form-group"><label><?php echo __('full_name'); ?></label><input type="text" name="name" value="<?php echo htmlspecialchars($user['name']); ?>" required></div>
+                    <div class="form-group"><label><?php echo __('nickname'); ?></label><input type="text" name="nickname" value="<?php echo htmlspecialchars($user['nickname'] ?? ''); ?>" placeholder="Gym Shark"></div>
+                    <div class="form-group"><label><?php echo __('age'); ?></label><input type="number" name="age" value="<?php echo htmlspecialchars($user['age'] ?? ''); ?>" placeholder="25"></div>
+                    <div class="form-group"><label><?php echo __('phone_number'); ?></label><input type="text" name="phone" value="<?php echo htmlspecialchars($user['phone'] ?? ''); ?>" placeholder="090x xxx xxx" pattern="[0-9]{10}"></div>
+                    <div class="form-group" style="grid-column: 1 / -1;"><label><?php echo __('address'); ?></label><input type="text" name="address" value="<?php echo htmlspecialchars($user['address'] ?? ''); ?>" placeholder="123 Main St..."></div>
+                    <div class="form-group" style="grid-column: 1 / -1;"><label><?php echo __('email_readonly'); ?></label><input type="email" value="<?php echo htmlspecialchars($user['email']); ?>" disabled style="opacity: .6;"></div>
+                </div>
+                <div style="display: flex; justify-content: flex-end; gap: 10px; margin-top: 1.5rem;">
+                    <button type="button" onclick="document.getElementById('profile-details-modal').style.display='none'" style="background: #e2e8f0; color: #475569; border: 0; padding: 11px 16px; border-radius: 10px; cursor: pointer; font-weight: 700;"><?php echo $is_vi_profile ? 'Hủy' : 'Cancel'; ?></button>
+                    <button type="submit" name="update_profile" class="cta-btn" style="margin: 0; border: none; cursor: pointer;"><i class="fas fa-save"></i> <?php echo __('save_changes'); ?></button>
+                </div>
+            </form>
+            <div style="border-top: 1px solid var(--border); margin: 1.75rem 0; padding-top: 1.5rem;">
+                <h4 style="margin: 0 0 1rem; color: var(--text-main); font-size: 1rem;"><i class="fas fa-key" style="color: var(--primary); margin-right: 8px;"></i><?php echo $is_vi_profile ? 'Đổi Mật Khẩu' : 'Change Password'; ?></h4>
+                <form method="POST" id="profilePasswordForm" novalidate style="display: grid; gap: 1rem;">
+                    <div class="form-group" style="margin: 0;"><label><?php echo __('current_password'); ?></label><input type="password" name="current_password" required placeholder="••••••••"></div>
+                    <div class="form-group" style="margin: 0;"><label><?php echo __('new_password'); ?></label><input type="password" name="new_password" required placeholder="••••••••"></div>
+                    <div class="form-group" style="margin: 0;"><label><?php echo __('confirm_new_password'); ?></label><input type="password" name="confirm_password" required placeholder="••••••••"></div>
+                    <div style="display: flex; justify-content: flex-end; margin-top: .25rem;">
+                        <button type="submit" name="update_password" class="cta-btn" style="margin: 0; border: none; cursor: pointer;"><i class="fas fa-key"></i> <?php echo $is_vi_profile ? 'Cập nhật mật khẩu' : 'Update Password'; ?></button>
+                    </div>
+                </form>
             </div>
-            <div class="form-group" style="margin-bottom: 0;">
-                <label style="font-weight: 600;"><?php echo __('new_password'); ?></label>
-                <input type="password" name="new_password" required placeholder="••••••••" style="background: #f1f5f9; width: 100%;">
-            </div>
-            <div class="form-group" style="margin-bottom: 0;">
-                <label style="font-weight: 600;"><?php echo __('confirm_new_password'); ?></label>
-                <input type="password" name="confirm_password" required placeholder="••••••••" style="background: #f1f5f9; width: 100%;">
-            </div>
-            <div class="form-group" style="margin-bottom: 0;">
-                <button type="submit" name="update_password" class="cta-btn" style="border: none; cursor: pointer; white-space: nowrap; height: 48px; padding: 0 1.8rem; display: inline-flex; align-items: center; justify-content: center; gap: 8px; font-weight: 800; border-radius: 14px; background: linear-gradient(135deg, #1c2340, #0f172a); color: #c9a84c; border: 1px solid #c9a84c; box-shadow: 0 4px 14px rgba(15,23,42,0.25); transition: all 0.3s;">
-                    <i class="fas fa-key"></i> <?php echo (($_SESSION['lang'] ?? 'en') === 'vi' ? 'Xác Nhận' : 'Confirm'); ?>
-                </button>
-            </div>
-        </form>
+        </div>
     </div>
 
     <div class="profile-layout-grid">
         <!-- Bookings Section -->
-        <div>
+        <div id="bookings">
             <!-- Upcoming Bookings Header -->
             <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.5rem;">
                 <h3 style="margin: 0; color: var(--primary);"><?php echo __('upcoming_bookings'); ?></h3>
@@ -808,7 +950,7 @@ $orders = $stmt->fetchAll();
                     </div>
                     
                     <div style="display: flex; align-items: center; gap: 12px;">
-                        <span class="price" style="font-size: 1.1rem; font-weight: 800; color: var(--primary);">$<?php echo number_format($top_o['total_price'], 2); ?></span>
+                        <span class="price" style="font-size: 1.1rem; font-weight: 800; color: #10b981;"><?php echo number_format((int)round($top_o['total_price'] * 25000), 0, ',', '.'); ?>đ</span>
                     </div>
                 </div>
 
@@ -829,7 +971,7 @@ $orders = $stmt->fetchAll();
                                             <span style="color: var(--text-muted); font-size: 0.78rem;"><?php echo date('d/m/Y H:i', strtotime($order['created_at'])); ?></span>
                                         </div>
                                         <div style="display: flex; align-items: center; gap: 8px;">
-                                            <span style="font-weight: 800; color: var(--primary); font-size: 1rem;">$<?php echo number_format($order['total_price'], 2); ?></span>
+                                            <span style="font-weight: 800; color: #10b981; font-size: 1rem;"><?php echo number_format((int)round($order['total_price'] * 25000), 0, ',', '.'); ?>đ</span>
                                             <?php if ($order['payment_method'] === 'momo' && !empty($order['momo_confirmed'])): ?>
                                                 <span style="background: #fdf4ff; color: #a21caf; border: 1px solid #f0abfc; padding: 2px 7px; border-radius: 10px; font-weight: 800; font-size: 0.7rem;">
                                                     💜 <?php echo (isset($current_lang) && $current_lang === 'vi') ? 'MoMo Đã TT' : 'MoMo Paid'; ?>
@@ -893,7 +1035,7 @@ $orders = $stmt->fetchAll();
                                                     <p style="color: var(--text-main); font-weight: 700; margin: 0 0 2px 0; font-size: 0.85rem;">
                                                         <?php echo (isset($current_lang) && $current_lang === 'vi' && !empty($item['name_vi'])) ? htmlspecialchars($item['name_vi']) : htmlspecialchars($item['name']); ?>
                                                     </p>
-                                                    <p style="color: var(--text-muted); font-size: 0.75rem; margin: 0;"><?php echo __('quantity'); ?>: <?php echo $item['quantity']; ?> × $<?php echo number_format($item['price'], 2); ?></p>
+                                                    <p style="color: var(--text-muted); font-size: 0.75rem; margin: 0;"><?php echo __('quantity'); ?>: <?php echo $item['quantity']; ?> × <?php echo number_format((int)round($item['price'] * 25000), 0, ',', '.'); ?>đ</p>
                                                 </div>
                                                 
                                                 <?php 
@@ -940,7 +1082,7 @@ document.addEventListener("DOMContentLoaded", function() {
         editForm.addEventListener("submit", function(e) {
             const nameInput = editForm.querySelector('input[name="name"]');
             const phoneInput = editForm.querySelector('input[name="phone"]');
-            const isVi = (typeof GYMX_LANG !== 'undefined' ? GYMX_LANG : 'vi') === 'vi';
+            const isVi = (typeof GYMX_LANG !== 'undefined' ? GYMX_LANG : 'en') === 'vi';
 
             if (nameInput && !nameInput.value.trim()) {
                 e.preventDefault();
@@ -972,7 +1114,7 @@ document.addEventListener("DOMContentLoaded", function() {
             const currInput = passForm.querySelector('input[name="current_password"]');
             const newInput = passForm.querySelector('input[name="new_password"]');
             const confInput = passForm.querySelector('input[name="confirm_password"]');
-            const isVi = (typeof GYMX_LANG !== 'undefined' ? GYMX_LANG : 'vi') === 'vi';
+            const isVi = (typeof GYMX_LANG !== 'undefined' ? GYMX_LANG : 'en') === 'vi';
 
             if (currInput && !currInput.value) {
                 e.preventDefault();

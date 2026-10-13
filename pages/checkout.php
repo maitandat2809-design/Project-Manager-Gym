@@ -77,12 +77,18 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
     try {
         $pdo->beginTransaction();
 
+        require_once __DIR__ . '/../includes/membership_loyalty.php';
+        $user_loyalty = getUserMembershipLoyaltyInfo($pdo, $user_id);
+        $is_loyal = !empty($user_loyalty['eligible_for_renewal_perks']);
+        $member_discount = $is_loyal ? round($total_price * 0.10, 2) : 0.00;
+        $final_total_price = max(0, $total_price - $member_discount);
+
         $payment_method = $_POST['payment_method'] ?? 'cod';
         $address = trim($_POST['address'] ?? '');
 
         // Create Order for COD or other standard methods (status = 'pending' representing delivering/in transit)
-        $stmt = $pdo->prepare("INSERT INTO orders (user_id, total_price, status, phone, address, payment_method, admin_seen) VALUES (?, ?, 'pending', ?, ?, ?, 0)");
-        $stmt->execute([$user_id, $total_price, $phone, $address, $payment_method]);
+        $stmt = $pdo->prepare("INSERT INTO orders (user_id, total_price, member_discount, status, phone, address, payment_method, admin_seen) VALUES (?, ?, ?, 'pending', ?, ?, ?, 0)");
+        $stmt->execute([$user_id, $final_total_price, $member_discount, $phone, $address, $payment_method]);
         $order_id = $pdo->lastInsertId();
 
         // Save info back to user profile
@@ -221,8 +227,38 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
 }
 ?>
 
+<style>
+.checkout-shell { max-width: 1240px !important; }
+.checkout-layout { display: grid; grid-template-columns: minmax(360px, 1fr) minmax(400px, 1.08fr); gap: 1.5rem; align-items: start; }
+.checkout-panel { background: #f8fafc; padding: 1.55rem; border-radius: 20px; border: 1px solid var(--border); box-sizing: border-box; }
+.checkout-summary { position: sticky; top: 1.25rem; }
+.checkout-side { display: flex; flex-direction: column; gap: 1.5rem; }
+.checkout-actions { display: grid; grid-template-columns: minmax(0, 1fr) minmax(230px, 0.46fr); gap: 12px; margin-top: 1.5rem; align-items: stretch; }
+.checkout-actions .btn-auth { margin: 0; width: 100%; min-height: 56px; }
+.checkout-actions > a { margin-top: 0 !important; min-height: 56px; }
+.checkout-shell .section-title { margin-bottom: 2.4rem; }
+.checkout-shell .section-title h2 { font-size: clamp(2rem, 3.5vw, 2.65rem); }
+.checkout-panel h3 { font-size: 1.05rem; margin-bottom: 1.1rem !important; }
+.checkout-panel h4 { font-size: 0.9rem !important; }
+.checkout-panel .form-group label { font-size: 0.84rem; }
+.checkout-panel .form-group input { font-size: 0.9rem; padding: 0.88rem 1rem; }
+.checkout-panel #checkoutItemsList > div { margin-bottom: 0.8rem !important; padding-bottom: 0.8rem !important; }
+.checkout-panel #checkoutItemsList > div > div:last-child { font-size: 0.95rem !important; }
+.checkout-panel #checkoutItemsList img { width: 48px !important; height: 48px !important; }
+.checkout-panel #checkoutItemsList span { font-size: 0.82rem; }
+.checkout-panel label { font-size: 0.9rem; }
+@media (max-width: 860px) {
+    .checkout-layout { grid-template-columns: 1fr; }
+    .checkout-summary { position: static; }
+}
+@media (max-width: 560px) {
+    .checkout-panel { padding: 1.3rem; }
+    .checkout-actions { grid-template-columns: 1fr; }
+}
+</style>
+
 <section>
-    <div class="auth-container" style="max-width: 600px;">
+    <div class="auth-container checkout-shell">
         <?php if (isset($success)): ?>
             <!-- Order Success Modal Popup -->
             <div id="orderSuccessModal" style="display: flex; position: fixed; inset: 0; background: rgba(15, 23, 42, 0.75); z-index: 99999; align-items: center; justify-content: center; backdrop-filter: blur(8px); padding: 1rem; animation: fadeIn 0.3s ease-out;">
@@ -244,7 +280,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
                         </div>
                         <div style="display: flex; justify-content: space-between; margin-bottom: 0.75rem; border-bottom: 1px dashed #cbd5e1; padding-bottom: 0.5rem;">
                             <span style="color: #475569; font-weight: 600; font-size: 0.9rem;"><?php echo __('order_pay_total'); ?>:</span>
-                            <strong style="color: #16a34a; font-size: 1.1rem; font-weight: 800;">$<?php echo number_format($total_price, 2); ?></strong>
+                            <strong style="color: #16a34a; font-size: 1.1rem; font-weight: 800;"><?php echo number_format((int)round($total_price * 25000), 0, ',', '.'); ?>đ</strong>
                         </div>
                         <div style="display: flex; justify-content: space-between; margin-bottom: 0.75rem; border-bottom: 1px dashed #cbd5e1; padding-bottom: 0.5rem;">
                             <span style="color: #475569; font-weight: 600; font-size: 0.9rem;"><?php echo __('order_pay_phone'); ?>:</span>
@@ -382,7 +418,13 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
                     ];
                 }
             }
-            $total_price_vnd = (int)round($total_display_price * 25000);
+            require_once __DIR__ . '/../includes/membership_loyalty.php';
+            $checkout_loyalty = getUserMembershipLoyaltyInfo($pdo, (int)$_SESSION['user_id']);
+            $is_loyal_checkout = !empty($checkout_loyalty['eligible_for_renewal_perks']);
+            $member_discount_rate = $is_loyal_checkout ? 0.10 : 0.00;
+            $member_checkout_discount = round($total_display_price * $member_discount_rate, 2);
+            $final_display_price = max(0, $total_display_price - $member_checkout_discount);
+            $total_price_vnd = (int)round($final_display_price * 25000);
         ?>
             <div class="section-title">
                 <h2><?php echo __('checkout_confirmation'); ?></h2>
@@ -396,7 +438,8 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
             <?php endif; ?>
 
             <form method="POST" id="checkoutForm" novalidate>
-                <div style="background: #f8fafc; padding: 2rem; border-radius: 20px; margin-bottom: 2rem; border: 1px solid var(--border);">
+                <div class="checkout-layout">
+                <div class="checkout-panel checkout-summary">
                     <h3 style="margin-bottom: 1.5rem; color: var(--text-main); font-weight: 700;"><?php echo __('order_summary'); ?></h3>
                     <div id="checkoutItemsList">
                     <?php foreach($display_items as $item): ?>
@@ -420,18 +463,33 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
                                 </div>
                             </div>
                             <div style="font-weight: 800; color: var(--primary); font-size: 1.05rem;">
-                                $<span id="item_total_<?php echo $item['cart_key']; ?>" data-price="<?php echo $item['price']; ?>"><?php echo number_format($item['price'] * $item['qty'], 2); ?></span>
+                                <span id="item_total_<?php echo $item['cart_key']; ?>" data-price="<?php echo $item['price']; ?>"><?php echo number_format((int)round($item['price'] * $item['qty'] * 25000), 0, ',', '.'); ?>đ</span>
                             </div>
                         </div>
                     <?php endforeach; ?>
                     </div>
-                    <div style="display: flex; justify-content: space-between; margin-top: 1.5rem; font-size: 1.2rem; font-weight: 800; color: var(--text-main);">
+
+                    <?php if ($is_loyal_checkout): ?>
+                        <div style="display: flex; justify-content: space-between; margin-top: 1.2rem; color: #64748b; font-weight: 600; font-size: 0.95rem;">
+                            <span><?php echo __('subtotal'); ?>:</span>
+                            <span style="font-weight: 700; color: #0f172a;"><span id="checkout_subtotal_vnd"><?php echo number_format((int)round($total_display_price * 25000), 0, ',', '.'); ?>đ</span></span>
+                        </div>
+                        <div id="checkout_discount_row" style="display: flex; justify-content: space-between; margin-top: 0.75rem; background: #fffbeb; padding: 10px 14px; border-radius: 12px; border: 1.5px solid #fde68a; font-weight: 700; font-size: 0.88rem; color: #b45309; align-items: center;">
+                            <span><i class="fas fa-crown" style="color: #f59e0b; margin-right: 6px;"></i> <?php echo ($current_lang ?? 'en') === 'vi' ? 'Đặc quyền Hội viên (-10%)' : 'VIP Member Perk (-10%)'; ?>:</span>
+                            <span style="font-weight: 800; color: #16a34a;">-<span id="checkout_discount_vnd"><?php echo number_format((int)round($member_checkout_discount * 25000), 0, ',', '.'); ?>đ</span></span>
+                        </div>
+                    <?php endif; ?>
+
+                    <div style="display: flex; justify-content: space-between; margin-top: 1.2rem; font-size: 1.25rem; font-weight: 900; color: var(--primary); border-top: 2px solid #e2e8f0; padding-top: 1rem;">
                         <span><?php echo __('total'); ?>:</span>
-                        <span>$<span id="checkout_total_usd"><?php echo number_format($total_display_price, 2); ?></span> <span style="font-size:0.95rem; color:var(--text-muted); font-weight:600;">(<span id="checkout_total_vnd"><?php echo number_format($total_price_vnd, 0, ',', '.'); ?>đ</span>)</span></span>
+                        <span style="text-align: right;">
+                            <span id="checkout_total_vnd" style="font-size: 1.45rem; font-weight: 900; color: #10b981;"><?php echo number_format($total_price_vnd, 0, ',', '.'); ?>đ</span>
+                        </span>
                     </div>
                 </div>
 
-                <div style="background: #f8fafc; padding: 2rem; border-radius: 20px; margin-bottom: 2rem; border: 1px solid var(--border);">
+                <div class="checkout-side">
+                <div class="checkout-panel">
                     <h3 style="margin-bottom: 1.5rem; color: var(--text-main); font-weight: 700;"><?php echo __('shipping_info'); ?></h3>
                     <div class="form-group">
                         <label><?php echo __('shipping_address'); ?></label>
@@ -447,7 +505,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
                     </div>
                 </div>
 
-                <div style="background: #f8fafc; padding: 2rem; border-radius: 20px; margin-bottom: 2.5rem; border: 1px solid var(--border);">
+                <div class="checkout-panel">
                     <h3 style="margin-bottom: 1.5rem; color: var(--text-main); font-weight: 700;"><?php echo __('payment_method'); ?></h3>
                     <?php if (!empty($_SESSION['momo_error'])): ?>
                         <div style="background:#fdf4ff;border:1.5px solid #e879f9;color:#a21caf;padding:1rem;border-radius:12px;margin-bottom:1.2rem;font-weight:600;">
@@ -471,10 +529,15 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
                     </div>
                 </div>
 
+                </div>
+                </div>
+
+                <div class="checkout-actions">
                 <button type="button" class="btn-auth" id="btnCheckout" onclick="confirmCheckout()"><?php echo __('complete_order'); ?></button>
                 <a href="/Gym Manager/pages/cart.php" style="display: flex; align-items: center; justify-content: center; gap: 8px; width: 100%; margin-top: 12px; padding: 1.1rem; background: #f1f5f9; color: #475569; border-radius: 14px; font-weight: 800; font-size: 1rem; text-decoration: none; transition: all 0.25s ease; border: 1.5px solid #e2e8f0; box-sizing: border-box;" onmouseover="this.style.background='#e2e8f0'; this.style.color='#0f172a';" onmouseout="this.style.background='#f1f5f9'; this.style.color='#475569';">
                     <i class="fas fa-arrow-left"></i> <?php echo __('back_to_cart'); ?>
                 </a>
+                </div>
             </form>
         <?php endif; ?>
     </div>
@@ -492,12 +555,24 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
                 <?php foreach($display_items as $item): ?>
                     <div style="display: flex; justify-content: space-between; font-size: 0.9rem; margin-bottom: 5px; color: var(--text-main);">
                         <span><?php echo htmlspecialchars($item['name']); ?> (x<?php echo $item['qty']; ?>)</span>
-                        <span style="font-weight: 600;">$<?php echo number_format($item['price'] * $item['qty'], 2); ?></span>
+                        <span style="font-weight: 600;"><?php echo number_format((int)round($item['price'] * $item['qty'] * 25000), 0, ',', '.'); ?>đ</span>
                     </div>
                 <?php endforeach; ?>
-                <div style="border-top: 1px solid #cbd5e1; margin-top: 10px; padding-top: 10px; display: flex; justify-content: space-between; font-weight: 700;">
-                    <span><?php echo __('total'); ?>:</span>
-                    <span>$<?php echo number_format($total_display_price, 2); ?></span>
+                <div style="border-top: 1px solid #cbd5e1; margin-top: 10px; padding-top: 10px; font-weight: 700;">
+                    <?php if ($is_loyal_checkout): ?>
+                        <div style="display: flex; justify-content: space-between; font-size: 0.88rem; color: #64748b; margin-bottom: 4px;">
+                            <span><?php echo __('subtotal'); ?>:</span>
+                            <span id="modal_subtotal_vnd"><?php echo number_format((int)round($total_display_price * 25000), 0, ',', '.'); ?>đ</span>
+                        </div>
+                        <div style="display: flex; justify-content: space-between; font-size: 0.88rem; color: #16a34a; margin-bottom: 4px;">
+                            <span><i class="fas fa-crown"></i> <?php echo ($current_lang ?? 'en') === 'vi' ? 'Đặc quyền Hội viên (-10%)' : 'VIP Member Perk (-10%)'; ?>:</span>
+                            <span>-<span id="modal_discount_vnd"><?php echo number_format((int)round($member_checkout_discount * 25000), 0, ',', '.'); ?>đ</span></span>
+                        </div>
+                    <?php endif; ?>
+                    <div style="display: flex; justify-content: space-between; font-size: 1.05rem; color: var(--primary);">
+                        <span><?php echo __('total'); ?>:</span>
+                        <span id="modal_total_vnd" style="font-weight: 900; color: #10b981;"><?php echo number_format($total_price_vnd, 0, ',', '.'); ?>đ</span>
+                    </div>
                 </div>
             <?php endif; ?>
         </div>
@@ -549,15 +624,24 @@ function modifyCheckoutQty(cartKey, changeDelta, exactValue) {
                 var itemTotal = document.getElementById('item_total_' + cartKey);
                 if (itemTotal) itemTotal.innerText = data.item_subtotal_formatted;
             }
-            var usdTotal = document.getElementById('checkout_total_usd');
-            if (usdTotal) usdTotal.innerText = data.total_formatted;
+            var subTotalEl = document.getElementById('checkout_subtotal_vnd');
+            if (subTotalEl && data.subtotal_formatted) subTotalEl.innerText = data.subtotal_formatted;
+            var discEl = document.getElementById('checkout_discount_vnd');
+            if (discEl && data.member_discount_formatted) discEl.innerText = data.member_discount_formatted;
             var vndTotal = document.getElementById('checkout_total_vnd');
-            if (vndTotal) vndTotal.innerText = data.total_vnd_formatted;
+            if (vndTotal && data.total_vnd_formatted) vndTotal.innerText = data.total_vnd_formatted;
+
+            var modalSub = document.getElementById('modal_subtotal_vnd');
+            if (modalSub && data.subtotal_formatted) modalSub.innerText = data.subtotal_formatted;
+            var modalDisc = document.getElementById('modal_discount_vnd');
+            if (modalDisc && data.member_discount_formatted) modalDisc.innerText = data.member_discount_formatted;
+            var modalTot = document.getElementById('modal_total_vnd');
+            if (modalTot && data.total_vnd_formatted) modalTot.innerText = data.total_vnd_formatted;
 
             var cartBadges = document.querySelectorAll('.cart-count-badge, .nav-cart-count');
             cartBadges.forEach(function(b) { b.innerText = data.cart_count; });
         } else {
-            alert('❌ ' + (data.message || 'Lỗi cập nhật số lượng'));
+            alert('❌ ' + (data.message || (typeof GYMX_LANG !== 'undefined' && GYMX_LANG === 'vi' ? 'Lỗi cập nhật số lượng' : 'Error updating quantity')));
         }
     })
     .catch(function(err) {
@@ -578,7 +662,7 @@ function confirmCheckout() {
     var phoneInput   = document.querySelector('input[name="phone"]');
     var addressInput = document.querySelector('input[name="address"]');
     var payMethod    = document.querySelector('input[name="payment_method"]:checked').value;
-    var isVi = (typeof GYMX_LANG !== 'undefined' ? GYMX_LANG : 'vi') === 'vi';
+    var isVi = (typeof GYMX_LANG !== 'undefined' ? GYMX_LANG : 'en') === 'vi';
 
     var address = addressInput ? addressInput.value.trim() : '';
     var phone   = phoneInput   ? phoneInput.value.trim()   : '';

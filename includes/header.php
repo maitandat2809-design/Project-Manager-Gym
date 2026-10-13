@@ -5,6 +5,49 @@ if (session_status() === PHP_SESSION_NONE) {
 include_once __DIR__ . '/../config/db.php';
 include_once __DIR__ . '/lang.php';
 
+// Handle user membership notification dismissal before output starts
+if (isset($_GET['dismiss_mem_expiry']) && isset($_GET['sub_id'])) {
+    $dismiss_sub_id = (int)$_GET['sub_id'];
+    $_SESSION['dismissed_mem_expiry_' . $dismiss_sub_id] = true;
+    
+    if (!empty($_SERVER['HTTP_X_REQUESTED_WITH']) && strtolower($_SERVER['HTTP_X_REQUESTED_WITH']) === 'xmlhttprequest') {
+        http_response_code(200);
+        exit;
+    }
+    
+    $clean_url = strtok($_SERVER['REQUEST_URI'], '?');
+    if (!headers_sent()) {
+        header("Location: " . $clean_url);
+        exit;
+    }
+}
+
+// Temporarily hide a role notification for the current session. Notifications
+// stay unread so the user can be reminded again after signing in later.
+if (isset($_GET['dismiss_notification'])) {
+    $dismiss_type = (string)$_GET['dismiss_notification'];
+    $current_role = $_SESSION['role'] ?? '';
+    $dismiss_key = null;
+    if ($dismiss_type === 'coach' && $current_role === 'coach') {
+        $dismiss_key = 'dismissed_coach_notifications';
+    } elseif ($dismiss_type === 'staff' && in_array($current_role, ['admin', 'manager'], true)) {
+        $dismiss_key = 'dismissed_staff_notifications_' . $current_role;
+    }
+
+    if ($dismiss_key !== null) {
+        $_SESSION[$dismiss_key] = true;
+        if (!empty($_SERVER['HTTP_X_REQUESTED_WITH']) && strtolower($_SERVER['HTTP_X_REQUESTED_WITH']) === 'xmlhttprequest') {
+            http_response_code(200);
+            exit;
+        }
+        $clean_url = strtok($_SERVER['REQUEST_URI'], '?');
+        if (!headers_sent()) {
+            header("Location: " . $clean_url);
+            exit;
+        }
+    }
+}
+
 if (isset($_SESSION['user_id'])) {
     $stmt_role = $pdo->prepare("SELECT role, name FROM users WHERE id = ?");
     $stmt_role->execute([$_SESSION['user_id']]);
@@ -103,31 +146,9 @@ if (isset($_SESSION['user_id'])) {
         <!-- Right Side Actions Container -->
         <div class="nav-actions-container">
             <ul class="nav-actions">
-                <!-- Language Switcher - Traditional Style -->
-                <li class="lang-switcher">
-                    <?php if($_SESSION['lang'] == 'vi'): ?>
-                        <img src="https://flagcdn.com/w40/vn.png" class="lang-flag" alt="VI">
-                        <span>VI</span>
-                    <?php else: ?>
-                        <img src="https://flagcdn.com/w40/gb.png" class="lang-flag" alt="EN">
-                        <span>EN</span>
-                    <?php endif; ?>
-                    <i class="fas fa-chevron-down"></i>
-                    
-                    <div class="lang-dropdown">
-                        <?php if($_SESSION['lang'] != 'vi'): ?>
-                            <a href="?lang=vi" class="lang-item">
-                                <img src="https://flagcdn.com/w40/vn.png" class="lang-flag" alt="VI">
-                                <span>VI</span>
-                            </a>
-                        <?php endif; ?>
-                        <?php if($_SESSION['lang'] != 'en'): ?>
-                            <a href="?lang=en" class="lang-item">
-                                <img src="https://flagcdn.com/w40/gb.png" class="lang-flag" alt="EN">
-                                <span>EN</span>
-                            </a>
-                        <?php endif; ?>
-                    </div>
+                <li class="language-indicator" aria-label="Language: English">
+                    <img src="https://flagcdn.com/w40/gb.png" class="lang-flag" alt="English">
+                    <span>EN</span>
                 </li>
 
                 <?php if(isset($_SESSION['user_id'])): ?>
@@ -208,26 +229,58 @@ if (isset($_SESSION['user_id'])) {
                             $user_mem = false;
                         }
 
+                        // Only an active subscription is shown as a membership tier. Pending
+                        // payments and accounts without a plan keep a neutral profile treatment.
+                        $is_active_member = $user_mem && ($user_mem['status'] === 'active');
                         $mem_badge_text = '';
-                        $mem_badge_bg = '#475569';
+                        $mem_badge_bg = '#64748b';
+                        $profile_membership_class = ' profile-pill-guest';
+                        $profile_tier_icon = '';
 
-                        if ($user_mem) {
-                            $mem_badge_text = !empty($user_mem['badge']) ? $user_mem['badge'] : mb_strtoupper($user_mem['name']);
-                            if (!empty($user_mem['badge_color'])) {
-                                $mem_badge_bg = $user_mem['badge_color'];
+                        if ($is_active_member) {
+                            $raw_tier = strtoupper(trim((string) ($user_mem['badge'] ?: $user_mem['name'])));
+                            if (strpos($raw_tier, 'WELLNESS') !== false || stripos($user_mem['name'], 'wellness') !== false) {
+                                $membership_tier = 'wellness';
+                                $mem_badge_text = 'WELLNESS';
+                                $profile_tier_icon = 'fa-leaf';
+                            } elseif (strpos($raw_tier, 'ATHLETIC') !== false || stripos($user_mem['name'], 'athletic') !== false || stripos($user_mem['name'], 'kickboxing') !== false) {
+                                $membership_tier = 'athletic';
+                                $mem_badge_text = 'ATHLETIC';
+                                $profile_tier_icon = 'fa-bolt';
                             } else {
-                                $mem_badge_bg = 'linear-gradient(135deg, #d97706, #f59e0b)';
+                                $membership_tier = 'starter';
+                                $mem_badge_text = 'STARTER';
+                                $profile_tier_icon = 'fa-star';
                             }
+
+                            $profile_membership_class = ' profile-pill-member member-tier-' . $membership_tier;
+                            $mem_badge_bg = !empty($user_mem['badge_color'])
+                                ? $user_mem['badge_color']
+                                : 'linear-gradient(135deg, #d97706, #f59e0b)';
+                        } elseif ($user_mem && $user_mem['status'] === 'pending') {
+                            $mem_badge_text = ($_SESSION['lang'] ?? 'en') === 'vi' ? 'ĐANG CHỜ' : 'PENDING';
+                            $mem_badge_bg = '#d97706';
+                            $profile_membership_class = ' profile-pill-pending';
                         } else {
-                            $mem_badge_text = strtoupper($_SESSION['role'] ?? 'USER');
-                            $mem_badge_bg = '#64748b';
+                            // A user with no membership must not be presented as a Starter member.
+                            $mem_badge_text = ($_SESSION['role'] ?? 'user') === 'user'
+                                ? (($_SESSION['lang'] ?? 'en') === 'vi' ? 'CHƯA CÓ GÓI' : 'NO PLAN')
+                                : strtoupper($_SESSION['role'] ?? 'USER');
                         }
+
+                        $nav_avatar_fallback = 'https://ui-avatars.com/api/?name=' . urlencode($_SESSION['user_name']) . '&background=0062ff&color=fff&size=40';
+                        $nav_avatar = ($nav_user && !empty($nav_user['avatar']))
+                            ? get_image_url($nav_user['avatar'])
+                            : $nav_avatar_fallback;
                         ?>
-                        <a href="/Gym Manager/dashboards/profile.php" class="profile-pill">
-                            <img src="<?php echo ($nav_user && $nav_user['avatar']) ? $nav_user['avatar'] : 'https://ui-avatars.com/api/?name='.urlencode($_SESSION['user_name']).'&background=0062ff&color=fff&size=40'; ?>" alt="User Avatar">
+                        <a href="/Gym Manager/dashboards/profile.php" class="profile-pill<?php echo $profile_membership_class; ?>" title="<?php echo htmlspecialchars($mem_badge_text); ?>">
+                            <img src="<?php echo htmlspecialchars($nav_avatar); ?>" alt="User Avatar" onerror="this.onerror=null;this.src='<?php echo htmlspecialchars($nav_avatar_fallback, ENT_QUOTES); ?>';">
                             <div class="profile-info">
                                 <span class="profile-name"><?php echo htmlspecialchars($_SESSION['user_name']); ?></span>
-                                <span class="profile-plan-badge" style="background: <?php echo $mem_badge_bg; ?>;"><?php echo htmlspecialchars($mem_badge_text); ?></span>
+                                <span class="profile-plan-badge" style="background: <?php echo $mem_badge_bg; ?>;">
+                                    <?php if ($profile_tier_icon): ?><i class="fas <?php echo $profile_tier_icon; ?>" aria-hidden="true"></i><?php endif; ?>
+                                    <?php echo htmlspecialchars($mem_badge_text); ?>
+                                </span>
                             </div>
                         </a>
                     </li>

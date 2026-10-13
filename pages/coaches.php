@@ -11,6 +11,7 @@ require_once __DIR__ . '/../includes/lang.php';
 
 $message = '';
 $error = '';
+$booking_created = false;
 
 if (isset($_GET['book']) && isset($_SESSION['user_id'])) {
     $coach_id = $_GET['book'];
@@ -24,14 +25,21 @@ if (isset($_GET['book']) && isset($_SESSION['user_id'])) {
     if ($conflict_stmt->fetch()) {
         $error = __('booking_conflict_coach');
     } else {
-        
-        $stmt = $pdo->prepare("INSERT INTO bookings (user_id, coach_id, booking_date, status) VALUES (?, ?, ?, 'pending')");
-        if ($stmt->execute([$_SESSION['user_id'], $coach_id, $booking_date])) {
+        $user_conflict_stmt = $pdo->prepare("SELECT id FROM bookings WHERE user_id = ? AND status NOT IN ('cancelled', 'rejected', 'completed') AND DATE(booking_date) = DATE(?) AND HOUR(booking_date) = HOUR(?) LIMIT 1");
+        $user_conflict_stmt->execute([$_SESSION['user_id'], $booking_date, $booking_date]);
+
+        if ($user_conflict_stmt->fetch()) {
+            $error = '⚠️ You already have a session at this time. Please choose another date or time, or cancel the existing coach booking in Calendar first.';
+        } else {
+            $stmt = $pdo->prepare("INSERT INTO bookings (user_id, coach_id, booking_date, status) VALUES (?, ?, ?, 'pending')");
+            if ($stmt->execute([$_SESSION['user_id'], $coach_id, $booking_date])) {
             $booking_id = $pdo->lastInsertId();
             $message = __('booking_success');
+            $booking_created = true;
 
             require_once __DIR__ . '/../includes/booking_mailer.php';
             sendNewBookingNotificationEmail($pdo, $booking_id);
+            }
         }
     }
 } elseif (isset($_GET['book'])) {
@@ -41,7 +49,7 @@ if (isset($_GET['book']) && isset($_SESSION['user_id'])) {
 
 include_once __DIR__ . '/../includes/header.php';
 
-$where = "WHERE 1=1";
+$where = "WHERE u.status = 'active'";
 $params = [];
 
 if (isset($_GET['discipline']) && !empty($_GET['discipline'])) {
@@ -276,7 +284,14 @@ if (!function_exists('get_coach_next_slot')) {
         </div>
 
         <?php if($message): ?>
-            <p style="color: #16a34a; text-align: center; margin-bottom: 1.5rem; background: #f0fdf4; padding: 1rem; border-radius: 16px; border: 1px solid #bbf7d0; font-weight: 600;"><?php echo $message; ?></p>
+            <div role="status" style="color: #166534; text-align: center; margin-bottom: 1.5rem; background: #f0fdf4; padding: 1rem 1.25rem; border-radius: 16px; border: 1px solid #bbf7d0; font-weight: 700;">
+                <i class="fas fa-circle-check" aria-hidden="true" style="color: #16a34a; margin-right: 8px;"></i><?php echo htmlspecialchars($message); ?>
+                <?php if($booking_created): ?>
+                    <a href="/Gym Manager/features/calendar.php" style="display: inline-flex; align-items: center; gap: 7px; margin-left: 12px; padding: 0.5rem 0.85rem; border-radius: 10px; background: #166534; color: #fff; text-decoration: none; font-size: 0.88rem;">
+                        <?php echo __('view_calendar'); ?> <i class="fas fa-arrow-right" aria-hidden="true"></i>
+                    </a>
+                <?php endif; ?>
+            </div>
         <?php endif; ?>
 
         <?php if($error): ?>
@@ -395,7 +410,11 @@ if (!function_exists('get_coach_next_slot')) {
 
                                 <p style="margin-bottom: 1.5rem;"><?php echo $coach['bio']; ?></p>
                                 <div class="card-footer" style="margin-top: auto; display: flex; align-items: center; justify-content: space-between; gap: 8px; flex-wrap: wrap;">
-                                    <span class="price" style="font-size: 1.15rem; font-weight: 800; color: var(--primary);">$<?php echo $coach['hourly_rate']; ?><span style="font-size: 0.8rem; font-weight: 500; color: var(--text-muted);"><?php echo __('per_hour'); ?></span></span>
+                                    <?php 
+                                    $coach_hr = floatval($coach['hourly_rate'] ?? 0);
+                                    if ($coach_hr < 100) $coach_hr *= 25000;
+                                    ?>
+                                    <span class="price" style="font-size: 1.15rem; font-weight: 800; color: var(--primary);"><?php echo number_format((int)round($coach_hr), 0, ',', '.'); ?>đ<span style="font-size: 0.8rem; font-weight: 500; color: var(--text-muted);"><?php echo __('per_hour'); ?></span></span>
                                     <a href="/Gym Manager/pages/coach_details.php?id=<?php echo $coach['id']; ?><?php echo $next_slot ? '&date=' . $next_slot['date'] : ''; ?>#bookingSection" class="btn-card" style="display: inline-flex; align-items: center; gap: 6px; padding: 0.65rem 1.15rem; font-size: 0.85rem; border-radius: 12px; font-weight: 700;">
                                         <i class="fas fa-calendar-check" style="color: var(--gold);"></i> <?php echo __('view_free_slots_btn'); ?>
                                     </a>

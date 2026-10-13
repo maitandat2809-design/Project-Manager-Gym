@@ -18,3 +18,11 @@ UseCase-*
 render_*.ps1
 create_word_diagram_pages.ps1
 assets/img/user_structure_diagram.png
+
+# Temporary build & render artifacts
+.codex_build/
+tmp/
+tmp_testcase_doc/
+chapter10-render/
+objectives-review.pdf
+user_structure_diagram.png

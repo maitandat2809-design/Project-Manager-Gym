@@ -55,7 +55,8 @@ if (isset($_SESSION['user_id']) && ($_SESSION['role'] === 'admin' || $_SESSION['
         $has_notifications = false;
     }
 
-    if ($has_notifications): ?>
+    $staff_dismiss_key = 'dismissed_staff_notifications_' . $_SESSION['role'];
+    if ($has_notifications && !isset($_SESSION[$staff_dismiss_key])): ?>
         <!-- Notification Modal for Admin/Manager -->
         <div id="adminNotificationModal" style="position: fixed; inset: 0; background: rgba(0,0,0,0.7); z-index: 10001; display: flex; align-items: center; justify-content: center; backdrop-filter: blur(8px);">
             <div style="background: white; width: 90%; max-width: 580px; border-radius: 30px; box-shadow: 0 25px 50px -12px rgba(0,0,0,0.5); overflow: hidden; animation: slideUp 0.4s ease-out;">
@@ -77,8 +78,9 @@ if (isset($_SESSION['user_id']) && ($_SESSION['role'] === 'admin' || $_SESSION['
                                 <i class="fas fa-id-card" style="font-size: 1.2rem;"></i>
                             </div>
                             <div style="flex: 1;">
-                                <h4 style="color: var(--text-main); font-weight: 700; margin-bottom: 3px;">Thẻ Thành Viên: <?php echo htmlspecialchars($nm['customer_name']); ?></h4>
-                                <p style="color: #ea580c; font-weight: 600; font-size: 0.9rem;">Gói: <?php echo htmlspecialchars($plan_display); ?> (Chờ xác nhận)</p>
+                                <?php $is_vi_notif = (isset($_SESSION['lang']) && $_SESSION['lang'] === 'vi'); ?>
+                                <h4 style="color: var(--text-main); font-weight: 700; margin-bottom: 3px;"><?php echo $is_vi_notif ? 'Thẻ Thành Viên: ' : 'Membership: '; ?><?php echo htmlspecialchars($nm['customer_name']); ?></h4>
+                                <p style="color: #ea580c; font-weight: 600; font-size: 0.9rem;"><?php echo $is_vi_notif ? 'Gói: ' : 'Plan: '; ?><?php echo htmlspecialchars($plan_display); ?> <?php echo $is_vi_notif ? '(Chờ xác nhận)' : '(Pending Approval)'; ?></p>
                             </div>
                             <div style="text-align: right; color: var(--text-muted); font-size: 0.8rem; font-weight: 600;">
                                 <?php echo date('H:i', strtotime($nm['created_at'])); ?>
@@ -111,7 +113,7 @@ if (isset($_SESSION['user_id']) && ($_SESSION['role'] === 'admin' || $_SESSION['
                             <div style="flex: 1;">
                                 <h4 style="color: var(--text-main); font-weight: 700; margin-bottom: 3px;">Order: <?php echo htmlspecialchars($no['customer_name']); ?></h4>
                                 <p style="color: #10b981; font-weight: 800; font-size: 1rem;">
-                                    $<?php echo number_format($no['total_price'], 2); ?>
+                                    <?php echo number_format((int)round($no['total_price'] * 25000), 0, ',', '.'); ?>đ
                                 </p>
                             </div>
                             <div style="text-align: right; color: var(--text-muted); font-size: 0.8rem; font-weight: 600;">
@@ -127,8 +129,22 @@ if (isset($_SESSION['user_id']) && ($_SESSION['role'] === 'admin' || $_SESSION['
                     </form>
                     <a href="/Gym Manager/dashboards/manager.php?page=member_subscriptions" class="action-btn" style="flex: 1; display: flex; align-items: center; justify-content: center; background: #f1f5f9; color: var(--text-muted); border-radius: 15px; text-decoration: none; font-weight: 700; height: 55px;">Go to Dashboard</a>
                 </div>
+                    <div style="padding:0 2rem 1.4rem;text-align:center;">
+                        <a href="?dismiss_notification=staff" onclick="dismissStaffNotification(event)" style="color:#94a3b8;font-size:0.82rem;text-decoration:underline;cursor:pointer;">
+                            <?php echo (($_SESSION['lang'] ?? 'en') === 'vi') ? 'Đóng thông báo này (Nhắc lại sau)' : 'Dismiss notification (Remind later)'; ?>
+                        </a>
+                    </div>
             </div>
         </div>
+
+            <script>
+            function dismissStaffNotification(event) {
+                if (event) event.preventDefault();
+                const modal = document.getElementById('adminNotificationModal');
+                if (modal) modal.style.display = 'none';
+                fetch('?dismiss_notification=staff', {headers: {'X-Requested-With': 'XMLHttpRequest'}}).catch(function() {});
+            }
+            </script>
         
         <style>
             @keyframes slideUp {

@@ -68,8 +68,9 @@ try {
         if ($b['status'] === 'cancelled') $color = '#ef4444'; // red
         if ($b['status'] === 'pending') $color = '#f59e0b'; // orange
 
-        $time = date('H:i', strtotime($b['booking_date']));
-        $title = $time . " | Khách: " . $b['user_name'] . " | Coach: " . $b['coach_name'];
+        $is_vi_cal = (isset($_SESSION['lang']) && $_SESSION['lang'] === 'vi');
+        $client_label = $is_vi_cal ? 'Khách' : 'Client';
+        $title = $time . " | " . $client_label . ": " . $b['user_name'] . " | Coach: " . $b['coach_name'];
 
         $events[] = [
             'id' => $b['id'],

@@ -55,7 +55,23 @@ $alterQueries = [
     "ALTER TABLE users ADD COLUMN IF NOT EXISTS nickname VARCHAR(100) DEFAULT NULL",
     "ALTER TABLE users ADD COLUMN IF NOT EXISTS phone VARCHAR(20) DEFAULT NULL",
     "ALTER TABLE users ADD COLUMN IF NOT EXISTS address TEXT DEFAULT NULL",
-    "ALTER TABLE users ADD COLUMN IF NOT EXISTS balance DECIMAL(10,2) DEFAULT 0.00"
+    "ALTER TABLE users ADD COLUMN IF NOT EXISTS balance DECIMAL(10,2) DEFAULT 0.00",
+
+    // Member Subscriptions Loyalty & Renewal columns
+    "ALTER TABLE member_subscriptions ADD COLUMN IF NOT EXISTS is_renewal TINYINT(1) DEFAULT 0",
+    "ALTER TABLE member_subscriptions ADD COLUMN IF NOT EXISTS discount_amount DECIMAL(12,0) DEFAULT 0",
+    "ALTER TABLE member_subscriptions ADD COLUMN IF NOT EXISTS bonus_days INT(11) DEFAULT 0",
+    "ALTER TABLE member_subscriptions ADD COLUMN IF NOT EXISTS bonus_pt INT(11) DEFAULT 0",
+    "ALTER TABLE member_subscriptions ADD COLUMN IF NOT EXISTS loyalty_gifts TEXT DEFAULT NULL",
+    "ALTER TABLE member_subscriptions ADD COLUMN IF NOT EXISTS renewal_parent_id INT(11) DEFAULT NULL",
+    "ALTER TABLE orders ADD COLUMN IF NOT EXISTS member_discount DECIMAL(10,2) DEFAULT 0.00",
+
+    // Equipment Warranty, Purchase Date & Maintenance tracking
+    "ALTER TABLE equipment ADD COLUMN IF NOT EXISTS purchase_date DATE DEFAULT NULL",
+    "ALTER TABLE equipment ADD COLUMN IF NOT EXISTS warranty_months INT DEFAULT 12",
+    "ALTER TABLE equipment ADD COLUMN IF NOT EXISTS warranty_expiry_date DATE DEFAULT NULL",
+    "ALTER TABLE equipment ADD COLUMN IF NOT EXISTS next_maintenance_date DATE DEFAULT NULL",
+    "ALTER TABLE equipment ADD COLUMN IF NOT EXISTS notes TEXT DEFAULT NULL"
 ];
 
 foreach ($alterQueries as $sql) {

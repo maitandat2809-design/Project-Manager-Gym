@@ -140,36 +140,36 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action_update_schedul
                     }
 
                     if ($new_status === 'cancelled') {
-                        $mail->Subject = "🚫 [Gym Manager] Training Session Cancelled / Hủy Buổi Tập";
+                        $mail->Subject = "🚫 [Gym Manager] Training Session Cancelled";
                         $mail_body = "<div style='font-family: Arial, sans-serif; max-width: 600px; margin: auto; padding: 25px; border: 1px solid #e2e8f0; border-radius: 16px; background-color: #ffffff;'>";
-                        $mail_body .= "<h2 style='color: #dc2626; border-bottom: 2px solid #fca5a5; padding-bottom: 10px; margin-top: 0;'>🚫 Session Cancelled / Buổi Tập Đã Bị Hủy</h2>";
-                        $mail_body .= "<p style='color: #475569; font-size: 15px;'>Notice: This training session has been cancelled by Manager / Quản lý đã hủy buổi tập này.</p>";
+                        $mail_body .= "<h2 style='color: #dc2626; border-bottom: 2px solid #fca5a5; padding-bottom: 10px; margin-top: 0;'>🚫 Session Cancelled</h2>";
+                        $mail_body .= "<p style='color: #475569; font-size: 15px;'>This training session has been cancelled by a manager.</p>";
                         $mail_body .= "<div style='background: #fef2f2; padding: 18px; border-left: 4px solid #dc2626; border-radius: 8px; margin: 20px 0;'>";
-                        $mail_body .= "<p style='margin: 6px 0;'><strong>Client / Học viên:</strong> " . htmlspecialchars($student_info['name']) . "</p>";
-                        $mail_body .= "<p style='margin: 6px 0;'><strong>Coach / HLV Phụ Trách:</strong> <span style='color: #1c2340; font-weight: bold;'>" . htmlspecialchars($coach_info['name'] ?? 'N/A') . "</span></p>";
-                        $mail_body .= "<p style='margin: 6px 0;'><strong>Date & Time / Thời gian tập:</strong> <span style='color: #2563eb; font-weight: bold;'>" . date('l, d/m/Y - H:i', strtotime($new_booking_date)) . "</span></p>";
-                        $mail_body .= "<p style='margin: 6px 0;'><strong>Status / Trạng thái:</strong> <span style='color: #dc2626; font-weight: bold;'>CANCELLED</span></p>";
+                        $mail_body .= "<p style='margin: 6px 0;'><strong>Client:</strong> " . htmlspecialchars($student_info['name']) . "</p>";
+                        $mail_body .= "<p style='margin: 6px 0;'><strong>Coach:</strong> <span style='color: #1c2340; font-weight: bold;'>" . htmlspecialchars($coach_info['name'] ?? 'N/A') . "</span></p>";
+                        $mail_body .= "<p style='margin: 6px 0;'><strong>Date & Time:</strong> <span style='color: #2563eb; font-weight: bold;'>" . date('l, d/m/Y - H:i', strtotime($new_booking_date)) . "</span></p>";
+                        $mail_body .= "<p style='margin: 6px 0;'><strong>Status:</strong> <span style='color: #dc2626; font-weight: bold;'>CANCELLED</span></p>";
                         if (!empty($new_coach_message)) {
-                            $mail_body .= "<p style='margin: 6px 0;'><strong>Reason / Ghi chú:</strong> " . htmlspecialchars($new_coach_message) . "</p>";
+                            $mail_body .= "<p style='margin: 6px 0;'><strong>Reason:</strong> " . htmlspecialchars($new_coach_message) . "</p>";
                         }
                         $mail_body .= "</div>";
-                        $mail_body .= "<p style='color: #64748b; font-size: 13px;'>Please log in to Gym Manager system for more details / Vui lòng đăng nhập hệ thống Gym Manager để xem chi tiết.</p>";
+                        $mail_body .= "<p style='color: #64748b; font-size: 13px;'>Please log in to Gym Manager for more details.</p>";
                         $mail_body .= "</div>";
                     } else {
-                        $mail->Subject = "⚡ [Gym Manager] Substitute Coach Assignment / Phân Công HLV Dạy Thế";
+                        $mail->Subject = "⚡ [Gym Manager] Substitute Coach Assigned";
                         $mail_body = "<div style='font-family: Arial, sans-serif; max-width: 600px; margin: auto; padding: 25px; border: 1px solid #e2e8f0; border-radius: 16px; background-color: #ffffff;'>";
-                        $mail_body .= "<h2 style='color: #1c2340; border-bottom: 2px solid #b08d57; padding-bottom: 10px; margin-top: 0;'>⚡ Substitute Coach Assigned / Phân Công HLV Dạy Thế</h2>";
-                        $mail_body .= "<p style='color: #475569; font-size: 15px;'>Notice: The Manager has assigned a substitute coach for your training session / Quản lý đã xếp HLV thế cho buổi tập của bạn.</p>";
+                        $mail_body .= "<h2 style='color: #1c2340; border-bottom: 2px solid #b08d57; padding-bottom: 10px; margin-top: 0;'>⚡ Substitute Coach Assigned</h2>";
+                        $mail_body .= "<p style='color: #475569; font-size: 15px;'>A manager has assigned a substitute coach for your training session.</p>";
                         $mail_body .= "<div style='background: #f8fafc; padding: 18px; border-left: 4px solid #b08d57; border-radius: 8px; margin: 20px 0;'>";
-                        $mail_body .= "<p style='margin: 6px 0;'><strong>Client / Học viên:</strong> " . htmlspecialchars($student_info['name']) . "</p>";
-                        $mail_body .= "<p style='margin: 6px 0;'><strong>Assigned Coach / HLV Phụ Trách Dạy:</strong> <span style='color: #16a34a; font-weight: bold;'>" . htmlspecialchars($coach_info['name'] ?? 'N/A') . "</span></p>";
-                        $mail_body .= "<p style='margin: 6px 0;'><strong>Date & Time / Thời gian tập:</strong> <span style='color: #2563eb; font-weight: bold;'>" . date('l, d/m/Y - H:i', strtotime($new_booking_date)) . "</span></p>";
-                        $mail_body .= "<p style='margin: 6px 0;'><strong>Status / Trạng thái:</strong> <span style='color: #16a34a; font-weight: bold;'>" . strtoupper($new_status) . "</span></p>";
+                        $mail_body .= "<p style='margin: 6px 0;'><strong>Client:</strong> " . htmlspecialchars($student_info['name']) . "</p>";
+                        $mail_body .= "<p style='margin: 6px 0;'><strong>Assigned Coach:</strong> <span style='color: #16a34a; font-weight: bold;'>" . htmlspecialchars($coach_info['name'] ?? 'N/A') . "</span></p>";
+                        $mail_body .= "<p style='margin: 6px 0;'><strong>Date & Time:</strong> <span style='color: #2563eb; font-weight: bold;'>" . date('l, d/m/Y - H:i', strtotime($new_booking_date)) . "</span></p>";
+                        $mail_body .= "<p style='margin: 6px 0;'><strong>Status:</strong> <span style='color: #16a34a; font-weight: bold;'>" . strtoupper($new_status) . "</span></p>";
                         if (!empty($new_coach_message)) {
-                            $mail_body .= "<p style='margin: 6px 0;'><strong>Manager Note / Ghi chú Quản lý:</strong> " . htmlspecialchars($new_coach_message) . "</p>";
+                            $mail_body .= "<p style='margin: 6px 0;'><strong>Manager Note:</strong> " . htmlspecialchars($new_coach_message) . "</p>";
                         }
                         $mail_body .= "</div>";
-                        $mail_body .= "<p style='color: #64748b; font-size: 13px;'>Please log in to Gym Manager system for more details / Vui lòng đăng nhập hệ thống Gym Manager để xem chi tiết.</p>";
+                        $mail_body .= "<p style='color: #64748b; font-size: 13px;'>Please log in to Gym Manager for more details.</p>";
                         $mail_body .= "</div>";
                     }
                     
@@ -361,19 +361,19 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action_user_reschedul
                     }
 
                     $mail->isHTML(true);
-                    $mail->Subject = "📅 [Gym Manager] Workout Rescheduled / Đã Đổi Lịch Tập - Booking #" . $booking_id;
+                    $mail->Subject = "📅 [Gym Manager] Workout Rescheduled - Booking #" . $booking_id;
 
                     $mail_body = "<div style='font-family: Arial, sans-serif; max-width: 600px; margin: auto; padding: 25px; border: 1px solid #e2e8f0; border-radius: 16px; background-color: #ffffff;'>";
-                    $mail_body .= "<h2 style='color: #1a2744; border-bottom: 2px solid #c9a84c; padding-bottom: 10px; margin-top: 0;'>📅 Schedule Rescheduled / Đã Đổi Lịch Tập</h2>";
-                    $mail_body .= "<p style='color: #475569; font-size: 15px;'>Notice: The training session date/time has been updated / Buổi tập đã được cập nhật lịch mới.</p>";
+                    $mail_body .= "<h2 style='color: #1a2744; border-bottom: 2px solid #c9a84c; padding-bottom: 10px; margin-top: 0;'>📅 Workout Rescheduled</h2>";
+                    $mail_body .= "<p style='color: #475569; font-size: 15px;'>The training session date and time have been updated.</p>";
                     $mail_body .= "<div style='background: #f8fafc; padding: 18px; border-left: 4px solid #c9a84c; border-radius: 8px; margin: 20px 0;'>";
                     $mail_body .= "<p style='margin: 6px 0;'><strong>Booking ID:</strong> #" . $booking_id . "</p>";
-                    $mail_body .= "<p style='margin: 6px 0;'><strong>Client / Học viên:</strong> " . htmlspecialchars($b_check['client_name']) . "</p>";
-                    $mail_body .= "<p style='margin: 6px 0;'><strong>Coach / HLV Phụ Trách:</strong> " . htmlspecialchars($coach_info['coach_name'] ?? 'N/A') . "</p>";
-                    $mail_body .= "<p style='margin: 6px 0;'><strong>Previous Time / Thời gian cũ:</strong> <span style='color: #94a3b8; text-decoration: line-through;'>" . $old_date_formatted . "</span></p>";
-                    $mail_body .= "<p style='margin: 6px 0;'><strong>NEW Time / Thời gian MỚI:</strong> <span style='color: #16a34a; font-weight: bold; font-size: 1.05rem;'>" . $new_date_formatted . "</span></p>";
+                    $mail_body .= "<p style='margin: 6px 0;'><strong>Client:</strong> " . htmlspecialchars($b_check['client_name']) . "</p>";
+                    $mail_body .= "<p style='margin: 6px 0;'><strong>Coach:</strong> " . htmlspecialchars($coach_info['coach_name'] ?? 'N/A') . "</p>";
+                    $mail_body .= "<p style='margin: 6px 0;'><strong>Previous Time:</strong> <span style='color: #94a3b8; text-decoration: line-through;'>" . $old_date_formatted . "</span></p>";
+                    $mail_body .= "<p style='margin: 6px 0;'><strong>New Time:</strong> <span style='color: #16a34a; font-weight: bold; font-size: 1.05rem;'>" . $new_date_formatted . "</span></p>";
                     if (!empty($reason)) {
-                        $mail_body .= "<p style='margin: 6px 0;'><strong>Note / Lý do đổi lịch:</strong> " . htmlspecialchars($reason) . "</p>";
+                        $mail_body .= "<p style='margin: 6px 0;'><strong>Note:</strong> " . htmlspecialchars($reason) . "</p>";
                     }
                     $mail_body .= "</div>";
                     $mail_body .= "<p style='color: #64748b; font-size: 13px;'>This email was automatically sent to Client, Coach, and Manager.</p>";
@@ -416,6 +416,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action_coach_attendan
 
             if (!$bk) {
                 echo "<script>window.location.href='/Gym Manager/features/calendar.php?week_offset={$week_offset}';</script>";
+                exit;
+            }
+
+            // Attendance is only valid from the scheduled start time onward.
+            // This server-side check prevents requests forged outside the UI.
+            if (!in_array($att_value, ['present', 'absent'], true) || time() < strtotime($bk['booking_date'])) {
+                echo "<script>window.location.href='/Gym Manager/features/calendar.php?week_offset={$week_offset}&msg=attendance_not_due';</script>";
                 exit;
             }
 
@@ -504,7 +511,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action_coach_attendan
                     if (!empty($bk['client_email'])) $mail->addAddress($bk['client_email'], $bk['client_name']);
                     if (!empty($coach_row['coach_email'])) $mail->addCC($coach_row['coach_email'], $coach_row['coach_name']);
                     $mail->isHTML(true);
-                    $mail->Subject = "✅ [Gym Manager] Attendance Confirmed / Xác Nhận Có Mặt - Booking #" . $booking_id;
+                    $mail->Subject = "✅ [Gym Manager] Attendance Confirmed - Booking #" . $booking_id;
                     $pt_session_block = '';
                     if ($has_membership && $pt_total > 0) {
                         $pt_session_block = "<div style='background:#eff6ff;padding:12px 16px;border-radius:10px;border:1px solid #bfdbfe;margin-top:10px;'>
@@ -514,7 +521,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action_coach_attendan
                         </div>";
                     }
                     $mail->Body = "<div style='font-family:Arial,sans-serif;max-width:600px;margin:auto;padding:25px;border:1px solid #e2e8f0;border-radius:16px;background:#fff;'>
-                        <h2 style='color:#16a34a;border-bottom:2px solid #16a34a;padding-bottom:10px;'>✅ Attendance Confirmed / Xác Nhận Có Mặt</h2>
+                        <h2 style='color:#16a34a;border-bottom:2px solid #16a34a;padding-bottom:10px;'>✅ Attendance Confirmed</h2>
                         <p style='color:#475569;'>Client <strong>" . htmlspecialchars($bk['client_name']) . "</strong> has been marked <strong style='color:#16a34a;'>PRESENT</strong> for their session.</p>
                         <div style='background:#f0fdf4;padding:16px;border-left:4px solid #16a34a;border-radius:8px;margin:16px 0;'>
                             <p style='margin:5px 0;'><strong>Booking ID:</strong> #" . $booking_id . "</p>
@@ -577,17 +584,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action_coach_attendan
                         if (!empty($bk['client_email'])) $mail2->addAddress($bk['client_email'], $bk['client_name']);
                         if (!empty($coach_row2['coach_email'])) $mail2->addCC($coach_row2['coach_email'], $coach_row2['coach_name']);
                         $mail2->isHTML(true);
-                        $mail2->Subject = "⚠️ [Gym Manager] Absent – PT Session Deducted / Vắng Mặt – Trừ 1 Buổi - Booking #" . $booking_id;
+                        $mail2->Subject = "⚠️ [Gym Manager] Absent – PT Session Deducted - Booking #" . $booking_id;
 
                         $pt_block_absent = ($pt_total > 0) ? "
                             <div style='background:#fef9c3;padding:12px 16px;border-radius:10px;border:1px solid #fde047;margin-top:10px;'>
                                 <p style='margin:4px 0;font-weight:700;color:#854d0e;'>💳 Membership: " . htmlspecialchars($plan_name) . "</p>
-                                <p style='margin:4px 0;'>PT Sessions Used: <strong>" . $pt_used . " / " . $pt_total . "</strong> — 1 buổi vừa bị trừ do vắng mặt.</p>
+                                <p style='margin:4px 0;'>PT Sessions Used: <strong>" . $pt_used . " / " . $pt_total . "</strong> — one session was deducted for absence.</p>
                                 <p style='margin:4px 0;'>Remaining: <strong style='color:" . ($pt_remaining > 0 ? '#16a34a' : '#dc2626') . ";'>" . $pt_remaining . " sessions left</strong></p>
                             </div>" : "";
 
                         $mail2->Body = "<div style='font-family:Arial,sans-serif;max-width:600px;margin:auto;padding:25px;border:1px solid #e2e8f0;border-radius:16px;background:#fff;'>
-                            <h2 style='color:#d97706;border-bottom:2px solid #d97706;padding-bottom:10px;'>⚠️ Absent Noted – 1 PT Session Deducted / Vắng Mặt – Trừ 1 Buổi</h2>
+                            <h2 style='color:#d97706;border-bottom:2px solid #d97706;padding-bottom:10px;'>⚠️ Absence Noted – One PT Session Deducted</h2>
                             <p style='color:#475569;'>Client <strong>" . htmlspecialchars($bk['client_name']) . "</strong> was marked <strong style='color:#d97706;'>ABSENT</strong>. Because this client did not attend, <strong>1 PT session has been deducted</strong> from their membership quota.</p>
                             <div style='background:#fffbeb;padding:16px;border-left:4px solid #d97706;border-radius:8px;margin:16px 0;'>
                                 <p style='margin:5px 0;'><strong>Booking ID:</strong> #" . $booking_id . "</p>
@@ -613,7 +620,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action_coach_attendan
 
                     // Send auto-cancellation email
                     require_once __DIR__ . '/../includes/booking_mailer.php';
-                    sendBookingCancellationEmail($pdo, $booking_id, 'Auto-cancelled: Client absent without active membership / Tự động hủy: Khách hàng vắng mặt, không có gói thành viên.');
+                    sendBookingCancellationEmail($pdo, $booking_id, 'Automatically cancelled: the client was absent and has no active membership.');
 
                     echo "<script>window.location.href='/Gym Manager/features/calendar.php?week_offset={$week_offset}&msg=absent_cancelled';</script>";
                     exit;
@@ -628,10 +635,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action_coach_attendan
 
 // Legacy fallback (keep for compatibility)
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action_mark_attended'])) {
-    if (isset($_SESSION['user_id'])) {
+    if (isset($_SESSION['role']) && in_array($_SESSION['role'], ['coach', 'manager', 'admin'], true)) {
         $booking_id = (int)$_POST['booking_id'];
         $week_offset = isset($_POST['week_offset']) ? (int)$_POST['week_offset'] : 0;
         try {
+            $stmt_booking = $pdo->prepare("SELECT booking_date FROM bookings WHERE id = ?");
+            $stmt_booking->execute([$booking_id]);
+            $booking = $stmt_booking->fetch();
+            if (!$booking || time() < strtotime($booking['booking_date'])) {
+                echo "<script>window.location.href='/Gym Manager/features/calendar.php?week_offset={$week_offset}&msg=attendance_not_due';</script>";
+                exit;
+            }
             $pdo->prepare("UPDATE bookings SET attendance = 'present', status = 'confirmed', coach_seen = 0, user_seen = 0 WHERE id = ?")
                 ->execute([$booking_id]);
             echo "<script>window.location.href='/Gym Manager/features/calendar.php?week_offset={$week_offset}&msg=attended';</script>";
@@ -647,6 +661,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action_mark_attended'
         <div style="background: #dcfce7; color: #15803d; border: 1px solid #86efac; padding: 1rem 1.5rem; border-radius: 12px; margin-bottom: 2rem; font-weight: 700; display: flex; align-items: center; gap: 10px; box-shadow: 0 4px 12px rgba(22, 163, 74, 0.15);">
             <i class="fas fa-check-circle" style="font-size: 1.3rem;"></i>
             <?php echo isset($_SESSION['lang']) && $_SESSION['lang'] === 'vi' ? 'Đã xác nhận tham gia buổi tập thành công! Lịch tập đã được ghi nhận "Đã tham gia".' : 'Session attendance confirmed successfully! Schedule status updated to "Attended".'; ?>
+        </div>
+    <?php endif; ?>
+
+    <?php if (isset($_GET['msg']) && $_GET['msg'] === 'attendance_not_due'): ?>
+        <div role="alert" style="background: #fff7ed; color: #9a3412; border: 1px solid #fdba74; padding: 1rem 1.5rem; border-radius: 12px; margin-bottom: 2rem; font-weight: 700; display: flex; align-items: center; gap: 10px; box-shadow: 0 4px 12px rgba(234, 88, 12, 0.12);">
+            <i class="fas fa-clock" style="font-size: 1.2rem;"></i>
+            <?php echo (($_SESSION['lang'] ?? 'en') === 'vi') ? 'Chưa đến thời gian diễn ra buổi tập. Bạn chỉ có thể điểm danh từ đúng giờ đã đặt.' : 'This session has not started yet. Attendance can only be recorded from its scheduled time.'; ?>
         </div>
     <?php endif; ?>
 
@@ -1568,7 +1589,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action_mark_attended'
                             <strong style='font-size: 0.95rem; color: " . ($is_attended ? "#15803d" : ($is_absent ? "#dc2626" : ($is_b_cancelled ? "#dc2626" : "#1d4ed8"))) . ";'>" . ($is_attended ? "<i class='fas fa-check-circle'></i> " . __('attended_desc') : ($is_absent ? "<i class='fas fa-user-times'></i> " . __('absent_desc') : ($is_b_cancelled ? "<i class='fas fa-ban'></i> " . __('cancelled_status') : "<i class='far fa-calendar-check'></i> " . __('scheduled_session')))) . "</strong>
                         </div>
                         " . ($b_pt_total > 0 ? $session_check_buttons_html : "") . "
-                        " . (!$is_attended && !$is_absent && !$is_b_cancelled && isset($_SESSION['role']) && in_array($_SESSION['role'], ['coach', 'manager', 'admin']) ? "
+                        " . (!$is_attended && !$is_absent && !$is_b_cancelled && $now >= $start_ts && isset($_SESSION['role']) && in_array($_SESSION['role'], ['coach', 'manager', 'admin']) ? "
                         <div style='display: flex; gap: 8px; flex-wrap: wrap; margin-top: 4px;'>
                             <form method='POST' style='margin: 0;'>
                                 <input type='hidden' name='action_coach_attendance' value='1'>
@@ -2188,7 +2209,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action_mark_attended'
                                 <strong style='font-size: 0.95rem; color: " . ($is_ongoing ? "#d97706" : ($is_attended ? "#15803d" : ($is_absent ? "#dc2626" : ($is_cancelled ? "#dc2626" : "#1d4ed8")))) . ";'>" . ($is_ongoing ? "<i class='fas fa-running'></i> " . __('in_progress_label') : ($is_attended ? "<i class='fas fa-check-circle'></i> " . __('attended_desc') : ($is_absent ? "<i class='fas fa-user-times'></i> " . __('absent_desc') : ($is_cancelled ? "<i class='fas fa-ban'></i> " . __('cancelled_status') : "<i class='far fa-calendar-check'></i> " . __('scheduled_session'))))) . "</strong>
                             </div>
                             " . ($b_pt_total > 0 ? $session_check_buttons_html : "") . "
-                            " . (!$is_attended && !$is_absent && !$is_cancelled && isset($_SESSION['role']) && in_array($_SESSION['role'], ['coach', 'manager', 'admin']) ? "
+                            " . (!$is_attended && !$is_absent && !$is_cancelled && $now >= $start_ts && isset($_SESSION['role']) && in_array($_SESSION['role'], ['coach', 'manager', 'admin']) ? "
                             <div style='display: flex; gap: 8px; flex-wrap: wrap; margin-top: 4px;'>
                                 <form method='POST' style='margin: 0;'>
                                     <input type='hidden' name='action_coach_attendance' value='1'>
@@ -2572,7 +2593,7 @@ function closeScheduleEditModal() {
 }
 
 function cancelBookingFromModal() {
-    const isVi = (typeof GYMX_LANG !== 'undefined' ? GYMX_LANG : 'vi') === 'vi';
+    const isVi = (typeof GYMX_LANG !== 'undefined' ? GYMX_LANG : 'en') === 'vi';
     const confirmMsg = isVi 
         ? "Bạn có chắc chắn muốn HỦY buổi tập này không? Thao tác này sẽ chuyển trạng thái sang CANCELLED và gửi email thông báo." 
         : "Are you sure you want to CANCEL this training session? This will set the status to CANCELLED and send email notices.";
@@ -2703,7 +2724,7 @@ document.addEventListener('DOMContentLoaded', function() {
     if (reschedForm) {
         reschedForm.addEventListener('submit', function(e) {
             const dateVal = document.getElementById('user_reschedule_new_date');
-            const isVi = (typeof GYMX_LANG !== 'undefined' ? GYMX_LANG : 'vi') === 'vi';
+            const isVi = (typeof GYMX_LANG !== 'undefined' ? GYMX_LANG : 'en') === 'vi';
             if (dateVal && !dateVal.value.trim()) {
                 e.preventDefault();
                 showGymXAlert(
@@ -2721,7 +2742,7 @@ document.addEventListener('DOMContentLoaded', function() {
     if (editForm) {
         editForm.addEventListener('submit', function(e) {
             const dateVal = document.getElementById('modal_booking_date');
-            const isVi = (typeof GYMX_LANG !== 'undefined' ? GYMX_LANG : 'vi') === 'vi';
+            const isVi = (typeof GYMX_LANG !== 'undefined' ? GYMX_LANG : 'en') === 'vi';
             if (dateVal && !dateVal.value.trim()) {
                 e.preventDefault();
                 showGymXAlert(

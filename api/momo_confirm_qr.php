@@ -19,7 +19,7 @@ $type   = $input['type']   ?? 'shop';      // 'shop' | 'membership'
 
 $pending = $_SESSION['momo_pending'] ?? null;
 if (!$pending) {
-    echo json_encode(['success' => false, 'message' => 'Không tìm thấy thông tin thanh toán.']);
+    echo json_encode(['success' => false, 'message' => 'Payment information was not found.']);
     exit;
 }
 
@@ -53,7 +53,7 @@ try {
         $chk = $pdo->prepare("SELECT id FROM member_subscriptions WHERE id = ? AND user_id = ?");
         $chk->execute([$sub_id, $_SESSION['user_id']]);
         if (!$chk->fetch()) {
-            echo json_encode(['success' => false, 'message' => 'Không tìm thấy đăng ký.']);
+            echo json_encode(['success' => false, 'message' => 'Membership registration was not found.']);
             exit;
         }
         // Activate membership
@@ -73,7 +73,7 @@ try {
         $chk = $pdo->prepare("SELECT id FROM orders WHERE id = ? AND user_id = ?");
         $chk->execute([$order_id, $_SESSION['user_id']]);
         if (!$chk->fetch()) {
-            echo json_encode(['success' => false, 'message' => 'Không tìm thấy đơn hàng.']);
+            echo json_encode(['success' => false, 'message' => 'Order was not found.']);
             exit;
         }
         // Confirm order payment - keep status='pending' for delivery tracking like COD, mark momo_confirmed=1
@@ -99,7 +99,7 @@ try {
         ];
 
     } else {
-        echo json_encode(['success' => false, 'message' => 'Loại thanh toán không hợp lệ.']);
+        echo json_encode(['success' => false, 'message' => 'Invalid payment type.']);
         exit;
     }
 
@@ -108,5 +108,5 @@ try {
 
 } catch (Exception $e) {
     error_log("momo_confirm_qr error: " . $e->getMessage());
-    echo json_encode(['success' => false, 'message' => 'Lỗi hệ thống: ' . $e->getMessage()]);
+    echo json_encode(['success' => false, 'message' => 'System error: ' . $e->getMessage()]);
 }

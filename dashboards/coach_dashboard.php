@@ -125,6 +125,20 @@ if (isset($_POST['update_class_details'])) {
     $coach_message = $_POST['coach_message'] ?? '';
     $booking_date = $_POST['booking_date'] ?? '';
 
+    // A coach must not mark Present/Absent before the scheduled session time.
+    $current_booking_stmt = $pdo->prepare("SELECT booking_date FROM bookings WHERE id = ? AND coach_id = ?");
+    $current_booking_stmt->execute([$booking_id, $coach_id]);
+    $current_booking = $current_booking_stmt->fetch();
+    if (!$current_booking) {
+        header("Location: /Gym Manager/dashboards/coach_dashboard.php?tab=schedule&error=" . urlencode("Booking not found."));
+        exit();
+    }
+    $effective_booking_date = !empty($booking_date) ? $booking_date : $current_booking['booking_date'];
+    if (in_array($attendance, ['present', 'absent'], true) && strtotime($effective_booking_date) > time()) {
+        header("Location: /Gym Manager/dashboards/coach_dashboard.php?tab=schedule&error=" . urlencode("Attendance is available only from the scheduled date and time."));
+        exit();
+    }
+
     if (!empty($booking_date)) {
         // Check for time conflict with coach's other bookings
         $chk_stmt = $pdo->prepare("SELECT id FROM bookings WHERE coach_id = ? AND booking_date = ? AND id != ? AND status != 'cancelled'");
@@ -389,6 +403,7 @@ $c_info = $coach_details->fetch();
                                 <option value="present"><?php echo __('attendance_present'); ?> (Present)</option>
                                 <option value="absent"><?php echo __('attendance_absent'); ?> (Absent)</option>
                             </select>
+                            <p id="attendance_time_hint" style="display: none; margin: 8px 0 0; color: #b45309; font-size: 0.82rem; font-weight: 600;"><i class="fas fa-clock"></i> <?php echo (($_SESSION['lang'] ?? 'en') === 'vi') ? 'Chỉ có thể điểm danh từ đúng giờ đã đặt.' : 'Attendance is available from the scheduled session time.'; ?></p>
                         </div>
 
                         <div style="display: flex; gap: 10px; margin-top: 15px;">
@@ -492,7 +507,14 @@ $c_info = $coach_details->fetch();
                 
                 document.getElementById('modal_training_plan').value = data.training_plan;
                 document.getElementById('modal_coach_message').value = data.coach_message || '';
-                document.getElementById('modal_attendance').value = data.attendance;
+                const attendanceSelect = document.getElementById('modal_attendance');
+                const attendanceHint = document.getElementById('attendance_time_hint');
+                const startsInFuture = data.booking_date && new Date(data.booking_date).getTime() > Date.now();
+                attendanceSelect.querySelectorAll('option[value="present"], option[value="absent"]').forEach(option => {
+                    option.disabled = startsInFuture;
+                });
+                attendanceSelect.value = startsInFuture ? 'pending' : (data.attendance || 'pending');
+                attendanceHint.style.display = startsInFuture ? 'block' : 'none';
                 document.getElementById('classModal').style.display = 'flex';
             }
             function closeClassModal() {
